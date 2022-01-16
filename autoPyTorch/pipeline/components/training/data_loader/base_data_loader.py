@@ -1,3 +1,4 @@
+from timeit import repeat
 from typing import Any, Dict, Optional
 
 from ConfigSpace.configuration_space import ConfigurationSpace
@@ -121,9 +122,6 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
         if X.get('val_indices', None) is not None:
             val_dataset = datamanager.get_dataset(split_id=X['split_id'], train=False)
             self.val_data_loader = torch.utils.data.DataLoader(
-                val_dataset,
-                batch_size=min(self.batch_size, len(val_dataset)),
-                shuffle=False,
                 num_workers=X.get('num_workers', 0),
                 pin_memory=X.get('pin_memory', True),
                 drop_last=X.get('drop_last', True),

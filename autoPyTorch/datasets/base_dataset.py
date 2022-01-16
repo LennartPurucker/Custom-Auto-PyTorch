@@ -26,6 +26,9 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingFuncs,
     NoResamplingStrategyTypes,
     ResamplingStrategies
+    RepeatedCrossValFunc,
+    RepeatedCrossValFuncs,
+    RepeatedCrossValTypes
 )
 from autoPyTorch.utils.common import FitRequirement
 
@@ -124,6 +127,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         self.cross_validators: Dict[str, CrossValFunc] = {}
         self.holdout_validators: Dict[str, HoldOutFunc] = {}
         self.no_resampling_validators: Dict[str, NoResamplingFunc] = {}
+        self.repeated_cross_validators: Dict[str, RepeatedCrossValFunc] = {}
         self.random_state = np.random.RandomState(seed=seed)
         self.shuffle = shuffle
         self.resampling_strategy = resampling_strategy
@@ -147,7 +151,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         self.holdout_validators = HoldOutFuncs.get_holdout_validators(*HoldoutValTypes)
 
         self.no_resampling_validators = NoResamplingFuncs.get_no_resampling_validators(*NoResamplingStrategyTypes)
-
+        self.repeated_cross_validators = RepeatedCrossValFuncs.get_repeated_cross_validators(*RepeatedCrossValTypes)
         self.splits = self.get_splits_from_resampling_strategy()
 
         # We also need to be able to transform the data, be it for pre-processing
@@ -215,24 +219,26 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
     def _get_indices(self) -> np.ndarray:
         return self.random_state.permutation(len(self)) if self.shuffle else np.arange(len(self))
 
-    def get_splits_from_resampling_strategy(self) -> List[Tuple[List[int], Optional[List[int]]]]:
+    def get_splits_from_resampling_strategy(self) -> List[List[Tuple[List[int], Optional[List[int]]]]]:
         """
         Creates a set of splits based on a resampling strategy provided
 
         Returns
-            (List[Tuple[List[int], List[int]]]): splits in the [train_indices, val_indices] format
+            (List[List[Tuple[List[int], Optional[List[int]]]]]): splits in the [train_indices, val_indices] format
         """
-        splits = []
+        splits: List[List[Tuple[List[int], Optional[List[int]]]]] = []
         if isinstance(self.resampling_strategy, HoldoutValTypes):
             val_share = DEFAULT_RESAMPLING_PARAMETERS[self.resampling_strategy].get(
                 'val_share', None)
             if self.resampling_strategy_args is not None:
                 val_share = self.resampling_strategy_args.get('val_share', val_share)
             splits.append(
-                self.create_holdout_val_split(
-                    holdout_val_type=self.resampling_strategy,
-                    val_share=val_share,
-                )
+                [
+                    self.create_holdout_val_split(
+                        holdout_val_type=self.resampling_strategy,
+                        val_share=val_share,
+                    )
+                ]
             )
         elif isinstance(self.resampling_strategy, CrossValTypes):
             num_splits = DEFAULT_RESAMPLING_PARAMETERS[self.resampling_strategy].get(
@@ -240,15 +246,32 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             if self.resampling_strategy_args is not None:
                 num_splits = self.resampling_strategy_args.get('num_splits', num_splits)
             # Create the split if it was not created before
-            splits.extend(
+            splits.append(
                 self.create_cross_val_splits(
                     cross_val_type=self.resampling_strategy,
                     num_splits=cast(int, num_splits),
                 )
             )
+        elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
+            num_splits = DEFAULT_RESAMPLING_PARAMETERS[self.resampling_strategy].get(
+                'num_splits', None)
+            num_repeats = DEFAULT_RESAMPLING_PARAMETERS[self.resampling_strategy].get(
+                'num_repeats', None
+            )
+            if self.resampling_strategy_args is not None:
+                num_splits = self.resampling_strategy_args.get('num_splits', num_splits)
+                num_repeats = self.resampling_strategy_args.get('num_repeats', num_splits)
+            # Create the split if it was not created before
+            splits.extend(
+                self.create_repeatedcross_val_splits(
+                    repeated_cross_val_type=self.resampling_strategy,
+                    num_splits=cast(int, num_splits),
+                    num_repeats=cast(int, num_repeats)
+                )
+            )
         elif isinstance(self.resampling_strategy, NoResamplingStrategyTypes):
-            splits.append((self.no_resampling_validators[self.resampling_strategy.name](self.random_state,
-                                                                                        self._get_indices()), None))
+            splits.append([(self.no_resampling_validators[self.resampling_strategy.name](self.random_state,
+                                                                                        self._get_indices()), None)])
         else:
             raise ValueError(f"Unsupported resampling strategy={self.resampling_strategy}")
         return splits
@@ -283,6 +306,39 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             kwargs["stratify"] = self.train_tensors[-1]
         splits = self.cross_validators[cross_val_type.name](
             self.random_state, num_splits, self._get_indices(), **kwargs)
+        return splits
+
+    def create_repeatedcross_val_splits(
+        self,
+        repeated_cross_val_type: RepeatedCrossValTypes,
+        num_splits: int,
+        num_repeats: int
+    ) -> List[List[Tuple[Union[List[int], np.ndarray], Union[List[int], np.ndarray]]]]:
+        """
+        This function creates the cross validation split for the given task.
+
+        It is done once per dataset to have comparable results among pipelines
+        Args:
+            repeated_cross_val_type (RepeatedCrossValTypes):
+            num_splits (int): number of splits to be created
+            num_repeats (int): number of repeats of splits to be created
+        Returns:
+            (List[Tuple[Union[List[int], np.ndarray], Union[List[int], np.ndarray]]]):
+                list containing 'num_splits' splits.
+        """
+        # Create just the split once
+        # This is gonna be called multiple times, because the current dataset
+        # is being used for multiple pipelines. That is, to be efficient with memory
+        # we dump the dataset to memory and read it on a need basis. So this function
+        # should be robust against multiple calls, and it does so by remembering the splits
+        if not isinstance(repeated_cross_val_type, RepeatedCrossValTypes):
+            raise NotImplementedError(f'The selected `repeated_cross_val_type` "{repeated_cross_val_type}" is not implemented.')
+        kwargs = {}
+        if repeated_cross_val_type.is_stratified():
+            # we need additional information about the data for stratification
+            kwargs["stratify"] = self.train_tensors[-1]
+        splits = self.repeated_cross_validators[repeated_cross_val_type.name](
+            random_state=self.random_state, num_splits=num_splits, num_repeats=num_repeats, indices=self._get_indices(), **kwargs)
         return splits
 
     def create_holdout_val_split(
@@ -320,7 +376,11 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             self.random_state, val_share, self._get_indices(), **kwargs)
         return train, val
 
+<<<<<<< HEAD
     def get_dataset(self, split_id: int, train: bool) -> Dataset:
+=======
+    def get_dataset_for_training(self, split_id: int, train: bool, repeat_id: int = 0) -> Dataset:
+>>>>>>> made changes to run example_tabular_classification.py for repeated k fold
         """
         The above split methods employ the Subset to internally subsample the whole dataset.
 
@@ -336,10 +396,21 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             Dataset: the reduced dataset to be used for testing
         """
         # Subset creates a dataset. Splits is a (train_indices, test_indices) tuple
+<<<<<<< HEAD
         if split_id >= len(self.splits):  # old version: split_id > len(self.splits)
             raise IndexError(f"self.splits index out of range, got split_id={split_id}"
                              f" (>= num_splits={len(self.splits)})")
         indices = self.splits[split_id][int(not train)]  # 0: for training, 1: for evaluation
+=======
+        if repeat_id >= len(self.splits):
+            raise IndexError("repeat_id out of range, got repeat_id={}"
+                             " (>= num_repeats={})".format(split_id, len(self.splits)))
+        if split_id >= len(self.splits[repeat_id]):
+            raise IndexError("split_id out of range, got split_id={}"
+                             " (>= num_splits={})".format(split_id, len(self.splits[repeat_id])))
+        subset = int(not train)
+        indices = self.splits[repeat_id][split_id][subset]
+>>>>>>> made changes to run example_tabular_classification.py for repeated k fold
         if indices is None:
             raise ValueError("Specified fold (or subset) does not exist")
 

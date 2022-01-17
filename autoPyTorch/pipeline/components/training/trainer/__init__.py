@@ -347,7 +347,7 @@ class TrainerChoice(autoPyTorchChoice):
             metrics_during_training=X['metrics_during_training'],
             scheduler=X['lr_scheduler'],
             task_type=STRING_TO_TASK_TYPES[X['dataset_properties']['task_type']],
-            labels=X['y_train'][X['backend'].load_datamanager().splits[X['split_id']][0]],
+            labels=X['y_train'][X['backend'].load_datamanager().splits[X['repeat_id']][X['split_id']][0]],
             step_interval=X['step_interval'],
             numerical_columns=X['dataset_properties']['numerical_columns'] if 'numerical_columns' in X[
                 'dataset_properties'] else None

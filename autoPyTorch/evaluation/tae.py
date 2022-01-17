@@ -29,7 +29,8 @@ from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.resampling_strategy import (
     CrossValTypes,
     HoldoutValTypes,
-    NoResamplingStrategyTypes
+    NoResamplingStrategyTypes,
+    RepeatedCrossValTypes
 )
 from autoPyTorch.evaluation.test_evaluator import eval_test_function
 from autoPyTorch.evaluation.train_evaluator import eval_train_function
@@ -149,7 +150,9 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         self.resampling_strategy = dm.resampling_strategy
         self.resampling_strategy_args = dm.resampling_strategy_args
 
-        if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes)):
+        self.search_space_updates = search_space_updates
+
+        if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes, RepeatedCrossValTypes)):
             if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
                 eval_function = eval_train_function
             elif ensemble_method == EnsembleSelectionTypes.stacking_ensemble:

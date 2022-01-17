@@ -165,7 +165,7 @@ class TrainEvaluator(AbstractEvaluator):
         self.splits = self.datamanager.splits
         if self.splits is None:
             raise AttributeError("Must have called create_splits on {}".format(self.datamanager.__class__.__name__))
-        self.num_folds: int = len(self.splits)
+        self.num_folds: int = len(self.splits[0])
         self.Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
         self.Y_train_targets: np.ndarray = np.ones(self.y_train.shape) * np.NaN
         self.pipelines: List[Optional[BaseEstimator]] = [None] * self.num_folds

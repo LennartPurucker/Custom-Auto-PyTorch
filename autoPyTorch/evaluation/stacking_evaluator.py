@@ -321,14 +321,16 @@ class StackingEvaluator(AbstractEvaluator):
             else:
                 pipeline = None
         else:
-            pipeline = None
+            # need a pipeline to get representation of the model.
+            # see https://github.com/automl/Auto-PyTorch/blob/master/autoPyTorch/api/base_task.py#L467
+            pipeline = self.pipelines[-1][-1]
 
         self.logger.debug("Saving model {}_{}_{} to disk".format(self.seed, self.num_run, self.budget))
         self.backend.save_numrun_to_dir(
             seed=int(self.seed),
             idx=int(self.num_run),
             budget=float(self.budget),
-            model=self.pipelines[-1][-1],
+            model=pipeline,
             cv_model=pipelines,
             ensemble_predictions=(
                 Y_optimization_pred if 'y_optimization' not in

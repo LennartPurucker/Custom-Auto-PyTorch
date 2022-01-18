@@ -9,6 +9,7 @@ with AutoPyTorch
 import os
 import tempfile as tmp
 import warnings
+from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
 
 from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
@@ -42,12 +43,13 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_05',
-    output_directory='./tmp/autoPyTorch_example_out_05',
+    temporary_directory='./tmp/autoPyTorch_example_tmp_08',
+    output_directory='./tmp/autoPyTorch_example_out_08',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=42,
     ensemble_method=EnsembleSelectionTypes.stacking_ensemble,
+    resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     ensemble_size=5
 )
 
@@ -61,8 +63,8 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=300,
-    func_eval_time_limit_secs=50,
+    total_walltime_limit=1000,
+    func_eval_time_limit_secs=70,
     enable_traditional_pipeline=False,
     smbo_class=autoPyTorchSMBO,
     all_supported_metrics=False

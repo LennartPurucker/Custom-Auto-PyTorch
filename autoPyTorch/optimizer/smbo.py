@@ -14,7 +14,7 @@ from smac.intensification.hyperband import Hyperband
 # from smac.intensification.hyperband import Hyperband
 from smac.intensification.simple_intensifier import SimpleIntensifier
 from smac.optimizer.smbo import SMBO
-from smac.runhistory.runhistory import RunHistory
+from smac.runhistory.runhistory import RunHistory, DataOrigin
 from smac.runhistory.runhistory2epm import RunHistory2EPM4LogCost
 from smac.scenario.scenario import Scenario
 from smac.tae.dask_runner import DaskParallelRunner
@@ -166,6 +166,7 @@ class AutoMLSMBO(object):
                  get_smac_object_callback: Optional[Callable] = None,
                  all_supported_metrics: bool = True,
                  ensemble_callback: Optional[EnsembleBuilderManager] = None,
+                 num_stacking_layers: Optional[int] = None,
                  logger_port: Optional[int] = None,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  portfolio_selection: Optional[str] = None,
@@ -293,7 +294,13 @@ class AutoMLSMBO(object):
         self.ensemble_method = ensemble_method
 
         self.ensemble_callback = ensemble_callback
+        if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble and num_stacking_layers is None:
+            raise ValueError("Cant be none for stacked ensembles")
 
+        self.num_stacking_layers = num_stacking_layers
+
+        self.run_history = RunHistory()
+        self.trajectory: List[TrajEntry] = []
         self.other_callbacks = other_callbacks
         self.smbo_class = smbo_class
 
@@ -327,11 +334,19 @@ class AutoMLSMBO(object):
         if self.datamanager is not None and self.datamanager.task_type is not None:
             self.task = self.datamanager.task_type
 
-    def run_smbo(self, func: Optional[Callable] = None
-                 ) -> Tuple[RunHistory, List[TrajEntry], str]:
+    def _run_smbo(
+        self,
+        cur_stacking_layer: int,
+        walltime_limit: int,
+        initial_num_run: int,
+        func: Optional[Callable] = None,
+        ) -> Tuple[RunHistory, List[TrajEntry], str]:
 
-        self.watcher.start_task('SMBO')
-        self.logger.info("Started run of SMBO")
+        current_task_name = f'SMBO_{cur_stacking_layer}'
+
+        self.watcher.start_task(current_task_name)
+        self.logger.info(f"Started {cur_stacking_layer} run of SMBO")
+
         # == first things first: load the datamanager
         self.reset_data_manager()
 
@@ -340,7 +355,6 @@ class AutoMLSMBO(object):
         seed = self.seed
         self.config_space.seed(seed)
         # allocate a run history
-        num_run = self.start_num_run
 
         # Initialize some SMAC dependencies
 
@@ -359,7 +373,7 @@ class AutoMLSMBO(object):
         ta_kwargs = dict(
             backend=copy.deepcopy(self.backend),
             seed=seed,
-            initial_num_run=num_run,
+            initial_num_run=initial_num_run,
             include=self.include if self.include is not None else dict(),
             exclude=self.exclude if self.exclude is not None else dict(),
             metric=self.metric,
@@ -377,8 +391,8 @@ class AutoMLSMBO(object):
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")
 
-        startup_time = self.watcher.wall_elapsed(self.dataset_name)
-        total_walltime_limit = self.total_walltime_limit - startup_time - 5
+        startup_time = self.watcher.wall_elapsed(current_task_name)
+        walltime_limit = walltime_limit - startup_time - 5
         scenario_dict = {
             'abort_on_first_run_crash': False,
             'cs': self.config_space,
@@ -388,7 +402,7 @@ class AutoMLSMBO(object):
             'memory_limit': self.memory_limit,
             'output-dir': self.backend.get_smac_output_directory(),
             'run_obj': 'quality',
-            'wallclock_limit': total_walltime_limit,
+            'wallclock_limit': walltime_limit,
             'cost_for_crash': self.worst_possible_result,
         }
         if self.smac_scenario_args is not None:
@@ -442,6 +456,8 @@ class AutoMLSMBO(object):
                                    initial_configurations=self.initial_configurations,
                                    smbo_class=self.smbo_class)
 
+        if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+            self.ensemble_callback.update_cur_stacking_layer(cur_stacking_layer)
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)
         if self.other_callbacks is not None:
@@ -454,8 +470,8 @@ class AutoMLSMBO(object):
 
         self.logger.info("finished SMBO.optimize()")
 
-        self.runhistory = smac.solver.runhistory
-        self.trajectory = smac.solver.intensifier.traj_logger.trajectory
+        runhistory = smac.solver.runhistory
+        trajectory = smac.solver.intensifier.traj_logger.trajectory
         if isinstance(smac.solver.tae_runner, DaskParallelRunner):
             self._budget_type = smac.solver.tae_runner.single_worker.budget_type
         elif isinstance(smac.solver.tae_runner, SerialRunner):
@@ -463,4 +479,20 @@ class AutoMLSMBO(object):
         else:
             raise NotImplementedError(type(smac.solver.tae_runner))
 
-        return self.runhistory, self.trajectory, self._budget_type
+        return runhistory, trajectory, self._budget_type
+
+    def run_smbo(self, func: Optional[Callable] = None
+                 ) -> Tuple[RunHistory, List[TrajEntry], str]:
+        individual_wall_times = self.total_walltime_limit / self.num_stacking_layers
+        initial_num_run = self.start_num_run
+        for cur_stacking_layer in range(self.num_stacking_layers):
+            run_history, trajectory, _ = self._run_smbo(
+                walltime_limit=individual_wall_times,
+                cur_stacking_layer=cur_stacking_layer,
+                initial_num_run=initial_num_run,
+                func=func
+                )
+            self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
+            self.trajectory.extend(trajectory)
+            initial_num_run = self.backend.get_next_num_run(peek=True)
+        return self.run_history, self.trajectory, self._budget_type

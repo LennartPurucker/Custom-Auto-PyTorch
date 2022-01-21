@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import logging
 import logging.handlers
+from optparse import Option
 import time
 import traceback
 from typing import Dict, List, Optional, Tuple, Union
@@ -19,7 +20,7 @@ from smac.runhistory.runhistory import RunInfo, RunValue
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
-from autoPyTorch.ensemble.utils import get_ensemble_builder_class
+from autoPyTorch.ensemble.utils import EnsembleSelectionTypes, get_ensemble_builder_class
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.logging_ import get_named_client_logger
 
@@ -47,7 +48,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         random_state: int,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         pynisher_context: str = 'fork',
-        use_ensemble_loss=False
+        use_ensemble_loss=False,
+        num_stacking_layers: Optional[int] = None
     ):
         """ SMAC callback to handle ensemble building
         Args:
@@ -114,6 +116,11 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
         self.ensemble_method = ensemble_method
+        self.cur_stacking_layer = 0 if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble else None
+        if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble and num_stacking_layers is None:
+            raise ValueError("Cant be none for stacked ensembles")
+
+        self.num_stacking_layers = num_stacking_layers
         self.max_models_on_disc: Union[float, int] = max_models_on_disc
         self.seed = seed
         self.precision = precision
@@ -229,7 +236,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     pynisher_context=self.pynisher_context,
                     logger_port=self.logger_port,
                     unit_test=unit_test,
-                    use_ensemble_opt_loss=self.use_ensemble_loss
+                    use_ensemble_opt_loss=self.use_ensemble_loss,
+                    cur_stacking_layer=self.cur_stacking_layer
                 ))
 
                 logger.info(
@@ -248,6 +256,13 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 error_message = repr(e)
                 logger.critical(exception_traceback)
                 logger.critical(error_message)
+
+    def update_cur_stacking_layer(self, cur_stacking_layer: int) -> None:
+        if cur_stacking_layer >= self.num_stacking_layers:
+            raise ValueError(f"Unexpected value '{cur_stacking_layer}' for cur_stacking_layer. "
+                             f"Max stacking layers are : {self.num_stacking_layers}.")
+        self.cur_stacking_layer = cur_stacking_layer
+        self.iteration = 0
 
 
 def fit_and_return_ensemble(
@@ -272,7 +287,8 @@ def fit_and_return_ensemble(
     pynisher_context: str,
     logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
     unit_test: bool = False,
-    use_ensemble_opt_loss=False
+    use_ensemble_opt_loss=False,
+    cur_stacking_layer: Optional[int] = None
 ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -340,6 +356,15 @@ def fit_and_return_ensemble(
             [[pandas_timestamp, train_performance, val_performance, test_performance], ...]
     """
     ensemble_builder = get_ensemble_builder_class(ensemble_method)
+    ensemble_builder_run_kwargs = {
+        'end_at': end_at,
+        'iteration': iteration,
+        'return_predictions': return_predictions,
+        'pynisher_context': pynisher_context,
+    }
+    if ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+        ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
+
     result = ensemble_builder(
         backend=backend,
         dataset_name=dataset_name,
@@ -359,9 +384,6 @@ def fit_and_return_ensemble(
         unit_test=unit_test,
         use_ensemble_opt_loss=use_ensemble_opt_loss
     ).run(
-        end_at=end_at,
-        iteration=iteration,
-        return_predictions=return_predictions,
-        pynisher_context=pynisher_context,
+        **ensemble_builder_run_kwargs
     )
     return result

@@ -1,3 +1,4 @@
+from ast import Num
 import copy
 import json
 import logging.handlers
@@ -171,9 +172,10 @@ class BaseTask(ABC):
         n_jobs: int = 1,
         n_threads: int = 1,
         logging_config: Optional[Dict] = None,
-        ensemble_size: int = 50,
+        ensemble_size: int = 5,
         ensemble_nbest: int = 50,
-        ensemble_method: int = EnsembleSelectionTypes.ensemble_selection, 
+        ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+        num_stacking_layers: int = 2,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
         output_directory: Optional[str] = None,
@@ -197,6 +199,7 @@ class BaseTask(ABC):
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
         self.ensemble_method = ensemble_method
+        self.num_stacking_layers = num_stacking_layers
         self.max_models_on_disc = max_models_on_disc
         self.logging_config: Optional[Dict] = logging_config
         self.include_components: Optional[Dict] = include_components
@@ -1217,7 +1220,8 @@ class BaseTask(ABC):
                                                         ensemble_nbest=self.ensemble_nbest,
                                                         precision=precision,
                                                         optimize_metric=self.opt_metric,
-                                                        ensemble_method=self.ensemble_method
+                                                        ensemble_method=self.ensemble_method,
+                                                        num_stacking_layer=self.num_stacking_layers
                                                         )
 
         smac_initial_num_run = self._backend.get_next_num_run(peek=True)
@@ -1270,7 +1274,8 @@ class BaseTask(ABC):
                 pynisher_context=self._multiprocessing_context,
                 smbo_class=smbo_class,
                 use_ensemble_opt_loss=self.use_ensemble_opt_loss,
-                other_callbacks=[proc_runhistory_updater] if proc_runhistory_updater is not None else None
+                other_callbacks=[proc_runhistory_updater] if proc_runhistory_updater is not None else None,
+                num_stacking_layers=self.num_stacking_layers
             )
             try:
                 run_history, self._results_manager.trajectory, budget_type = \
@@ -1816,6 +1821,7 @@ class BaseTask(ABC):
             optimize_metric: str,
             ensemble_nbest: int,
             ensemble_size: int,
+            num_stacking_layer: Optional[int] = None,
             precision: int = 32,
     ) -> EnsembleBuilderManager:
         """
@@ -1876,7 +1882,11 @@ class BaseTask(ABC):
             random_state=self.seed,
             precision=precision,
             logger_port=self._logger_port,
+<<<<<<< HEAD
             use_ensemble_loss=self.use_ensemble_opt_loss
+=======
+            num_stacking_layers=num_stacking_layer
+>>>>>>> stacking works without changing dataset
         )
         self._stopwatch.stop_task(ensemble_task_name)
 

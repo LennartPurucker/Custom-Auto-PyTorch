@@ -14,6 +14,8 @@ from torch.utils.data import Dataset, Subset
 import torchvision
 
 from autoPyTorch.constants import CLASSIFICATION_OUTPUTS, STRING_TO_OUTPUT_TYPES
+from autoPyTorch.data.base_feature_validator import SUPPORTED_FEAT_TYPES
+from autoPyTorch.data.base_target_validator import SUPPORTED_TARGET_TYPES
 from autoPyTorch.datasets.resampling_strategy import (
     CrossValFunc,
     CrossValFuncs,
@@ -25,7 +27,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingFunc,
     NoResamplingFuncs,
     NoResamplingStrategyTypes,
-    ResamplingStrategies
+    ResamplingStrategies,
     RepeatedCrossValFunc,
     RepeatedCrossValFuncs,
     RepeatedCrossValTypes
@@ -123,7 +125,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
 
         if not hasattr(train_tensors[0], 'shape'):
             type_check(train_tensors, val_tensors)
-        self.train_tensors, self.val_tensors, self.test_tensors = train_tensors, val_tensors, test_tensors
+
         self.cross_validators: Dict[str, CrossValFunc] = {}
         self.holdout_validators: Dict[str, HoldOutFunc] = {}
         self.no_resampling_validators: Dict[str, NoResamplingFunc] = {}
@@ -133,18 +135,10 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         self.resampling_strategy = resampling_strategy
         self.resampling_strategy_args = resampling_strategy_args
         self.task_type: Optional[str] = None
-        self.issparse: bool = issparse(self.train_tensors[0])
-        self.input_shape: Tuple[int] = self.train_tensors[0].shape[1:]
-        if len(self.train_tensors) == 2 and self.train_tensors[1] is not None:
-            self.output_type: str = type_of_target(self.train_tensors[1])
-
-            if (
-                self.output_type in STRING_TO_OUTPUT_TYPES
-                and STRING_TO_OUTPUT_TYPES[self.output_type] in CLASSIFICATION_OUTPUTS
-            ):
-                self.output_shape = len(np.unique(self.train_tensors[1]))
-            else:
-                self.output_shape = self.train_tensors[1].shape[-1] if self.train_tensors[1].ndim > 1 else 1
+        self.train_tensors, self.val_tensors, self.test_tensors = train_tensors, val_tensors, test_tensors
+        # TODO: Look for a criteria to define small enough to preprocess
+        # False for the regularization cocktails initially
+        self.is_small_preprocess = False
 
         # Make sure cross validation splits are created once
         self.cross_validators = CrossValFuncs.get_cross_validators(*CrossValTypes)
@@ -158,6 +152,24 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         # or for augmentation
         self.train_transform = train_transforms
         self.val_transform = val_transforms
+
+    def infer_dataset_attributes(
+        self,
+        train_tensors: Tuple[SUPPORTED_FEAT_TYPES, SUPPORTED_TARGET_TYPES],
+        ):
+
+        self.issparse: bool = issparse(train_tensors[0])
+        self.input_shape: Tuple[int] = train_tensors[0].shape[1:]
+        if len(train_tensors) == 2 and train_tensors[1] is not None:
+            self.output_type: str = type_of_target(train_tensors[1])
+
+            if (
+                self.output_type in STRING_TO_OUTPUT_TYPES
+                and STRING_TO_OUTPUT_TYPES[self.output_type] in CLASSIFICATION_OUTPUTS
+            ):
+                self.output_shape = len(np.unique(train_tensors[1]))
+            else:
+                self.output_shape = train_tensors[1].shape[-1] if train_tensors[1].ndim > 1 else 1
 
     def update_transform(self, transform: Optional[torchvision.transforms.Compose],
                          train: bool = True) -> 'BaseDataset':
@@ -376,11 +388,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             self.random_state, val_share, self._get_indices(), **kwargs)
         return train, val
 
-<<<<<<< HEAD
-    def get_dataset(self, split_id: int, train: bool) -> Dataset:
-=======
     def get_dataset_for_training(self, split_id: int, train: bool, repeat_id: int = 0) -> Dataset:
->>>>>>> made changes to run example_tabular_classification.py for repeated k fold
         """
         The above split methods employ the Subset to internally subsample the whole dataset.
 
@@ -396,12 +404,6 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             Dataset: the reduced dataset to be used for testing
         """
         # Subset creates a dataset. Splits is a (train_indices, test_indices) tuple
-<<<<<<< HEAD
-        if split_id >= len(self.splits):  # old version: split_id > len(self.splits)
-            raise IndexError(f"self.splits index out of range, got split_id={split_id}"
-                             f" (>= num_splits={len(self.splits)})")
-        indices = self.splits[split_id][int(not train)]  # 0: for training, 1: for evaluation
-=======
         if repeat_id >= len(self.splits):
             raise IndexError("repeat_id out of range, got repeat_id={}"
                              " (>= num_repeats={})".format(split_id, len(self.splits)))
@@ -410,7 +412,6 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
                              " (>= num_splits={})".format(split_id, len(self.splits[repeat_id])))
         subset = int(not train)
         indices = self.splits[repeat_id][split_id][subset]
->>>>>>> made changes to run example_tabular_classification.py for repeated k fold
         if indices is None:
             raise ValueError("Specified fold (or subset) does not exist")
 

@@ -5,6 +5,7 @@ import logging
 import math
 import multiprocessing
 import os
+from re import S
 import time
 import traceback
 import warnings
@@ -132,7 +133,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         all_supported_metrics: bool = True,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
         ensemble_method=None,
-        use_ensemble_opt_loss=False
+        use_ensemble_opt_loss=False,
+        cur_stacking_layer: int = 0
     ):
 
         self.backend = backend
@@ -151,6 +153,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         self.resampling_strategy_args = dm.resampling_strategy_args
 
         self.search_space_updates = search_space_updates
+
+        self.cur_stacking_layer = cur_stacking_layer
 
         if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes, RepeatedCrossValTypes)):
             if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
@@ -351,7 +355,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             logger_port=self.logger_port,
             all_supported_metrics=self.all_supported_metrics,
             search_space_updates=self.search_space_updates,
-            use_ensemble_opt_loss=self.use_ensemble_opt_loss
+            use_ensemble_opt_loss=self.use_ensemble_opt_loss,
+            cur_stacking_layer=self.cur_stacking_layer
         )
 
         info: Optional[List[RunValue]]

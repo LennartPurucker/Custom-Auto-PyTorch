@@ -488,6 +488,12 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             for layer_identifiers in stacked_ensemble_identifiers
         ]
 
+        predictions_stacking_ensemble = [
+            [
+                {'ensemble': self.read_preds[k][Y_ENSEMBLE], 'test': self.read_preds[k][Y_TEST]} if k is not None else None for k in layer_identifiers
+            ]
+            for layer_identifiers in stacked_ensemble_identifiers
+        ]
         opt_metric = [m for m in self.metrics if m.name == self.opt_metric][0]
         if not opt_metric:
             raise ValueError(f"Cannot optimize for {self.opt_metric} in {self.metrics} "
@@ -500,7 +506,8 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             task_type=self.task_type,
             ensemble_slot_j=self.ensemble_slot_j,
             cur_stacking_layer=self.cur_stacking_layer,
-            stacked_ensemble_identifiers=stacked_ensemble_num_runs
+            stacked_ensemble_identifiers=stacked_ensemble_num_runs,
+            predictions_stacking_ensemble=predictions_stacking_ensemble
         )
 
         try:

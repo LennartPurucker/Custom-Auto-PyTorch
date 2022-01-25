@@ -68,22 +68,9 @@ class TabularDataset(BaseDataset):
                  validator: Optional[BaseInputValidator] = None,
                  ):
 
-        # Take information from the validator, which guarantees clean data for the
-        # dataset.
-        # TODO: Consider moving the validator to the pipeline itself when we
-        # move to using the fit_params on scikit learn 0.24
-        if validator is None:
-            raise ValueError("A feature validator is required to build a tabular pipeline")
+        train_tensors, test_tensors = self.infer_dataset_attributes(validator, X, Y, X_test, Y_test)
 
-        X, Y = validator.transform(X, Y)
-        if X_test is not None:
-            X_test, Y_test = validator.transform(X_test, Y_test)
-        self.categorical_columns = validator.feature_validator.categorical_columns
-        self.numerical_columns = validator.feature_validator.numerical_columns
-        self.num_features = validator.feature_validator.num_features
-        self.categories = validator.feature_validator.categories
-
-        super().__init__(train_tensors=(X, Y), test_tensors=(X_test, Y_test), shuffle=shuffle,
+        super().__init__(train_tensors=train_tensors, test_tensors=test_tensors, shuffle=shuffle,
                          resampling_strategy=resampling_strategy,
                          resampling_strategy_args=resampling_strategy_args,
                          seed=seed, train_transforms=train_transforms,
@@ -100,6 +87,28 @@ class TabularDataset(BaseDataset):
             raise ValueError("Task type not currently supported ")
         if STRING_TO_TASK_TYPES[self.task_type] in CLASSIFICATION_TASKS:
             self.num_classes: int = len(np.unique(self.train_tensors[1]))
+
+    def infer_dataset_attributes(self, validator, X, Y, X_test, Y_test):
+        # Take information from the validator, which guarantees clean data for the
+        # dataset.
+        # TODO: Consider moving the validator to the pipeline itself when we
+        # move to using the fit_params on scikit learn 0.24
+        if validator is None:
+            raise ValueError("A feature validator is required to build a tabular pipeline")
+
+        X, Y = validator.transform(X, Y)
+        if X_test is not None:
+            X_test, Y_test = validator.transform(X_test, Y_test)
+        self.categorical_columns = validator.feature_validator.categorical_columns
+        self.numerical_columns = validator.feature_validator.numerical_columns
+        self.num_features = validator.feature_validator.num_features
+        self.categories = validator.feature_validator.categories
+        train_tensors=(X, Y)
+        test_tensors=(X, Y)
+        super().infer_dataset_attributes(train_tensors=train_tensors)
+        self.train_tensors, self.test_tensors = train_tensors, test_tensors
+        return train_tensors, test_tensors
+
 
     def get_required_dataset_info(self) -> Dict[str, BaseDatasetPropertiesType]:
         """

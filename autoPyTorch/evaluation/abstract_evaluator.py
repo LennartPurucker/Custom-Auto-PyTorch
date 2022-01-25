@@ -425,7 +425,8 @@ class AbstractEvaluator(object):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False
+                 use_ensemble_opt_loss=False,
+                 cur_stacking_layer: int = 0
                  ) -> None:
 
         self.starttime = time.time()

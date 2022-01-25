@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
 
 import numpy as np
+from pyparsing import Opt
 from sklearn.base import BaseEstimator
 
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
@@ -23,7 +24,8 @@ class StackingEnsemble(AbstractEnsemble):
         random_state: np.random.RandomState,
         ensemble_slot_j: int,
         cur_stacking_layer: int,
-        stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]]
+        stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]],
+        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]]
     ) -> None:
         self.ensemble_size = ensemble_size
         self.metric = metric
@@ -32,6 +34,7 @@ class StackingEnsemble(AbstractEnsemble):
         self.ensemble_slot_j = ensemble_slot_j
         self.cur_stacking_layer = cur_stacking_layer
         self.stacked_ensemble_identifiers = stacked_ensemble_identifiers
+        self.predictions_stacking_ensemble = predictions_stacking_ensemble
 
     def __getstate__(self) -> Dict[str, Any]:
         # Cannot serialize a metric if
@@ -247,6 +250,14 @@ class StackingEnsemble(AbstractEnsemble):
         predictions = self.ensemble_predictions_.copy()
         predictions[self.ensemble_slot_j] = pipeline_predictions
         return predictions
+
+    def get_layer_stacking_ensemble_predictions(
+        self,
+        stacking_layer: int,
+        dataset: str = 'ensemble'
+    ) -> List[Optional[np.ndarray]]:
+
+        return [predictions[dataset] if predictions is not None else None for predictions in self.predictions_stacking_ensemble[stacking_layer]]
 
     def get_models_with_weights(
         self,

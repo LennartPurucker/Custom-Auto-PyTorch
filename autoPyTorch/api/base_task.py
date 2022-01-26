@@ -50,6 +50,7 @@ from autoPyTorch.datasets.resampling_strategy import (
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
+from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
@@ -613,10 +614,25 @@ class BaseTask(ABC):
 
         if self.ensemble_:
             identifiers = self.ensemble_.get_selected_model_identifiers()
+<<<<<<< HEAD
             nonnull_identifiers = [i for i in identifiers if i is not None]
             self.models_ = self._backend.load_models_by_identifiers(nonnull_identifiers)
             if isinstance(self.resampling_strategy, CrossValTypes):
                 self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
+=======
+            self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
+            if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+                models = []
+                for identifier in identifiers:
+                    nonnull_identifiers = [i for i in identifier if i is not None]
+                    models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
+                self._logger.debug(f"stacked ensemble models are :{models}")
+                self.cv_models_ = models
+            else:
+                self.models_ = self._backend.load_models_by_identifiers(identifiers)
+                if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
+                    self.cv_models_ = self._backend.load_cv_models_by_identifiers(identifiers)
+>>>>>>> working version of stacking
 
             if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
                 if len(self.cv_models_) == 0:
@@ -1967,6 +1983,16 @@ class BaseTask(ABC):
 
         # Mypy assert
         assert self.ensemble_ is not None, "Load models should error out if no ensemble"
+        predictions = self._predict_with_ensemble(X_test=X_test, batch_size=batch_size, n_jobs=n_jobs)        
+
+        self._cleanup()
+
+        return predictions
+
+
+    def _predict_with_ensemble(self, X_test, batch_size, n_jobs) -> np.ndarray:
+
+        assert self.ensemble_ is not None, "Load models should error out if no ensemble"
 
         if isinstance(self.resampling_strategy, (HoldoutValTypes, NoResamplingStrategyTypes)):
             models = self.models_
@@ -1974,12 +2000,36 @@ class BaseTask(ABC):
         elif isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
             models = self.cv_models_
 
+<<<<<<< HEAD
         all_predictions = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(_pipeline_predict)(
                 models[identifier], X_test, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
             )
             for identifier in self.ensemble_.get_selected_model_identifiers() if identifier is not None
         )
+=======
+        X_test_copy = X_test.copy()
+        if isinstance(self.ensemble_, StackingEnsemble):
+            ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
+            self._logger.debug(f"ensemble identifiers: {ensemble_identifiers}")
+            for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
+                self._logger.debug(f"layer : {i} of stacking ensemble,\n layer identifiers: {layer_identifiers},\n model: {model}")
+                all_predictions = joblib.Parallel(n_jobs=n_jobs)(
+                    joblib.delayed(_pipeline_predict)(
+                        model[identifier], X_test_copy, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
+                    )
+                    for identifier in layer_identifiers if identifier is not None
+                )
+                for prediction in all_predictions:
+                    X_test_copy = np.concatenate([X_test_copy, prediction], axis=1)
+        else:
+            all_predictions = joblib.Parallel(n_jobs=n_jobs)(
+                    joblib.delayed(_pipeline_predict)(
+                        models[identifier], X_test_copy, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
+                    )
+                    for identifier in self.ensemble_.get_selected_model_identifiers()
+                )
+>>>>>>> working version of stacking
 
         if len(all_predictions) == 0:
             raise ValueError('Something went wrong generating the predictions. '
@@ -1989,9 +2039,6 @@ class BaseTask(ABC):
                                      str(list(self.models_))))
 
         predictions = self.ensemble_.predict(all_predictions)
-
-        self._cleanup()
-
         return predictions
 
     def score(

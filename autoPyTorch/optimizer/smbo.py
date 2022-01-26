@@ -343,8 +343,8 @@ class AutoMLSMBO(object):
 
         dataset_requirements = get_dataset_requirements(
             info=self.datamanager.get_required_dataset_info(),
-            include=self.include_components,
-            exclude=self.exclude_components,
+            include=self.include,
+            exclude=self.exclude,
             search_space_updates=self.search_space_updates)
         self._dataset_requirements = dataset_requirements
         dataset_properties = self.datamanager.get_dataset_properties(dataset_requirements)
@@ -533,7 +533,7 @@ class AutoMLSMBO(object):
             validator = TabularInputValidator(is_classification=True)
             validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)
             self.datamanager.infer_dataset_attributes(validator, X_train, y_train, X_test, y_test)
-            
+            self.reset_attributes()
             self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
             self.trajectory.extend(trajectory)
             initial_num_run = self.backend.get_next_num_run()

@@ -50,7 +50,8 @@ class StackingEnsemble(AbstractEnsemble):
     def fit(
         self,
         predictions_ensemble: List[np.ndarray],
-        best_model_predictions: np.ndarray,
+        best_model_predictions_ensemble: np.ndarray,
+        best_model_predictions_test: np.ndarray,
         labels: np.ndarray,
         ensemble_identifiers: List[Tuple[int, int, float]],
         best_model_identifier: Tuple[int, int, float],
@@ -73,11 +74,15 @@ class StackingEnsemble(AbstractEnsemble):
         Returns:
             A copy of self
         """
-        predictions_ensemble[self.ensemble_slot_j] = best_model_predictions
+        predictions_ensemble[self.ensemble_slot_j] = best_model_predictions_ensemble
         ensemble_identifiers[self.ensemble_slot_j] = best_model_identifier
         self._fit(predictions_ensemble, labels)
         self.identifiers_ = ensemble_identifiers
         self.stacked_ensemble_identifiers[self.cur_stacking_layer] = ensemble_identifiers
+        self.predictions_stacking_ensemble[self.cur_stacking_layer][self.ensemble_slot_j] =  {
+            'ensemble': best_model_predictions_ensemble,
+            'test': best_model_predictions_test
+        }
         self._calculate_weights()
         return self
 

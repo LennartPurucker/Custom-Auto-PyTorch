@@ -505,7 +505,6 @@ class AbstractEvaluator(object):
                                      exclude=self.exclude,
                                      search_space_updates=self.search_space_updates
                                      ))
-
         self.additional_metrics: Optional[List[autoPyTorchMetric]] = None
         metrics_dict: Optional[Dict[str, List[str]]] = None
         if all_supported_metrics:
@@ -535,6 +534,7 @@ class AbstractEvaluator(object):
             name=logger_name,
             port=logger_port,
         )
+        self.logger.debug(f"dataset properties here are {self.dataset_properties}")
 
         self._init_fit_dictionary(logger_port=logger_port, pipeline_config=pipeline_config, metrics_dict=metrics_dict)
         self.Y_optimization: Optional[np.ndarray] = None

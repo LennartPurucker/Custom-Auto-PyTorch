@@ -160,7 +160,7 @@ class StackingEvaluator(AbstractEvaluator):
             self.old_ensemble = self.backend.load_ensemble(self.seed)
             assert isinstance(self.old_ensemble, StackingEnsemble)
 
-        self.logger.debug("Search space updates :{}".format(self.search_space_updates))
+        self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],

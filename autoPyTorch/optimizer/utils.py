@@ -151,7 +151,7 @@ class autoPyTorchSMBO(SMBO):
         # self.logger.debug(f"\nafter ensemble and before runhistory updater, \nresult: {result}, \nrunhistory: {dict_repr(self.runhistory.data)}")
         for callback in self._callbacks['_adjust_run_history']:
             response = callback()
-            # self.logger.debug(f"response from runhistory callback :{response}")
+            self.logger.debug(f"response from runhistory callback :{response}")
             if response is not None:
                 for run_key, cost in response:
                     run_value = self.runhistory.data.get(run_key, None)

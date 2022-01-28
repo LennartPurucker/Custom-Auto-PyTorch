@@ -281,6 +281,8 @@ class StackingEnsemble(AbstractEnsemble):
                 performance. Notice that ensemble selection solves a minimization
                 problem.
         """
+        weights = [[np.nan] * self.ensemble_size] * self.cur_stacking_layer
+        
         output = []
         for i, weight in enumerate(self.weights_):
             if weight > 0.0:

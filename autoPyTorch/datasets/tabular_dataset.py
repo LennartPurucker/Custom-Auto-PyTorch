@@ -104,7 +104,7 @@ class TabularDataset(BaseDataset):
         self.num_features = validator.feature_validator.num_features
         self.categories = validator.feature_validator.categories
         train_tensors=(X, Y)
-        test_tensors=(X, Y)
+        test_tensors=(X_test, Y_test)
         super().infer_dataset_attributes(train_tensors=train_tensors)
         self.train_tensors, self.test_tensors = train_tensors, test_tensors
         return train_tensors, test_tensors

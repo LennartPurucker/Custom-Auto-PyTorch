@@ -623,11 +623,14 @@ class BaseTask(ABC):
             self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
             if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
                 models = []
+                cv_models = []
                 for identifier in identifiers:
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
+                    cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
                 self._logger.debug(f"stacked ensemble models are :{models}")
-                self.cv_models_ = models
+                self.models_ = models
+                self.cv_models_ = cv_models
             else:
                 self.models_ = self._backend.load_models_by_identifiers(identifiers)
                 if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
@@ -2013,6 +2016,8 @@ class BaseTask(ABC):
             ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
             self._logger.debug(f"ensemble identifiers: {ensemble_identifiers}")
             for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
+                if all([identifier is None for identifier in layer_identifiers]):
+                    break
                 self._logger.debug(f"layer : {i} of stacking ensemble,\n layer identifiers: {layer_identifiers},\n model: {model}")
                 all_predictions = joblib.Parallel(n_jobs=n_jobs)(
                     joblib.delayed(_pipeline_predict)(

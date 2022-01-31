@@ -46,6 +46,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     CrossValTypes,
     HoldoutValTypes,
     NoResamplingStrategyTypes,
+    RepeatedCrossValTypes,
     ResamplingStrategies,
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
@@ -614,28 +615,18 @@ class BaseTask(ABC):
 
         if self.ensemble_:
             identifiers = self.ensemble_.get_selected_model_identifiers()
-<<<<<<< HEAD
-            nonnull_identifiers = [i for i in identifiers if i is not None]
-            self.models_ = self._backend.load_models_by_identifiers(nonnull_identifiers)
-            if isinstance(self.resampling_strategy, CrossValTypes):
-                self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
-=======
             self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
             if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
                 models = []
-                cv_models = []
                 for identifier in identifiers:
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
-                    cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
                 self._logger.debug(f"stacked ensemble models are :{models}")
-                self.models_ = models
-                self.cv_models_ = cv_models
+                self.cv_models_ = models
             else:
                 self.models_ = self._backend.load_models_by_identifiers(identifiers)
                 if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
                     self.cv_models_ = self._backend.load_cv_models_by_identifiers(identifiers)
->>>>>>> working version of stacking
 
             if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
                 if len(self.cv_models_) == 0:
@@ -2003,14 +1994,6 @@ class BaseTask(ABC):
         elif isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
             models = self.cv_models_
 
-<<<<<<< HEAD
-        all_predictions = joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(_pipeline_predict)(
-                models[identifier], X_test, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
-            )
-            for identifier in self.ensemble_.get_selected_model_identifiers() if identifier is not None
-        )
-=======
         X_test_copy = X_test.copy()
         if isinstance(self.ensemble_, StackingEnsemble):
             ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
@@ -2034,7 +2017,6 @@ class BaseTask(ABC):
                     )
                     for identifier in self.ensemble_.get_selected_model_identifiers()
                 )
->>>>>>> working version of stacking
 
         if len(all_predictions) == 0:
             raise ValueError('Something went wrong generating the predictions. '

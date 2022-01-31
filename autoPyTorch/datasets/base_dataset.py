@@ -388,7 +388,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             self.random_state, val_share, self._get_indices(), **kwargs)
         return train, val
 
-    def get_dataset_for_training(self, split_id: int, train: bool, repeat_id: int = 0) -> Dataset:
+    def get_dataset(self, split_id: int, train: bool, repeat_id: int = 0) -> Dataset:
         """
         The above split methods employ the Subset to internally subsample the whole dataset.
 
@@ -408,8 +408,8 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             raise IndexError("repeat_id out of range, got repeat_id={}"
                              " (>= num_repeats={})".format(split_id, len(self.splits)))
         if split_id >= len(self.splits[repeat_id]):
-            raise IndexError("split_id out of range, got split_id={}"
-                             " (>= num_splits={})".format(split_id, len(self.splits[repeat_id])))
+            raise IndexError(f"self.splits index out of range, got split_id={split_id}"
+                             f" (>= num_splits={len(self.splits[repeat_id])})")
         subset = int(not train)
         indices = self.splits[repeat_id][split_id][subset]
         if indices is None:

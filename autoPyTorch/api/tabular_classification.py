@@ -16,6 +16,7 @@ from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.datasets.resampling_strategy import (
     HoldoutValTypes,
     ResamplingStrategies,
+    RepeatedCrossValTypes
 )
 from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
@@ -84,6 +85,7 @@ class TabularClassificationTask(BaseTask):
         n_threads: int = 1,
         logging_config: Optional[Dict] = None,
         ensemble_size: int = 50,
+        num_stacking_layers: int = 2,
         ensemble_nbest: int = 50,
         ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
         max_models_on_disc: int = 50,
@@ -104,6 +106,7 @@ class TabularClassificationTask(BaseTask):
             n_threads=n_threads,
             logging_config=logging_config,
             ensemble_size=ensemble_size,
+            num_stacking_layers=num_stacking_layers,
             ensemble_nbest=ensemble_nbest,
             ensemble_method=ensemble_method,
             max_models_on_disc=max_models_on_disc,

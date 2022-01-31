@@ -269,9 +269,11 @@ class StackingEnsembleBuilder(EnsembleBuilder):
 
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
-            self.backend.save_ensemble(ensemble, iteration, self.seed)
+            # TODO: fix iteration so it is not based on pow(10, 9)
+            self.backend.save_ensemble(ensemble, iteration + (pow(10, 9))* self.cur_stacking_layer , self.seed)
             ensemble_identifiers=self._get_identifiers_from_num_runs(ensemble.identifiers_)
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
+            self.logger.debug(f"stacked ensemble identifiers being saved with ensemble are: {ensemble.stacked_ensemble_identifiers}")
             self._save_current_ensemble_identifiers(
                 ensemble_identifiers=ensemble_identifiers,
                 cur_stacking_layer=self.cur_stacking_layer

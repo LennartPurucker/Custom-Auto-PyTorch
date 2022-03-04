@@ -14,6 +14,7 @@ from autoPyTorch.constants import (
 from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.datasets.resampling_strategy import (
+    CrossValTypes,
     HoldoutValTypes,
     ResamplingStrategies,
     RepeatedCrossValTypes
@@ -392,7 +393,7 @@ class TabularClassificationTask(BaseTask):
             dataset_name=dataset_name
         )
 
-        if not isinstance(self.resampling_strategy, (CrossValTypes, HoldoutValTypes, RepeatedCrossValTypes)):
+        if not isinstance(self.resampling_strategy, (RepeatedCrossValTypes, CrossValTypes, HoldoutValTypes)):
             raise ValueError(
                 'Hyperparameter optimization requires a validation split. '
                 'Expected `self.resampling_strategy` to be either '

@@ -1892,11 +1892,8 @@ class BaseTask(ABC):
             random_state=self.seed,
             precision=precision,
             logger_port=self._logger_port,
-<<<<<<< HEAD
-            use_ensemble_loss=self.use_ensemble_opt_loss
-=======
+            use_ensemble_loss=self.use_ensemble_opt_loss,
             num_stacking_layers=num_stacking_layer
->>>>>>> stacking works without changing dataset
         )
         self._stopwatch.stop_task(ensemble_task_name)
 

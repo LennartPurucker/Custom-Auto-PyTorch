@@ -11,7 +11,6 @@ from autoPyTorch.pipeline.nodes.create_dataset_info import CreateDatasetInfo
 from autoPyTorch.pipeline.nodes.network_selector import NetworkSelector
 from autoPyTorch.pipeline.nodes import BaselineTrainer
 
-from IPython import embed
 
 class AutoNetEnsemble(AutoNet):
     """Build an ensemble of several neural networks that were evaluated during the architecure search"""

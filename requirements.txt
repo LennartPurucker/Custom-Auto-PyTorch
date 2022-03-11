@@ -3,6 +3,7 @@ torch
 torchvision
 tensorboard
 scikit-learn>=0.24.0,<0.25.0
+scikit-learn-intelex
 numpy
 scipy>=1.7
 lockfile

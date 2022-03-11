@@ -33,7 +33,7 @@ from autoPyTorch.datasets.resampling_strategy import (
 )
 from autoPyTorch.optimizer.smbo import AutoMLSMBO
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import _traditional_learners
+from autoPyTorch.pipeline.components.setup.predefined_models.custom_learners import _traditional_learners
 from autoPyTorch.pipeline.components.training.metrics.metrics import accuracy
 
 from test.test_api.api_utils import print_debug_information  # noqa E402

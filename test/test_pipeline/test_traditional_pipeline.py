@@ -4,7 +4,7 @@ import numpy as np
 
 import pytest
 
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import _traditional_learners
+from autoPyTorch.pipeline.components.setup.predefined_models.custom_learners import _traditional_learners
 from autoPyTorch.pipeline.traditional_tabular_classification import (
     TraditionalTabularClassificationPipeline,
 )

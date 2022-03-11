@@ -7,8 +7,8 @@ import numpy as np
 
 import pytest
 
-from autoPyTorch.pipeline.components.setup.traditional_ml import ModelChoice
-from autoPyTorch.pipeline.components.setup.traditional_ml.tabular_traditional_model import TabularTraditionalModel
+from autoPyTorch.pipeline.components.setup.predefined_models import ModelChoice
+from autoPyTorch.pipeline.components.setup.predefined_models.tabular_traditional_model import TabularCustomModel
 
 
 # Disable
@@ -88,7 +88,7 @@ def test_model_fit_predict_score(traditional_learner, fit_dictionary_tabular):
     if len(fit_dictionary_tabular['dataset_properties']['numerical_columns']) == 0 and traditional_learner == 'knn':
         pytest.skip("knn can not work with categorical only data")
 
-    model = TabularTraditionalModel(traditional_learner=traditional_learner)
+    model = TabularCustomModel(traditional_learner=traditional_learner)
 
     assert isinstance(model.get_properties(), dict)
 

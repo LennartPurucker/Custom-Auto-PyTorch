@@ -64,7 +64,7 @@ class KernelPCA(autoPyTorchFeaturePreprocessingComponent):
 
         self.check_requirements(X, y)
 
-        self.preprocessor['numerical'] = sklearn.decomposition.KernelPCA(
+        self.preprocessor['skew_columns'] = sklearn.decomposition.KernelPCA(
             n_components=self.n_components, kernel=self.kernel,
             degree=self.degree, gamma=self.gamma, coef0=self.coef0,
             remove_zero_eig=True, random_state=self.random_state)

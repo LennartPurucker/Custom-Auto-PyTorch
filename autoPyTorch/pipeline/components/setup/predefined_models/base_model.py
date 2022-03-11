@@ -13,9 +13,10 @@ from sklearn.utils import check_random_state
 import torch
 
 from autoPyTorch.pipeline.components.setup.base_setup import autoPyTorchSetupComponent
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
-    BaseTraditionalLearner
+from autoPyTorch.pipeline.components.setup.predefined_models.custom_learners.base_traditional_learner import \
+    BaseCustomLearner
 from autoPyTorch.utils.common import FitRequirement
+from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 
 
 # Disable
@@ -37,7 +38,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
     def __init__(
             self,
             random_state: Optional[np.random.RandomState] = None,
-            model: Optional[BaseTraditionalLearner] = None,
+            model: Optional[BaseCustomLearner] = None,
             device: Optional[torch.device] = None
     ) -> None:
         super(BaseModelComponent, self).__init__()
@@ -47,7 +48,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
             self.random_state = check_random_state(random_state)
         self.fit_output: Dict[str, Any] = dict()
 
-        self.model: Optional[BaseTraditionalLearner] = model
+        self.model: Optional[BaseCustomLearner] = model
 
         self.add_fit_requirements([
             FitRequirement('X_train', (np.ndarray, list, pd.DataFrame), user_defined=False, dataset_property=False),
@@ -84,6 +85,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
                                       logger_port=X['logger_port'] if 'logger_port' in X else
                                       logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                                       output_shape=output_shape,
+                                      dataset_properties=X['dataset_properties'],
                                       task_type=X['dataset_properties']['task_type'],
                                       output_type=X['dataset_properties']['output_type'],
                                       optimize_metric=X['optimize_metric'] if 'optimize_metric' in X else None)
@@ -110,8 +112,9 @@ class BaseModelComponent(autoPyTorchSetupComponent):
         logger_port: int,
         task_type: str,
         output_type: str,
+        dataset_properties: Dict[str, BaseDatasetPropertiesType],
         optimize_metric: Optional[str] = None
-    ) -> BaseTraditionalLearner:
+    ) -> BaseCustomLearner:
         """
         This method returns a traditional learner, that is dynamically
         built based on the provided configuration.
@@ -144,7 +147,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
         X.update({'results': self.fit_output})
         return X
 
-    def get_model(self) -> BaseTraditionalLearner:
+    def get_model(self) -> BaseCustomLearner:
         """
         Return the underlying model object.
         Returns:

@@ -73,8 +73,8 @@ def percentage_value_range_to_integer_range(
     """
     hyperparameter_name = hyperparameter_search_space.hyperparameter
     if dataset_properties is not None:
-        n_features = len(dataset_properties['numerical_columns']) if isinstance(
-            dataset_properties['numerical_columns'], List) else 0
+        n_features = len(dataset_properties['skew_columns']) if isinstance(
+            dataset_properties['skew_columns'], List) else 0
         if n_features == 1:
             # log=True is not supported in ConfigSpace when the value range consists of 0
             # raising ValueError: Negative lower bound (0) for log-scale hyperparameter is forbidden.

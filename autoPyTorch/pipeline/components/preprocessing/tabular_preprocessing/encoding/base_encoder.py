@@ -25,7 +25,7 @@ class BaseEncoder(autoPyTorchTabularPreprocessingComponent):
         Returns:
             (Dict[str, Any]): the updated 'X' dictionary
         """
-        if self.preprocessor['numerical'] is None and self.preprocessor['categorical'] is None:
+        if self.preprocessor['encode_columns'] is None:
             raise ValueError("cant call transform on {} without fitting first."
                              .format(self.__class__.__name__))
         X.update({'encoder': self.preprocessor})

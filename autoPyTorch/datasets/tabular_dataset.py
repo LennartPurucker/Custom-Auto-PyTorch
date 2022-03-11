@@ -82,6 +82,8 @@ class TabularDataset(BaseDataset):
         self.numerical_columns = validator.feature_validator.numerical_columns
         self.num_features = validator.feature_validator.num_features
         self.categories = validator.feature_validator.categories
+        for key, item in validator.feature_validator.special_feature_types:
+            setattr(self, key, item)
 
         super().__init__(train_tensors=(X, Y), test_tensors=(X_test, Y_test), shuffle=shuffle,
                          resampling_strategy=resampling_strategy,

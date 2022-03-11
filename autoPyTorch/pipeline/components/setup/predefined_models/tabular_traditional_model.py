@@ -8,12 +8,12 @@ from ConfigSpace.hyperparameters import (
 import numpy as np
 
 from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
-from autoPyTorch.pipeline.components.setup.traditional_ml.base_model import BaseModelComponent
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import (
-    BaseTraditionalLearner, get_available_traditional_learners)
+from autoPyTorch.pipeline.components.setup.predefined_models.base_model import BaseModelComponent
+from autoPyTorch.pipeline.components.setup.predefined_models.custom_learners import (
+    BaseCustomLearner, get_available_traditional_learners)
 
 
-class TabularTraditionalModel(BaseModelComponent):
+class TabularCustomModel(BaseModelComponent):
     """
     Implementation of a dynamic model, that consists of a learner and a head
     """
@@ -34,15 +34,15 @@ class TabularTraditionalModel(BaseModelComponent):
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None
     ) -> Dict[str, Union[str, bool]]:
         return {
-            "shortname": "TabularTraditionalModel",
-            "name": "Tabular Traditional Model",
+            "shortname": "TabularCustomModel",
+            "name": "Tabular Custom Model",
         }
 
     @staticmethod
     def get_hyperparameter_search_space(dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
                                         **kwargs: Any) -> ConfigurationSpace:
         cs = ConfigurationSpace()
-        traditional_learners: Dict[str, Type[BaseTraditionalLearner]] = get_available_traditional_learners()
+        traditional_learners: Dict[str, Type[BaseCustomLearner]] = get_available_traditional_learners()
         # Remove knn if data is all categorical
 
         if dataset_properties is not None:
@@ -56,8 +56,9 @@ class TabularTraditionalModel(BaseModelComponent):
         return cs
 
     def build_model(self, input_shape: Tuple[int, ...], output_shape: Tuple[int, ...],
+                    dataset_properties: Dict[str, BaseDatasetPropertiesType],
                     logger_port: int, task_type: str, output_type: str, optimize_metric: Optional[str] = None
-                    ) -> BaseTraditionalLearner:
+                    ) -> BaseCustomLearner:
         """
         This method returns a traditional learner, that is dynamically
         built using a self.config that is model specific, and contains
@@ -68,7 +69,8 @@ class TabularTraditionalModel(BaseModelComponent):
         Learner = self._traditional_learners[learner_name]
 
         learner = Learner(random_state=self.random_state, logger_port=logger_port,
-                          task_type=task_type, output_type=output_type, optimize_metric=optimize_metric)
+                          task_type=task_type, output_type=output_type, optimize_metric=optimize_metric,
+                          dataset_properties=dataset_properties)
 
         return learner
 

@@ -11,7 +11,7 @@ from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.base_pipeline import BasePipeline, PipelineStepType
 from autoPyTorch.pipeline.components.base_choice import autoPyTorchChoice
 from autoPyTorch.pipeline.components.base_component import autoPyTorchComponent
-from autoPyTorch.pipeline.components.setup.traditional_ml import ModelChoice
+from autoPyTorch.pipeline.components.setup.predefined_models import ModelChoice
 
 
 class TraditionalTabularRegressionPipeline(RegressorMixin, BasePipeline):

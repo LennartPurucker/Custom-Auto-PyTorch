@@ -35,6 +35,7 @@ from autoPyTorch.pipeline.components.training.trainer.base_trainer import (
 )
 from autoPyTorch.pipeline.components.training.trainer.utils import Lookahead, update_model_state_dict_from_swa
 from autoPyTorch.utils.common import FitRequirement, HyperparameterSearchSpace, get_device_from_fit_dictionary
+from autoPyTorch.utils.early_stopping import AbstractEarlyStopper, SimpleEarlyStopper
 from autoPyTorch.utils.logging_ import get_named_client_logger
 
 trainer_directory = os.path.split(__file__)[0]
@@ -68,6 +69,7 @@ class TrainerChoice(autoPyTorchChoice):
         self.run_summary: Optional[RunSummary] = None
         self.writer: Optional[SummaryWriter] = None
         self.early_stopping_split_type: Optional[str] = None
+        self.early_stopper: Optional[AbstractEarlyStopper] = None
         self._fit_requirements: Optional[List[FitRequirement]] = [
             FitRequirement("lr_scheduler", (_LRScheduler,), user_defined=False, dataset_property=False),
             FitRequirement("num_run", (int,), user_defined=False, dataset_property=False),
@@ -338,6 +340,9 @@ class TrainerChoice(autoPyTorchChoice):
         additional_losses = X['additional_losses'] if 'additional_losses' in X else None
 
         labels = self._get_train_label(X)
+        # Allow to disable early stopping
+        if X['early_stopping'] is not None or X['early_stopping'] >= 0:
+            self.early_stopper = SimpleEarlyStopper(patience=X['early_stopping'])
 
         self.choice.prepare(
             model=X['network'],
@@ -526,8 +531,7 @@ class TrainerChoice(autoPyTorchChoice):
         assert self.run_summary is not None
         assert self.early_stopping_split_type is not None  # mypy
 
-        # Allow to disable early stopping
-        if X['early_stopping'] is None or X['early_stopping'] < 0:
+        if self.early_stopper is None:
             return False
 
         # Store the best weights seen so far:
@@ -536,14 +540,13 @@ class TrainerChoice(autoPyTorchChoice):
 
         last_epoch = self.run_summary.get_last_epoch()
         best_epoch = self.run_summary.get_best_epoch(split_type=self.early_stopping_split_type)
-        epochs_since_best = last_epoch - best_epoch
-
+        is_best = last_epoch == best_epoch
         # Save the checkpoint if there is a new best epoch
         best_path = os.path.join(self.checkpoint_dir, 'best.pth')
-        if epochs_since_best == 0:
+        if is_best:
             torch.save(X['network'].state_dict(), best_path)
 
-        return epochs_since_best > cast(int, X['early_stopping'])
+        return self.early_stopper.update(last_epoch, is_best)
 
     def eval_valid_each_epoch(self, X: Dict[str, Any]) -> bool:
         """

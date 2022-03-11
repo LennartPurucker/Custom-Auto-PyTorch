@@ -1,8 +1,9 @@
 import json
 import logging.handlers
+from optparse import Option
 import os as os
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from catboost import CatBoost
 
@@ -13,14 +14,15 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
-from autoPyTorch.constants import REGRESSION_TASKS, STRING_TO_TASK_TYPES
+from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
+from autoPyTorch.constants import REGRESSION_TASKS, STRING_TO_OUTPUT_TYPES, STRING_TO_TASK_TYPES
 from autoPyTorch.pipeline.components.training.metrics.utils import get_metrics
 from autoPyTorch.utils.logging_ import get_named_client_logger
 
 
-class BaseTraditionalLearner:
+class BaseCustomLearner:
     """
-    Base wrapper class for Traditional Learners.
+    Base wrapper class for custom Learners.
 
     Args:
         task_type (str):
@@ -42,6 +44,8 @@ class BaseTraditionalLearner:
     def __init__(self,
                  task_type: str,
                  output_type: str,
+                 params_func: Optional[Callable],
+                 dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
                  optimize_metric: Optional[str] = None,
                  logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                  random_state: Optional[np.random.RandomState] = None,
@@ -61,11 +65,13 @@ class BaseTraditionalLearner:
             self.random_state = check_random_state(1)
         else:
             self.random_state = check_random_state(random_state)
-        self.config = self.get_config()
+        self.output_type = STRING_TO_OUTPUT_TYPES[output_type]
+        self.config = params_func(self.output_type)
 
         self.all_nan: Optional[np.ndarray] = None
         self.num_classes: Optional[int] = None
 
+        self.dataset_properties = dataset_properties
         self.is_classification = STRING_TO_TASK_TYPES[task_type] not in REGRESSION_TASKS
 
         self.metric = get_metrics(dataset_properties={'task_type': task_type,

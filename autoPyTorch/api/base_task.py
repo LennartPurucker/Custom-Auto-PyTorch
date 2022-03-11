@@ -54,7 +54,7 @@ from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
 from autoPyTorch.optimizer.smbo import AutoMLSMBO
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import get_available_traditional_learners
+from autoPyTorch.pipeline.components.setup.predefined_models.custom_learners import get_available_traditional_learners
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
 from autoPyTorch.utils.common import FitRequirement, dict_repr, replace_string_bool_to_bool
@@ -1329,6 +1329,161 @@ class BaseTask(ABC):
         self._cleanup()
 
         return self
+
+    def _run_automl_stacking(
+        self,
+        optimize_metric: str,
+        dataset: BaseDataset,
+        budget_type: str = 'epochs',
+        total_walltime_limit: int = 100,
+        func_eval_time_limit_secs: Optional[int] = None,
+        memory_limit: Optional[int] = 4096,
+        smac_scenario_args: Optional[Dict[str, Any]] = None,
+        get_smac_object_callback: Optional[Callable] = None,
+        dask_client: Optional[dask.distributed.Client] = None):
+        """
+        This function can be used to create a stacking ensemble
+
+        Args:
+            current_task_name (str): name of the current task,
+            runtime_limit (int): time limit for fitting traditional models,
+            func_eval_time_limit_secs (int): Time limit
+                for a single call to the machine learning model.
+                Model fitting will be terminated if the machine
+                learning algorithm runs over the time limit.
+        """
+        experiment_task_name: str = 'runStacking'
+        dataset_requirements = get_dataset_requirements(
+            info=dataset.get_required_dataset_info(),
+            include=self.include_components,
+            exclude=self.exclude_components,
+            search_space_updates=self.search_space_updates)
+        self._dataset_requirements = dataset_requirements
+        dataset_properties = dataset.get_dataset_properties(dataset_requirements)
+        starttime = time.time()
+        time_left = total_walltime_limit
+
+        if self._logger is None:
+            self._logger = self._get_logger(dataset.dataset_name)
+        self._stopwatch.start_task(experiment_task_name)
+
+        metric = get_metrics(
+            names=[optimize_metric], dataset_properties=dataset_properties)[0]
+        custom_learners = get_available_traditional_learners()
+
+        self._logger.info("Starting to create traditional classifier predictions.")
+
+        # Initialise run history for the traditional classifiers
+        run_history = RunHistory()
+        memory_limit = self._memory_limit
+        if memory_limit is not None:
+            memory_limit = int(math.ceil(memory_limit))
+        dask_futures = []
+
+        total_number_classifiers = len(custom_learners)
+        for n_r, classifier in enumerate(custom_learners):
+
+            # Only launch a task if there is time
+            start_time = time.time()
+            if func_eval_time_limit_secs is not None and time_left >= func_eval_time_limit_secs:
+                self._logger.info(f"{n_r}: Started fitting {classifier} with cutoff={func_eval_time_limit_secs}")
+                scenario_mock = unittest.mock.Mock()
+                scenario_mock.wallclock_limit = time_left
+                # This stats object is a hack - maybe the SMAC stats object should
+                # already be generated here!
+                stats = Stats(scenario_mock)
+                stats.start_timing()
+                ta = ExecuteTaFuncWithQueue(
+                    pynisher_context=self._multiprocessing_context,
+                    backend=self._backend,
+                    seed=self.seed,
+                    multi_objectives=["cost"],
+                    metric=metric,
+                    logger_port=self._logger_port,
+                    cost_for_crash=get_cost_of_crash(metric),
+                    abort_on_first_run_crash=False,
+                    initial_num_run=self._backend.get_next_num_run(),
+                    stats=stats,
+                    memory_limit=memory_limit,
+                    disable_file_output=self._disable_file_output,
+                    all_supported_metrics=self._all_supported_metrics
+                )
+                dask_futures.append([
+                    classifier,
+                    self._dask_client.submit(
+                        ta.run, config=classifier,
+                        cutoff=func_eval_time_limit_secs,
+                    )
+                ])
+
+            # When managing time, we need to take into account the allocated time resources,
+            # which are dependent on the number of cores. 'dask_futures' is a proxy to the number
+            # of workers /n_jobs that we have, in that if there are 4 cores allocated, we can run at most
+            # 4 task in parallel. Every 'cutoff' seconds, we generate up to 4 tasks.
+            # If we only have 4 workers and there are 4 futures in dask_futures, it means that every
+            # worker has a task. We would not like to launch another job until a worker is available. To this
+            # end, the following if-statement queries the number of active jobs, and forces to wait for a job
+            # completion via future.result(), so that a new worker is available for the next iteration.
+            if len(dask_futures) >= self.n_jobs:
+
+                # How many workers to wait before starting fitting the next iteration
+                workers_to_wait = 1
+                if n_r >= total_number_classifiers - 1 or time_left <= func_eval_time_limit_secs:
+                    # If on the last iteration, flush out all tasks
+                    workers_to_wait = len(dask_futures)
+
+                while workers_to_wait >= 1:
+                    workers_to_wait -= 1
+                    # We launch dask jobs only when there are resources available.
+                    # This allow us to control time allocation properly, and early terminate
+                    # the traditional machine learning pipeline
+                    cls, future = dask_futures.pop(0)
+                    status, cost, runtime, additional_info = future.result()
+                    if status == StatusType.SUCCESS:
+                        self._logger.info(
+                            "Fitting {} took {} [sec] and got performance: {}.\n"
+                            "additional info:\n{}".format(cls, runtime, cost, dict_repr(additional_info))
+                        )
+                        configuration = additional_info['pipeline_configuration']
+                        origin = additional_info['configuration_origin']
+                        additional_info.pop('pipeline_configuration')
+                        run_history.add(config=configuration, cost=cost,
+                                        time=runtime, status=status, seed=self.seed,
+                                        starttime=starttime, endtime=starttime + runtime,
+                                        origin=origin, additional_info=additional_info)
+                    else:
+                        if additional_info.get('exitcode') == -6:
+                            self._logger.error(
+                                "Traditional prediction for {} failed with run state {},\n"
+                                "because the provided memory limits were too tight.\n"
+                                "Please increase the 'ml_memory_limit' and try again.\n"
+                                "If you still get the problem, please open an issue\n"
+                                "and paste the additional info.\n"
+                                "Additional info:\n{}".format(cls, str(status), dict_repr(additional_info))
+                            )
+                        else:
+                            self._logger.error(
+                                "Traditional prediction for {} failed with run state {}.\nAdditional info:\n{}".format(
+                                    cls, str(status), dict_repr(additional_info)
+                                )
+                            )
+
+            # In the case of a serial execution, calling submit halts the run for a resource
+            # dynamically adjust time in this case
+            time_left -= int(time.time() - start_time)
+
+            # Exit if no more time is available for a new classifier
+            if time_left < func_eval_time_limit_secs:
+                self._logger.warning("Not enough time to fit all traditional machine learning models."
+                                     "Please consider increasing the run time to further improve performance.")
+                break
+
+        self._logger.debug("Run history traditional: {}".format(run_history))
+        # add run history of traditional to api run history
+        self.run_history.update(run_history, DataOrigin.EXTERNAL_SAME_INSTANCES)
+        run_history.save_json(os.path.join(self._backend.internals_directory, 'traditional_run_history.json'),
+                              save_external=True)
+
 
     def _get_fit_dictionary(
         self,

@@ -28,7 +28,7 @@ class PolynomialFeatures(autoPyTorchFeaturePreprocessingComponent):
         super().__init__(random_state=random_state)
 
     def fit(self, X: Dict[str, Any], y: Any = None) -> BaseEstimator:
-        self.preprocessor['skew_columns'] = sklearn.preprocessing.PolynomialFeatures(
+        self.preprocessor['numerical'] = sklearn.preprocessing.PolynomialFeatures(
             degree=self.degree, interaction_only=self.interaction_only,
             include_bias=self.include_bias)
         return self

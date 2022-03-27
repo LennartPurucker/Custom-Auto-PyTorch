@@ -5,10 +5,10 @@ import numpy as np
 from sklearn.preprocessing import PowerTransformer as SklearnPowerTransformer
 
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
-from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.scaling.base_scaler import BaseScaler
+from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.skew_transformer.base_skew_transformer import BaseSkewTransformer
 
 
-class PowerTransformer(BaseScaler):
+class PowerTransformer(BaseSkewTransformer):
     """
     Map data to as close to a Gaussian distribution as possible
     in order to reduce variance and minimize skewness.
@@ -21,11 +21,11 @@ class PowerTransformer(BaseScaler):
         super().__init__()
         self.random_state = random_state
 
-    def fit(self, X: Dict[str, Any], y: Any = None) -> BaseScaler:
+    def fit(self, X: Dict[str, Any], y: Any = None) -> BaseSkewTransformer:
 
         self.check_requirements(X, y)
 
-        self.preprocessor['numerical'] = SklearnPowerTransformer(method='yeo-johnson', copy=False)
+        self.preprocessor['skew'] = SklearnPowerTransformer(method='yeo-johnson', copy=False)
         return self
 
     @staticmethod

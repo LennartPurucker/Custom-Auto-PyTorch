@@ -31,7 +31,7 @@ class autoPyTorchFeaturePreprocessingComponent(autoPyTorchTabularPreprocessingCo
         Returns:
             (Dict[str, Any]): the updated 'X' dictionary
         """
-        if self.preprocessor['skew_columns'] is None:
+        if self.preprocessor['numerical_columns'] is None:
             raise AttributeError("{} can't tranform without fitting first"
                                  .format(self.__class__.__name__))
         X.update({'feature_preprocessor': self.preprocessor})

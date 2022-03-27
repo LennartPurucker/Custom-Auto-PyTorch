@@ -14,7 +14,7 @@ class BaseScaler(autoPyTorchTabularPreprocessingComponent):
     def __init__(self) -> None:
         super().__init__()
         self.add_fit_requirements([
-            FitRequirement('numerical_columns', (List,), user_defined=True, dataset_property=True)])
+            FitRequirement('scale_columns', (List,), user_defined=True, dataset_property=True)])
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -25,7 +25,7 @@ class BaseScaler(autoPyTorchTabularPreprocessingComponent):
         Returns:
             (Dict[str, Any]): the updated 'X' dictionary
         """
-        if self.preprocessor['numerical'] is None:
+        if self.preprocessor['scale'] is None:
             raise ValueError("cant call transform on {} without fitting first."
                              .format(self.__class__.__name__))
         X.update({'scaler': self.preprocessor})

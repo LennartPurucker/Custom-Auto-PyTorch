@@ -11,7 +11,7 @@ from autoPyTorch.utils.common import FitRequirement
 
 class StandardScaler(BaseScaler):
     """
-    Standardise numerical columns/features by removing mean and scaling to unit/variance
+    Standardise columns/features by removing mean and scaling to unit/variance
     """
     def __init__(self,
                  random_state: Optional[Union[np.random.RandomState, int]] = None
@@ -27,7 +27,7 @@ class StandardScaler(BaseScaler):
         self.check_requirements(X, y)
 
         with_mean, with_std = (False, False) if X['dataset_properties']['issparse'] else (True, True)
-        self.preprocessor['numerical'] = SklearnStandardScaler(with_mean=with_mean, with_std=with_std, copy=False)
+        self.preprocessor['scale'] = SklearnStandardScaler(with_mean=with_mean, with_std=with_std, copy=False)
         return self
 
     @staticmethod

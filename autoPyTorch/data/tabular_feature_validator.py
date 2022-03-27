@@ -172,9 +172,8 @@ class TabularFeatureValidator(BaseFeatureValidator):
             self.dtypes = [dt.name for dt in X.dtypes]  # Also note this change in self.dtypes
             self.all_nan_columns = set(all_nan_columns)
 
-            self.enc_columns, self.feat_type, skew_columns = self._get_columns_info(X)
+            self.enc_columns, self.feat_type = self._get_columns_info(X)
 
-            self.special_feature_types = dict(skew_columns=skew_columns, encode_columns=[], embed_columns=[])
             if len(self.enc_columns) > 0:
 
                 preprocessors = get_tabular_preprocessors()
@@ -430,8 +429,10 @@ class TabularFeatureValidator(BaseFeatureValidator):
         # Register if a column needs encoding
         categorical_columns = []
         # Also, register the feature types for the estimator
+        self.special_feature_types = dict(skew_columns=[], encode_columns=[], embed_columns=[], scale_columns=[])
+
         feat_type = []
-        skew_columns=[]
+
 
         # Make sure each column is a valid type
         for i, column in enumerate(X.columns):
@@ -446,7 +447,9 @@ class TabularFeatureValidator(BaseFeatureValidator):
             # TypeError: data type not understood in certain pandas types
             elif is_numeric_dtype(column_dtype):
                 if self.skew_threshold is not None and np.abs(X[column].skew()) > self.skew_threshold:
-                    skew_columns.append(column)
+                    self.special_feature_types['skew_columns'].append(column)
+                else:
+                    self.special_feature_types['scale_columns'].append(column)
                 feat_type.append('numerical')
             elif column_dtype == 'object':
                 # TODO verify how would this happen when we always convert the object dtypes to category
@@ -473,7 +476,7 @@ class TabularFeatureValidator(BaseFeatureValidator):
                     "before feeding it to AutoPyTorch.".format(err_msg)
                 )
 
-        return categorical_columns, feat_type, skew_columns
+        return categorical_columns, feat_type
 
     def list_to_pandas(
         self,

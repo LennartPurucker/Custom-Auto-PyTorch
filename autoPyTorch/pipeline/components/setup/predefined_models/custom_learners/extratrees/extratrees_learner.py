@@ -17,7 +17,7 @@ from autoPyTorch.pipeline.components.setup.predefined_models.custom_learners.ext
 
 class ExtraTreesModel(BaseCustomLearner):
 
-   def __init__(self,
+    def __init__(self,
                  task_type: str,
                  output_type: str,
                  dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
@@ -28,17 +28,19 @@ class ExtraTreesModel(BaseCustomLearner):
                  ):
         super(ExtraTreesModel, self).__init__(name="extra_trees",
                                               logger_port=logger_port,
-                                            random_state=random_state,
-                                            task_type=task_type,
-                                            output_type=output_type,
-                                            optimize_metric=optimize_metric,
-                                            dataset_properties=dataset_properties,
+                                              random_state=random_state,
+                                              task_type=task_type,
+                                              output_type=output_type,
+                                              optimize_metric=optimize_metric,
+                                              dataset_properties=dataset_properties,
                                               params_func=get_params)
 
-    def _prepare_model(self,
-                       X_train: np.ndarray,
-                       y_train: np.ndarray
-                       ) -> None:
+    def _prepare_model(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray
+        ) -> None:
+
         self.config["warm_start"] = False
 
         if not self.is_classification:

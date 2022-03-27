@@ -82,7 +82,7 @@ class TabularDataset(BaseDataset):
         self.numerical_columns = validator.feature_validator.numerical_columns
         self.num_features = validator.feature_validator.num_features
         self.categories = validator.feature_validator.categories
-        for key, item in validator.feature_validator.special_feature_types:
+        for key, item in validator.feature_validator.special_feature_types.items():
             setattr(self, key, item)
 
         super().__init__(train_tensors=(X, Y), test_tensors=(X_test, Y_test), shuffle=shuffle,
@@ -131,6 +131,10 @@ class TabularDataset(BaseDataset):
             'numerical_columns': self.numerical_columns,
             'categorical_columns': self.categorical_columns,
             'task_type': self.task_type,
-            'issigned': self.issigned
+            'issigned': self.issigned,
+            'encode_columns': self.encode_columns,
+            'skew_columns': self.skew_columns,
+            'scale_columns': self.scale_columns,
+            'embed_columns': self.embed_columns
         })
         return info

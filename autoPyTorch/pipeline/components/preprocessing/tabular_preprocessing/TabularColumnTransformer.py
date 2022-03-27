@@ -24,7 +24,7 @@ class TabularColumnTransformer(autoPyTorchTabularPreprocessingComponent):
         self.add_fit_requirements([
             FitRequirement('numerical_columns', (List,), user_defined=True, dataset_property=True),
             FitRequirement('categorical_columns', (List,), user_defined=True, dataset_property=True),
-            FitRequirement('skew_colums', (List,), user_defined=True, dataset_property=True),
+            FitRequirement('skew_columns', (List,), user_defined=True, dataset_property=True),
             FitRequirement('encode_columns', (List,), user_defined=True, dataset_property=True),
             FitRequirement('embed_columns', (List,), user_defined=True, dataset_property=True)])
 

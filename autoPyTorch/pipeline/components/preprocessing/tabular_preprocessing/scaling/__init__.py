@@ -84,8 +84,8 @@ class ScalerChoice(autoPyTorchChoice):
                     default = default_
                     break
 
-        numerical_columns = dataset_properties['numerical_columns']\
-            if isinstance(dataset_properties['numerical_columns'], List) else []
+        scale_columns = dataset_properties['scale_columns']\
+            if isinstance(dataset_properties['scale_columns'], List) else []
         updates = self._get_search_space_updates()
         if '__choice__' in updates.keys():
             choice_hyperparameter = updates['__choice__']
@@ -94,7 +94,7 @@ class ScalerChoice(autoPyTorchChoice):
                                  "choices in {} got {}".format(self.__class__.__name__,
                                                                available_scalers,
                                                                choice_hyperparameter.value_range))
-            if len(numerical_columns) == 0:
+            if len(scale_columns) == 0:
                 assert len(choice_hyperparameter.value_range) == 1
                 if 'NoScaler' not in choice_hyperparameter.value_range:
                     raise ValueError("Provided {} in choices, however, the dataset "
@@ -105,7 +105,7 @@ class ScalerChoice(autoPyTorchChoice):
                                                          default_value=choice_hyperparameter.default_value)
         else:
             # add only no scaler to choice hyperparameters in case the dataset is only categorical
-            if len(numerical_columns) == 0:
+            if len(scale_columns) == 0:
                 default = 'NoScaler'
                 if include is not None and default not in include:
                     raise ValueError("Provided {} in include, however, "
@@ -142,6 +142,6 @@ class ScalerChoice(autoPyTorchChoice):
 
         """
         super()._check_dataset_properties(dataset_properties)
-        assert 'numerical_columns' in dataset_properties.keys() and \
+        assert 'scale_columns' in dataset_properties.keys() and \
                'categorical_columns' in dataset_properties.keys(), \
             "Dataset properties must contain information about the type of columns"

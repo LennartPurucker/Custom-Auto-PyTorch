@@ -34,7 +34,7 @@ class Normalizer(BaseScaler):
         self.check_requirements(X, y)
 
         map_norm = dict({"mean_abs": "l1", "mean_squared": "l2", "max": "max"})
-        self.preprocessor['numerical'] = SklearnNormalizer(norm=map_norm[self.norm], copy=False)
+        self.preprocessor['scale'] = SklearnNormalizer(norm=map_norm[self.norm], copy=False)
         return self
 
     @staticmethod

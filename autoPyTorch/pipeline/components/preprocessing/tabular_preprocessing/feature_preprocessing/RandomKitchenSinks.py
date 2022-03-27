@@ -48,7 +48,7 @@ class RandomKitchenSinks(autoPyTorchFeaturePreprocessingComponent):
 
     def fit(self, X: Dict[str, Any], y: Any = None) -> BaseEstimator:
 
-        self.preprocessor['skew_columns'] = sklearn.kernel_approximation.RBFSampler(
+        self.preprocessor['numerical'] = sklearn.kernel_approximation.RBFSampler(
             self.gamma, self.n_components, self.random_state)
         return self
 

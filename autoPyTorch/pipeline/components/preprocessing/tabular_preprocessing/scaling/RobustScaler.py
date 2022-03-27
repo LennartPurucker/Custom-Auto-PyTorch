@@ -40,7 +40,7 @@ class RobustScaler(BaseScaler):
         self.check_requirements(X, y)
         with_centering = bool(not X['dataset_properties']['issparse'])
 
-        self.preprocessor['numerical'] = SklearnRobustScaler(quantile_range=(self.q_min, self.q_max),
+        self.preprocessor['scale'] = SklearnRobustScaler(quantile_range=(self.q_min, self.q_max),
                                                              with_centering=with_centering,
                                                              copy=False)
 

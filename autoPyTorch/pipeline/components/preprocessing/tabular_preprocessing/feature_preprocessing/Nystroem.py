@@ -61,7 +61,7 @@ class Nystroem(autoPyTorchFeaturePreprocessingComponent):
 
     def fit(self, X: Dict[str, Any], y: Any = None) -> BaseEstimator:
 
-        self.preprocessor['skew_columns'] = sklearn.kernel_approximation.Nystroem(
+        self.preprocessor['numerical'] = sklearn.kernel_approximation.Nystroem(
             n_components=self.n_components, kernel=self.kernel,
             degree=self.degree, gamma=self.gamma, coef0=self.coef0,
             random_state=self.random_state)

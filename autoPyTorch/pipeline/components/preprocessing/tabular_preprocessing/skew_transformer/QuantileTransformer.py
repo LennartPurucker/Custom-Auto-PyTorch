@@ -11,11 +11,11 @@ import numpy as np
 from sklearn.preprocessing import QuantileTransformer as SklearnQuantileTransformer
 
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
-from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.scaling.base_scaler import BaseScaler
+from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.skew_transformer.base_skew_transformer import BaseSkewTransformer
 from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 
 
-class QuantileTransformer(BaseScaler):
+class QuantileTransformer(BaseSkewTransformer):
     """
     Transform the features to follow a uniform or a normal distribution
     using quantiles information.
@@ -34,11 +34,11 @@ class QuantileTransformer(BaseScaler):
         self.n_quantiles = n_quantiles
         self.output_distribution = output_distribution
 
-    def fit(self, X: Dict[str, Any], y: Any = None) -> BaseScaler:
+    def fit(self, X: Dict[str, Any], y: Any = None) -> BaseSkewTransformer:
 
         self.check_requirements(X, y)
 
-        self.preprocessor['numerical'] = SklearnQuantileTransformer(n_quantiles=self.n_quantiles,
+        self.preprocessor['skew'] = SklearnQuantileTransformer(n_quantiles=self.n_quantiles,
                                                                     output_distribution=self.output_distribution,
                                                                     copy=False)
         return self

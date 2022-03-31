@@ -98,11 +98,7 @@ class TabularFeatureValidator(BaseFeatureValidator):
     def __init__(
         self,
         logger: Optional[Union[PicklableClientLogger, Logger]] = None,
-        min_categories_embedding: Optional[int] = None,
-        skew_threshold: Optional[float] = None
     ) -> None:
-        self.skew_threshold = skew_threshold
-        self.min_categories_embedding = min_categories_embedding
         super().__init__(logger)
 
     @staticmethod
@@ -197,18 +193,8 @@ class TabularFeatureValidator(BaseFeatureValidator):
                 encoded_categories = self.column_transformer.\
                     named_transformers_['categorical_pipeline'].\
                     named_steps['ordinalencoder'].categories_
-                self.categories = [
-                    list(range(len(cat)))
-                    for cat in encoded_categories
-                ]
-                for i, categories_per_column in enumerate(self.categories):
-                    if (
-                        self.min_categories_embedding is not None
-                        and len(categories_per_column) > self.min_categories_embedding
-                    ):
-                        self.special_feature_types['embed_columns'].append(list(X.columns)[i])
-                    else:
-                        self.special_feature_types['encode_columns'].append(list(X.columns)[i])
+
+                self.num_categories_per_col = [len(cat) for cat in encoded_categories]
 
             # differently to categorical_columns and numerical_columns,
             # this saves the index of the column.
@@ -429,10 +415,7 @@ class TabularFeatureValidator(BaseFeatureValidator):
         # Register if a column needs encoding
         categorical_columns = []
         # Also, register the feature types for the estimator
-        self.special_feature_types = dict(skew_columns=[], encode_columns=[], embed_columns=[], scale_columns=[])
-
         feat_type = []
-
 
         # Make sure each column is a valid type
         for i, column in enumerate(X.columns):
@@ -446,10 +429,6 @@ class TabularFeatureValidator(BaseFeatureValidator):
             # Move away from np.issubdtype as it causes
             # TypeError: data type not understood in certain pandas types
             elif is_numeric_dtype(column_dtype):
-                if self.skew_threshold is not None and np.abs(X[column].skew()) > self.skew_threshold:
-                    self.special_feature_types['skew_columns'].append(column)
-                else:
-                    self.special_feature_types['scale_columns'].append(column)
                 feat_type.append('numerical')
             elif column_dtype == 'object':
                 # TODO verify how would this happen when we always convert the object dtypes to category

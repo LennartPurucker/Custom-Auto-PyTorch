@@ -80,8 +80,8 @@ class SkewTransformerChoice(autoPyTorchChoice):
                     default = default_
                     break
 
-        skew_columns = dataset_properties['skew_columns']\
-            if isinstance(dataset_properties['skew_columns'], List) else []
+        numerical_columns = dataset_properties['numerical_columns']\
+            if isinstance(dataset_properties['numerical_columns'], List) else []
         updates = self._get_search_space_updates()
         if '__choice__' in updates.keys():
             choice_hyperparameter = updates['__choice__']
@@ -90,7 +90,7 @@ class SkewTransformerChoice(autoPyTorchChoice):
                                  "choices in {} got {}".format(self.__class__.__name__,
                                                                available_skew_transformers,
                                                                choice_hyperparameter.value_range))
-            if len(skew_columns) == 0:
+            if len(numerical_columns) == 0:
                 assert len(choice_hyperparameter.value_range) == 1
                 if 'NoSkewTransformer' not in choice_hyperparameter.value_range:
                     raise ValueError("Provided {} in choices, however, the dataset "
@@ -101,7 +101,7 @@ class SkewTransformerChoice(autoPyTorchChoice):
                                                          default_value=choice_hyperparameter.default_value)
         else:
             # add only no skew_transformer to choice hyperparameters in case the dataset is only categorical
-            if len(skew_columns) == 0:
+            if len(numerical_columns) == 0:
                 default = 'NoSkewTransformer'
                 if include is not None and default not in include:
                     raise ValueError("Provided {} in include, however, "
@@ -138,6 +138,6 @@ class SkewTransformerChoice(autoPyTorchChoice):
 
         """
         super()._check_dataset_properties(dataset_properties)
-        assert 'skew_columns' in dataset_properties.keys() and \
+        assert 'numerical_columns' in dataset_properties.keys() and \
                'categorical_columns' in dataset_properties.keys(), \
             "Dataset properties must contain information about the type of columns"

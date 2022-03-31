@@ -76,8 +76,8 @@ class EncoderChoice(autoPyTorchChoice):
                     default = default_
                     break
 
-        encode_columns = dataset_properties['encode_columns'] \
-            if isinstance(dataset_properties['encode_columns'], List) else []
+        categorical_columns = dataset_properties['categorical_columns'] \
+            if isinstance(dataset_properties['categorical_columns'], List) else []
         updates = self._get_search_space_updates()
         if '__choice__' in updates.keys():
             choice_hyperparameter = updates['__choice__']
@@ -97,7 +97,7 @@ class EncoderChoice(autoPyTorchChoice):
                                                          default_value=choice_hyperparameter.default_value)
         else:
             # add only no encoder to choice hyperparameters in case the dataset is only numerical
-            if len(encode_columns) == 0:
+            if len(categorical_columns) == 0:
                 default = 'NoEncoder'
                 if include is not None and default not in include:
                     raise ValueError("Provided {} in include, however, the dataset "
@@ -134,5 +134,5 @@ class EncoderChoice(autoPyTorchChoice):
 
         """
         super()._check_dataset_properties(dataset_properties)
-        assert 'encode_columns' in dataset_properties.keys(), \
+        assert 'categorical_columns' in dataset_properties.keys(), \
             "Dataset properties must contain information about encode columns"

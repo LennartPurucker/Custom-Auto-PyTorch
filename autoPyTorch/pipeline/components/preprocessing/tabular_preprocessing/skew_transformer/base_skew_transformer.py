@@ -14,7 +14,11 @@ class BaseSkewTransformer(autoPyTorchTabularPreprocessingComponent):
     def __init__(self) -> None:
         super().__init__()
         self.add_fit_requirements([
-            FitRequirement('skew_columns', (List,), user_defined=True, dataset_property=True)])
+            FitRequirement('skew_columns', (List,), user_defined=True, dataset_property=False)])
+
+    @staticmethod
+    def _has_skew_columns(X: Dict[str, Any]):
+        return len(X.get('skew_columns', [])) > 0
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -25,8 +29,5 @@ class BaseSkewTransformer(autoPyTorchTabularPreprocessingComponent):
         Returns:
             (Dict[str, Any]): the updated 'X' dictionary
         """
-        if self.preprocessor['skew'] is None:
-            raise ValueError("cant call transform on {} without fitting first."
-                             .format(self.__class__.__name__))
         X.update({'skew_transformer': self.preprocessor})
         return X

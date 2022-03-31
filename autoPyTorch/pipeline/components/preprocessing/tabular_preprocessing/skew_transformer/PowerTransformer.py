@@ -25,7 +25,8 @@ class PowerTransformer(BaseSkewTransformer):
 
         self.check_requirements(X, y)
 
-        self.preprocessor['skew'] = SklearnPowerTransformer(method='yeo-johnson', copy=False)
+        if self._has_skew_columns(X):
+            self.preprocessor['skew'] = SklearnPowerTransformer(method='yeo-johnson', copy=False)
         return self
 
     @staticmethod

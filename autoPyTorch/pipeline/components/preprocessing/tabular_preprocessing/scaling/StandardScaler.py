@@ -27,7 +27,8 @@ class StandardScaler(BaseScaler):
         self.check_requirements(X, y)
 
         with_mean, with_std = (False, False) if X['dataset_properties']['issparse'] else (True, True)
-        self.preprocessor['scale'] = SklearnStandardScaler(with_mean=with_mean, with_std=with_std, copy=False)
+        if self._has_scale_columns(X):
+            self.preprocessor['scale'] = SklearnStandardScaler(with_mean=with_mean, with_std=with_std, copy=False)
         return self
 
     @staticmethod

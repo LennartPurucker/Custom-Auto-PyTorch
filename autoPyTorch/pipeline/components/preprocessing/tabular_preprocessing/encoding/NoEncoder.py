@@ -31,18 +31,6 @@ class NoEncoder(BaseEncoder):
 
         return self
 
-    def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Adds the self into the 'X' dictionary and returns it.
-        Args:
-            X (Dict[str, Any]): 'X' dictionary
-
-        Returns:
-            (Dict[str, Any]): the updated 'X' dictionary
-        """
-        X.update({'encoder': self.preprocessor})
-        return X
-
     @staticmethod
     def get_properties(
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None

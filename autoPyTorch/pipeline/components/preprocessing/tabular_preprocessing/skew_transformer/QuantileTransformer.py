@@ -38,7 +38,8 @@ class QuantileTransformer(BaseSkewTransformer):
 
         self.check_requirements(X, y)
 
-        self.preprocessor['skew'] = SklearnQuantileTransformer(n_quantiles=self.n_quantiles,
+        if self._has_skew_columns(X):
+            self.preprocessor['skew'] = SklearnQuantileTransformer(n_quantiles=self.n_quantiles,
                                                                     output_distribution=self.output_distribution,
                                                                     copy=False)
         return self

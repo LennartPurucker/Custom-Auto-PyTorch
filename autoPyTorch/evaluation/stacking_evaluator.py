@@ -1,3 +1,4 @@
+from math import floor
 from multiprocessing.queues import Queue
 from optparse import Option
 import os
@@ -124,7 +125,8 @@ class StackingEvaluator(AbstractEvaluator):
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  use_ensemble_opt_loss=False,
-                 cur_stacking_layer: int = 0) -> None:
+                 cur_stacking_layer: int = 0,
+                 cutoff: Optional[int] = None) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -143,9 +145,11 @@ class StackingEvaluator(AbstractEvaluator):
             all_supported_metrics=all_supported_metrics,
             pipeline_config=pipeline_config,
             search_space_updates=search_space_updates,
-            use_ensemble_opt_loss=use_ensemble_opt_loss
+            use_ensemble_opt_loss=use_ensemble_opt_loss,
+            cutoff=cutoff
         )
 
+        self.cutoff = cutoff
         self.cur_stacking_layer = cur_stacking_layer
         self.splits = self.datamanager.splits
         self.num_repeats = len(self.splits)
@@ -377,8 +381,11 @@ class StackingEvaluator(AbstractEvaluator):
 
         additional_run_info = {}
 
-
+        total_repeats = self.num_repeats
         for repeat_id, folds in enumerate(self.splits):
+            if repeat_id >= total_repeats:
+                break
+
             y_train_pred_folds = [None] * self.num_folds
             y_pipeline_optimization_pred_folds = [None] * self.num_folds
             y_valid_pred_folds = [None] * self.num_folds
@@ -387,7 +394,7 @@ class StackingEvaluator(AbstractEvaluator):
             # y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
             for i, (train_split, test_split) in enumerate(folds):
-
+                starttime = time.time()
                 self.logger.info(f"Starting fit for repeat: {repeat_id} and fold: {i}")
                 pipeline = self.pipelines[repeat_id][i]
                 (
@@ -410,6 +417,15 @@ class StackingEvaluator(AbstractEvaluator):
                 
                 additional_run_info.update(pipeline.get_additional_run_info() if hasattr(
                     pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
+                duration_fit_single = time.time() - starttime
+                if repeat_id == 0 and i == 0:
+                    expected_num_folds = floor(self.cutoff/(1.15*duration_fit_single))
+                    self.logger.debug(f"cutoff :{self.cutoff}, expected num folds: {expected_num_folds}, duration_fit_single: {duration_fit_single}")
+                    expected_total_repeats = floor(expected_num_folds/self.num_folds)
+                    if expected_total_repeats < total_repeats:
+                        self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
+                                          f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
+                        total_repeats = expected_total_repeats
 
             Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)
@@ -434,10 +450,10 @@ class StackingEvaluator(AbstractEvaluator):
         # Y_train_targets = self.y_train.copy() # self.get_sorted_train_targets(y_train_targets, -1)
 
         # Average prediction values accross repeats
-        Y_train_pred = np.mean(Y_train_pred, axis=0)
-        Y_pipeline_optimization_pred = np.mean(Y_pipeline_optimization_pred, axis=0)
-        Y_valid_pred = np.mean(Y_valid_pred, axis=0) if Y_valid_pred is not None else None
-        Y_test_pred = np.mean(Y_test_pred, axis=0) if Y_test_pred is not None else None
+        Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
+        Y_pipeline_optimization_pred = np.nanmean(Y_pipeline_optimization_pred[:total_repeats], axis=0)
+        Y_valid_pred = np.nanmean(Y_valid_pred[:total_repeats], axis=0) if Y_valid_pred is not None else None
+        Y_test_pred = np.nanmean(Y_test_pred[:total_repeats], axis=0) if Y_test_pred is not None else None
 
         if self.old_ensemble is not None:
             Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
@@ -552,7 +568,8 @@ def eval_function(
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
     instance: str = None,
-    cur_stacking_layer: int = 0
+    cur_stacking_layer: int = 0,
+    cutoff: Optional[int] = None
 ) -> None:
     """
     This closure allows the communication between the ExecuteTaFuncWithQueue and the
@@ -635,6 +652,7 @@ def eval_function(
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
-        cur_stacking_layer=cur_stacking_layer
+        cur_stacking_layer=cur_stacking_layer,
+        cutoff=cutoff
     )
     evaluator.fit_predict_and_loss()

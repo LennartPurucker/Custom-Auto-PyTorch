@@ -693,6 +693,8 @@ class StackingEnsembleBuilder(EnsembleBuilder):
                 prediction=average_predictions,
                 task_type=self.task_type,
             )
+
+        # self.logger.debug(f"in ensemble_loss predictions are \n{ensemble_predictions}")
         loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble, self.task_type)
         return loss
 

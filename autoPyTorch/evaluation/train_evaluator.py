@@ -134,7 +134,8 @@ class TrainEvaluator(AbstractEvaluator):
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  use_ensemble_opt_loss=False,
-                 cur_stacking_layer: int = 0) -> None:
+                 cur_stacking_layer: int = 0,
+                 cutoff: Optional[int] = None) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -153,7 +154,8 @@ class TrainEvaluator(AbstractEvaluator):
             all_supported_metrics=all_supported_metrics,
             pipeline_config=pipeline_config,
             search_space_updates=search_space_updates,
-            use_ensemble_opt_loss=use_ensemble_opt_loss
+            use_ensemble_opt_loss=use_ensemble_opt_loss,
+            cutoff=cutoff
         )
 
         if not isinstance(self.datamanager.resampling_strategy, (CrossValTypes, HoldoutValTypes)):
@@ -442,7 +444,8 @@ def eval_train_function(
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
     instance: str = None,
-    cur_stacking_layer: int = 0
+    cur_stacking_layer: int = 0,
+    cutoff: Optional[int] = None
 ) -> None:
     """
     This closure allows the communication between the ExecuteTaFuncWithQueue and the
@@ -525,6 +528,7 @@ def eval_train_function(
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
-        cur_stacking_layer=cur_stacking_layer
+        cur_stacking_layer=cur_stacking_layer,
+        cutoff=cutoff
     )
     evaluator.fit_predict_and_loss()

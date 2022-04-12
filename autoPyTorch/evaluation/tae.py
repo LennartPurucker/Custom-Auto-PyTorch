@@ -356,7 +356,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             all_supported_metrics=self.all_supported_metrics,
             search_space_updates=self.search_space_updates,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
-            cur_stacking_layer=self.cur_stacking_layer
+            cur_stacking_layer=self.cur_stacking_layer,
+            cutoff=cutoff
         )
 
         info: Optional[List[RunValue]]

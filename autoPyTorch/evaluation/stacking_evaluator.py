@@ -28,7 +28,7 @@ from autoPyTorch.evaluation.abstract_evaluator import (
     AbstractEvaluator,
     fit_and_suppress_warnings
 )
-from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
+from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.evaluation.utils import VotingRegressorWrapper
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, subsampler
@@ -125,6 +125,7 @@ class StackingEvaluator(AbstractEvaluator):
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  use_ensemble_opt_loss=False,
+                 optimise_ensemble=True,
                  cur_stacking_layer: int = 0,
                  cutoff: Optional[int] = None) -> None:
         super().__init__(
@@ -150,27 +151,18 @@ class StackingEvaluator(AbstractEvaluator):
         )
 
         self.cutoff = cutoff
-        self.cur_stacking_layer = cur_stacking_layer
         self.splits = self.datamanager.splits
         self.num_repeats = len(self.splits)
         self.num_folds = len(self.splits[0])
         if self.splits is None:
             raise AttributeError("Must have called create_splits on {}".format(self.datamanager.__class__.__name__))
 
-        self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
-        self.old_ensemble: Optional[StackingEnsemble] = None
-        ensemble_dir = self.backend.get_ensemble_dir()
-        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
-            self.old_ensemble = self.backend.load_ensemble(self.seed)
-            assert isinstance(self.old_ensemble, StackingEnsemble)
-
         self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],
                   test_pred: Optional[np.ndarray],
-                  pipeline_opt_pred: np.ndarray,
-                  ensemble_opt_pred: np.ndarray,
+                  opt_pred: np.ndarray,
                   additional_run_info: Optional[Dict],
                   file_output: bool, status: StatusType,                  
                   ) -> Optional[Tuple[float, float, int, Dict]]:
@@ -185,7 +177,7 @@ class StackingEvaluator(AbstractEvaluator):
 
         if file_output:
             loss_, additional_run_info_ = self.file_output(
-                pipeline_opt_pred, valid_pred, test_pred
+                opt_pred, valid_pred, test_pred
             )
         else:
             loss_ = None
@@ -196,12 +188,12 @@ class StackingEvaluator(AbstractEvaluator):
         )
 
         pipeline_loss, _ = self.calculate_auxiliary_losses(
-            pipeline_opt_pred, None
+            opt_pred, None
         )
         if loss_ is not None:
             return self.duration, loss_, self.seed, additional_run_info_
 
-        cost = loss["ensemble_opt_loss"] if self.use_ensemble_opt_loss else loss[self.metric.name]
+        cost = loss[self.metric.name]
 
         additional_run_info = (
             {} if additional_run_info is None else additional_run_info
@@ -370,7 +362,7 @@ class StackingEvaluator(AbstractEvaluator):
             .format(self.__class__.__name__)
 
         Y_train_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
-        Y_pipeline_optimization_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
+        Y_optimization_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
         Y_valid_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
         Y_test_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
         # Y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
@@ -387,7 +379,7 @@ class StackingEvaluator(AbstractEvaluator):
                 break
 
             y_train_pred_folds = [None] * self.num_folds
-            y_pipeline_optimization_pred_folds = [None] * self.num_folds
+            y_optimization_pred_folds = [None] * self.num_folds
             y_valid_pred_folds = [None] * self.num_folds
             y_test_pred_folds = [None] * self.num_folds
             # y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
@@ -399,14 +391,14 @@ class StackingEvaluator(AbstractEvaluator):
                 pipeline = self.pipelines[repeat_id][i]
                 (
                     y_train_pred,
-                    y_pipeline_opt_pred,
+                    y_opt_pred,
                     y_valid_pred,
                     y_test_pred,
                 ) = self._fit_and_predict(pipeline, i, repeat_id,
                                         train_indices=train_split,
                                         test_indices=test_split)
                 y_train_pred_folds[i] = y_train_pred
-                y_pipeline_optimization_pred_folds[i] = y_pipeline_opt_pred
+                y_optimization_pred_folds[i] = y_opt_pred
                 if y_valid_pred is not None:
                     y_valid_pred_folds[i] = y_valid_pred
                 if y_test_pred is not None:
@@ -428,7 +420,7 @@ class StackingEvaluator(AbstractEvaluator):
                         total_repeats = expected_total_repeats
 
             Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
-            Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)
+            Y_optimization_pred[repeat_id] = self.get_sorted_preds(y_optimization_pred_folds, repeat_id)
             if self.X_valid is not None:
                 Y_valid_pred[repeat_id] = np.array([y_valid_pred_folds[i] for i in range(self.num_folds) if y_valid_pred_folds[i] is not None])
                 # Average the predictions of several pipelines
@@ -451,16 +443,9 @@ class StackingEvaluator(AbstractEvaluator):
 
         # Average prediction values accross repeats
         Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
-        Y_pipeline_optimization_pred = np.nanmean(Y_pipeline_optimization_pred[:total_repeats], axis=0)
+        Y_optimization_pred = np.nanmean(Y_optimization_pred[:total_repeats], axis=0)
         Y_valid_pred = np.nanmean(Y_valid_pred[:total_repeats], axis=0) if Y_valid_pred is not None else None
         Y_test_pred = np.nanmean(Y_test_pred[:total_repeats], axis=0) if Y_test_pred is not None else None
-
-        if self.old_ensemble is not None:
-            Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
-            Y_ensemble_preds = self.old_ensemble.get_ensemble_predictions_with_current_pipeline(Y_pipeline_optimization_pred)
-        else:
-            Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
-            Y_ensemble_preds = [Y_pipeline_optimization_pred]
 
         self.Y_optimization = self.y_train # np.array(Y_targets)
         self.Y_actual_train = self.y_train # np.array(Y_train_targets)
@@ -468,8 +453,8 @@ class StackingEvaluator(AbstractEvaluator):
         self.pipeline = self._get_pipeline()
 
         train_loss = self._loss(self.Y_actual_train, Y_train_pred)
-        opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
-        opt_loss['ensemble_opt_loss'] = calculate_nomalised_margin_loss(Y_ensemble_preds, self.Y_optimization, self.task_type)
+        opt_loss = self._loss(self.Y_optimization, Y_optimization_pred)
+
         status = StatusType.SUCCESS
         self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
             self.num_run,
@@ -478,13 +463,12 @@ class StackingEvaluator(AbstractEvaluator):
         self.finish_up(
             loss=opt_loss,
             train_loss=train_loss,
-            ensemble_opt_pred=Y_ensemble_optimization_pred,
+            opt_pred=Y_optimization_pred,
             valid_pred=Y_valid_pred,
             test_pred=Y_test_pred,
             additional_run_info=additional_run_info,
             file_output=True,
             status=status,
-            pipeline_opt_pred=Y_pipeline_optimization_pred
         )
 
     def _fit_and_predict(
@@ -508,7 +492,7 @@ class StackingEvaluator(AbstractEvaluator):
         fit_and_suppress_warnings(self.logger, pipeline, X, y)
         self.logger.info("Model fitted, now predicting")
         (
-            Y_train_pred, Y_pipeline_opt_pred, Y_valid_pred, Y_test_pred
+            Y_train_pred, Y_opt_pred, Y_valid_pred, Y_test_pred
         ) = self._predict(
             pipeline,
             train_indices=train_indices,
@@ -517,7 +501,7 @@ class StackingEvaluator(AbstractEvaluator):
 
         self.pipeline = pipeline
 
-        return Y_train_pred, Y_pipeline_opt_pred, Y_valid_pred, Y_test_pred
+        return Y_train_pred, Y_opt_pred, Y_valid_pred, Y_test_pred
 
     def _predict(
         self,
@@ -528,7 +512,7 @@ class StackingEvaluator(AbstractEvaluator):
         train_pred = self.predict_function(subsampler(self.X_train, train_indices), pipeline,
                                            self.y_train[train_indices])
 
-        pipeline_opt_pred = self.predict_function(subsampler(self.X_train, test_indices), pipeline,
+        opt_pred = self.predict_function(subsampler(self.X_train, test_indices), pipeline,
                                          self.y_train[train_indices])
 
         # self.logger.debug(f"for model {self.seed}_{self.num_run}_{self.budget} ensemble_predictions are {ensemble_opt_pred}")
@@ -544,7 +528,7 @@ class StackingEvaluator(AbstractEvaluator):
         else:
             test_pred = None
 
-        return train_pred, pipeline_opt_pred, valid_pred, test_pred
+        return train_pred, opt_pred, valid_pred, test_pred
 
 
 # create closure for evaluating an algorithm
@@ -569,7 +553,8 @@ def eval_function(
     use_ensemble_opt_loss=False,
     instance: str = None,
     cur_stacking_layer: int = 0,
-    cutoff: Optional[int] = None
+    cutoff: Optional[int] = None,
+    optimise_ensemble=True,
 ) -> None:
     """
     This closure allows the communication between the ExecuteTaFuncWithQueue and the
@@ -653,6 +638,7 @@ def eval_function(
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
         cur_stacking_layer=cur_stacking_layer,
-        cutoff=cutoff
+        cutoff=cutoff,
+        optimise_ensemble=optimise_ensemble
     )
     evaluator.fit_predict_and_loss()

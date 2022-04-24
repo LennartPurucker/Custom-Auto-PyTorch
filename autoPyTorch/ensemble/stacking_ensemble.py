@@ -15,7 +15,7 @@ from autoPyTorch.pipeline.components.training.metrics.utils import calculate_los
 
 
 # TODO: Think of functionality of the functions in this class adjusted for stacking.
-class StackingEnsemble(AbstractEnsemble):
+class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
     def __init__(
         self,
         ensemble_size: int,

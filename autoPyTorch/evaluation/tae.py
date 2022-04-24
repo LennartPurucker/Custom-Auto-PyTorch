@@ -132,9 +132,10 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         logger_port: int = None,
         all_supported_metrics: bool = True,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-        ensemble_method=None,
+        ensemble_method: EnsembleSelectionTypes = None,
         use_ensemble_opt_loss=False,
-        cur_stacking_layer: int = 0
+        cur_stacking_layer: int = 0,
+        optimise_ensemble=True,
     ):
 
         self.backend = backend
@@ -159,7 +160,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes, RepeatedCrossValTypes)):
             if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
                 eval_function = eval_train_function
-            elif ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+            elif ensemble_method.is_stacking_ensemble():
                 eval_function = autoPyTorch.evaluation.stacking_evaluator.eval_function
             self.output_y_hat_optimization = output_y_hat_optimization
         elif isinstance(self.resampling_strategy, NoResamplingStrategyTypes):
@@ -216,6 +217,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
 
         self.search_space_updates = search_space_updates
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
+        self.optimise_ensemble = optimise_ensemble
 
     def _check_and_get_default_budget(self) -> float:
         budget_type_choices = ('epochs', 'runtime')
@@ -357,7 +359,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             search_space_updates=self.search_space_updates,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
             cur_stacking_layer=self.cur_stacking_layer,
-            cutoff=cutoff
+            cutoff=cutoff,
+            optimise_ensemble=self.optimise_ensemble
         )
 
         info: Optional[List[RunValue]]

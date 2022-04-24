@@ -51,7 +51,8 @@ from autoPyTorch.datasets.resampling_strategy import (
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
-from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
+from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
@@ -176,7 +177,7 @@ class BaseTask(ABC):
         logging_config: Optional[Dict] = None,
         ensemble_size: int = 5,
         ensemble_nbest: int = 50,
-        ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+        ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
         num_stacking_layers: int = 2,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
@@ -615,15 +616,16 @@ class BaseTask(ABC):
 
         if self.ensemble_:
             identifiers = self.ensemble_.get_selected_model_identifiers()
-            self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
-            if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+            # self.logger.debug(f"stacked ensemble identifiers are :{identifiers}")
+            if self.ensemble_method.is_stacking_ensemble():
                 models = []
                 for identifier in identifiers:
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
-                self._logger.debug(f"stacked ensemble models are :{models}")
+                # self._logger.debug(f"stacked ensemble models are :{models}")
                 self.cv_models_ = models
-            else:
+                self.models_ = None
+            else: 
                 self.models_ = self._backend.load_models_by_identifiers(identifiers)
                 if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
                     self.cv_models_ = self._backend.load_cv_models_by_identifiers(identifiers)
@@ -1192,7 +1194,7 @@ class BaseTask(ABC):
 
         # ============> Run dummy predictions
         # We only want to run dummy predictions in case we want to build an ensemble
-        if self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_ensemble:
+        if self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_optimisation_ensemble:
             dummy_task_name = 'runDummy'
             self._stopwatch.start_task(dummy_task_name)
             self._do_dummy_prediction()
@@ -1237,7 +1239,7 @@ class BaseTask(ABC):
         smac_initial_num_run = self._backend.get_next_num_run(peek=True)
         proc_runhistory_updater = None
         if (
-            self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble
+            self.ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
             and smbo_class is not None
         ):
             proc_runhistory_updater = self._init_result_history_updater(initial_num_run=smac_initial_num_run)
@@ -1992,7 +1994,7 @@ class BaseTask(ABC):
             models = self.cv_models_
 
         X_test_copy = X_test.copy()
-        if isinstance(self.ensemble_, StackingEnsemble):
+        if isinstance(self.ensemble_, (EnsembleOptimisationStackingEnsemble, EnsembleSelectionPerLayerStackingEnsemble)):
             ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
             self._logger.debug(f"ensemble identifiers: {ensemble_identifiers}")
             for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
@@ -2103,12 +2105,13 @@ class BaseTask(ABC):
         return self._results_manager.get_incumbent_results(metric=self._metric, include_traditional=include_traditional)
 
     def get_models_with_weights(self) -> List:
-        if self.models_ is None or len(self.models_) == 0 or \
-                self.ensemble_ is None:
+        if ((self.models_ is None or len(self.models_) == 0 
+            and self.cv_models_ is None) or \
+                self.ensemble_ is None):
             self._load_models()
 
         assert self.ensemble_ is not None
-        models_with_weights: List[Tuple[float, BasePipeline]] = self.ensemble_.get_models_with_weights(self.models_)
+        models_with_weights: List[Tuple[float, BasePipeline]] = self.ensemble_.get_models_with_weights(self.models_ if self.models_ is not None else self.cv_models_)
         return models_with_weights
 
     def show_models(self) -> str:
@@ -2119,13 +2122,25 @@ class BaseTask(ABC):
             str:
                 Markdown table of models.
         """
-        df = []
-        for weight, model in self.get_models_with_weights():
-            representation = model.get_pipeline_representation()
-            representation.update({'Weight': weight})
-            df.append(representation)
-        models_markdown: str = pd.DataFrame(df).to_markdown()
-        return models_markdown
+        if self.ensemble_method.is_stacking_ensemble():
+            markdowns = []
+            for layer, model_weight in enumerate(self.get_models_with_weights()):
+                df = []
+                for weight, model in model_weight:
+                    representation = model.get_pipeline_representation()
+                    representation.update({'Weight': weight})
+                    df.append(representation)
+                models_markdown: str = pd.DataFrame(df).to_markdown()
+            markdowns.append(models_markdown)
+            return '\n'.join(markdowns)
+        else:
+            df = []
+            for weight, model in self.get_models_with_weights():
+                representation = model.get_pipeline_representation()
+                representation.update({'Weight': weight})
+                df.append(representation)
+            models_markdown: str = pd.DataFrame(df).to_markdown()
+            return models_markdown
 
     def _print_debug_info_to_log(self) -> None:
         """

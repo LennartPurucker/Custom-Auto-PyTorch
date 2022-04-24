@@ -158,7 +158,7 @@ DEFAULT_RESAMPLING_PARAMETERS: Dict[
     NoResamplingStrategyTypes.no_resampling: {},
     RepeatedCrossValTypes.repeated_k_fold_cross_validation: {
         'num_splits': 4,
-        'num_repeats': 2
+        'num_repeats': 1
     },
 }
 

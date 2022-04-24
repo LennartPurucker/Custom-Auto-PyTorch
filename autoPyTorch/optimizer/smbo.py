@@ -31,7 +31,8 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingStrategyTypes
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
-from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
+from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.optimizer.utils import read_return_initial_configurations
@@ -176,10 +177,11 @@ class AutoMLSMBO(object):
                  pynisher_context: str = 'spawn',
                  min_budget: int = 5,
                  max_budget: int = 50,
-                 ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+                 ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
                  other_callbacks: Optional[List] = None,
                  smbo_class: Optional[SMBO] = None,
-                 use_ensemble_opt_loss: bool = False
+                 use_ensemble_opt_loss: bool = False,
+                 optimise_ensemble=True,
                  ):
         """
         Interface to SMAC. This method calls the SMAC optimize method, and allows
@@ -297,7 +299,7 @@ class AutoMLSMBO(object):
         self.ensemble_method = ensemble_method
 
         self.ensemble_callback = ensemble_callback
-        if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble and num_stacking_layers is None:
+        if self.ensemble_method.is_stacking_ensemble()  and num_stacking_layers is None:
             raise ValueError("Cant be none for stacked ensembles")
 
         self.num_stacking_layers = num_stacking_layers
@@ -328,6 +330,7 @@ class AutoMLSMBO(object):
                                     " with the current search space. Skipping initial configuration...")
 
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
+        self.optimise_ensemble = optimise_ensemble
 
     def reset_data_manager(self) -> None:
         if self.datamanager is not None:
@@ -404,7 +407,8 @@ class AutoMLSMBO(object):
             pynisher_context=self.pynisher_context,
             ensemble_method=self.ensemble_method,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
-            cur_stacking_layer=cur_stacking_layer
+            cur_stacking_layer=cur_stacking_layer,
+            optimise_ensemble=self.optimise_ensemble
         )
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")
@@ -474,8 +478,8 @@ class AutoMLSMBO(object):
                                    initial_configurations=self.initial_configurations,
                                    smbo_class=self.smbo_class)
 
-        if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
-            self.ensemble_callback.update_cur_stacking_layer(cur_stacking_layer)
+        if self.ensemble_method.is_stacking_ensemble():
+            self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer)
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)
         if self.other_callbacks is not None:
@@ -510,11 +514,11 @@ class AutoMLSMBO(object):
                 initial_num_run=initial_num_run,
                 func=func
                 )
-            old_ensemble: Optional[StackingEnsemble] = None
+            old_ensemble: Optional[EnsembleOptimisationStackingEnsemble] = None
             ensemble_dir = self.backend.get_ensemble_dir()
             if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
                 old_ensemble = self.backend.load_ensemble(self.seed)
-                assert isinstance(old_ensemble, StackingEnsemble)
+                assert isinstance(old_ensemble, (EnsembleOptimisationStackingEnsemble, EnsembleSelectionPerLayerStackingEnsemble))
 
             previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
             previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')

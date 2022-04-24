@@ -38,7 +38,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         opt_metric: str,
         ensemble_size: int,
         ensemble_nbest: int,
-        ensemble_method: int,
+        ensemble_method: EnsembleSelectionTypes,
         max_models_on_disc: Union[float, int],
         seed: int,
         precision: int,
@@ -116,8 +116,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
         self.ensemble_method = ensemble_method
-        self.cur_stacking_layer = 0 if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble else None
-        if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble and num_stacking_layers is None:
+        self.cur_stacking_layer = 0 if self.ensemble_method.is_stacking_ensemble() else None
+        if self.ensemble_method.is_stacking_ensemble() and num_stacking_layers is None:
             raise ValueError("Cant be none for stacked ensembles")
 
         self.num_stacking_layers = num_stacking_layers
@@ -130,7 +130,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.random_state = random_state
         self.logger_port = logger_port
         self.pynisher_context = pynisher_context
-
+        self.is_new_layer = False
         # Store something similar to SMAC's runhistory
         self.history: List[Dict[str, float]] = []
 
@@ -237,7 +237,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     logger_port=self.logger_port,
                     unit_test=unit_test,
                     use_ensemble_opt_loss=self.use_ensemble_loss,
-                    cur_stacking_layer=self.cur_stacking_layer
+                    cur_stacking_layer=self.cur_stacking_layer,
+                    is_new_layer=self.is_new_layer
                 ))
 
                 logger.info(
@@ -251,18 +252,21 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     ),
                 )
                 self.iteration += 1
+                # reset to False so only signal from smbo sets is_new_layer = True
+                self.is_new_layer = False
             except Exception as e:
                 exception_traceback = traceback.format_exc()
                 error_message = repr(e)
                 logger.critical(exception_traceback)
                 logger.critical(error_message)
 
-    def update_cur_stacking_layer(self, cur_stacking_layer: int) -> None:
+    def update_for_new_stacking_layer(self, cur_stacking_layer: int) -> None:
         if cur_stacking_layer >= self.num_stacking_layers:
             raise ValueError(f"Unexpected value '{cur_stacking_layer}' for cur_stacking_layer. "
                              f"Max stacking layers are : {self.num_stacking_layers}.")
         self.cur_stacking_layer = cur_stacking_layer
         self.iteration = 0
+        self.is_new_layer = True
 
 
 def fit_and_return_ensemble(
@@ -274,7 +278,7 @@ def fit_and_return_ensemble(
     opt_metric: str,
     ensemble_size: int,
     ensemble_nbest: int,
-    ensemble_method: int,
+    ensemble_method: EnsembleSelectionTypes,
     max_models_on_disc: Union[float, int],
     seed: int,
     precision: int,
@@ -288,7 +292,8 @@ def fit_and_return_ensemble(
     logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
     unit_test: bool = False,
     use_ensemble_opt_loss=False,
-    cur_stacking_layer: Optional[int] = None
+    cur_stacking_layer: Optional[int] = None,
+    is_new_layer: bool = False
 ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -362,9 +367,11 @@ def fit_and_return_ensemble(
         'return_predictions': return_predictions,
         'pynisher_context': pynisher_context,
     }
-    if ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+    if ensemble_method.is_stacking_ensemble():
         ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
 
+    if ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+        ensemble_builder_run_kwargs.update({'is_new_layer': is_new_layer})
     result = ensemble_builder(
         backend=backend,
         dataset_name=dataset_name,

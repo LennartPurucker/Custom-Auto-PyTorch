@@ -427,7 +427,8 @@ class AbstractEvaluator(object):
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  use_ensemble_opt_loss=False,
                  cur_stacking_layer: int = 0,
-                 cutoff: Optional[int] = None
+                 cutoff: Optional[int] = None,
+                 optimise_ensemble=True,
                  ) -> None:
 
         self.starttime = time.time()

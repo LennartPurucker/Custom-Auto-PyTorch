@@ -131,6 +131,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         # or passing them via the ensemble builder manager which has persistency with the futures stored.
         self.ensemble_identifiers: Optional[List[Optional[str]]] = None
         self.read_losses = {}
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
 
     # This is the main wrapper to the EnsembleSelection class which fits the ensemble
     def main(
@@ -633,7 +634,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
                 prediction=average_predictions,
                 task_type=self.task_type,
             )
-        loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble)
+        loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble, self.task_type)
         return loss
 
     def _get_ensemble_identifiers_filename(self):

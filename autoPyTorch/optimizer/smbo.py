@@ -258,11 +258,12 @@ class AutoMLSMBO(object):
 
         self.initial_configurations: Optional[List[Configuration]] = None
         if portfolio_selection is not None:
-            initial_configurations = read_return_initial_configurations(config_space=config_space,
-                                                                        portfolio_selection=portfolio_selection)
-            # incase we dont have any valid configuration from the portfolio
-            self.initial_configurations = initial_configurations \
-                if len(initial_configurations) > 0 else None
+            self.initial_configurations = read_return_initial_configurations(config_space=config_space,
+                                                                             portfolio_selection=portfolio_selection)
+            if len(self.initial_configurations) == 0:
+                self.initial_configurations = None
+                self.logger.warning("None of the portfolio configurations are compatible"
+                                    " with the current search space. Skipping initial configuration...")
 
     def run_smbo(self, func: Optional[Callable] = None
                  ) -> Tuple[RunHistory, List[TrajEntry], str]:

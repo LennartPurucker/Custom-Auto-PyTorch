@@ -152,7 +152,7 @@ class StackingEvaluator(AbstractEvaluator):
             self.old_ensemble = self.backend.load_ensemble(self.seed)
             assert isinstance(self.old_ensemble, StackingEnsemble)
 
-        self.logger.debug("Search space updates :{}".format(self.search_space_updates))
+        self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],
@@ -365,13 +365,14 @@ class StackingEvaluator(AbstractEvaluator):
         # Y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
         # Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
-
         self.pipelines = [[self._get_pipeline() for _ in range(self.num_folds)] for _ in range(self.num_repeats)]
 
         additional_run_info = {}
 
-
+        total_repeats = self.num_repeats
         for repeat_id, folds in enumerate(self.splits):
+            if repeat_id >= total_repeats:
+                break
             y_train_pred_folds = [None] * self.num_folds
             y_pipeline_optimization_pred_folds = [None] * self.num_folds
             y_valid_pred_folds = [None] * self.num_folds
@@ -380,7 +381,7 @@ class StackingEvaluator(AbstractEvaluator):
             # y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
             for i, (train_split, test_split) in enumerate(folds):
-
+                starttime = time.time()
                 self.logger.info(f"Starting fit for repeat: {repeat_id} and fold: {i}")
                 pipeline = self.pipelines[repeat_id][i]
                 (
@@ -403,6 +404,15 @@ class StackingEvaluator(AbstractEvaluator):
                 
                 additional_run_info.update(pipeline.get_additional_run_info() if hasattr(
                     pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
+                duration_fit_single = time.time() - starttime
+                if repeat_id == 0 and i == 0:
+                    expected_num_folds = floor(self.cutoff/(1.15*duration_fit_single))
+                    self.logger.debug(f"cutoff :{self.cutoff}, expected num folds: {expected_num_folds}, duration_fit_single: {duration_fit_single}")
+                    expected_total_repeats = floor(expected_num_folds/self.num_folds)
+                    if expected_total_repeats < total_repeats:
+                        self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
+                                          f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
+                        total_repeats = expected_total_repeats
 
             Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)
@@ -427,10 +437,10 @@ class StackingEvaluator(AbstractEvaluator):
         # Y_train_targets = self.y_train.copy() # self.get_sorted_train_targets(y_train_targets, -1)
 
         # Average prediction values accross repeats
-        Y_train_pred = np.mean(Y_train_pred, axis=0)
-        Y_pipeline_optimization_pred = np.mean(Y_pipeline_optimization_pred, axis=0)
-        Y_valid_pred = np.mean(Y_valid_pred, axis=0) if Y_valid_pred is not None else None
-        Y_test_pred = np.mean(Y_test_pred, axis=0) if Y_test_pred is not None else None
+        Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
+        Y_pipeline_optimization_pred = np.nanmean(Y_pipeline_optimization_pred[:total_repeats], axis=0)
+        Y_valid_pred = np.nanmean(Y_valid_pred[:total_repeats], axis=0) if Y_valid_pred is not None else None
+        Y_test_pred = np.nanmean(Y_test_pred[:total_repeats], axis=0) if Y_test_pred is not None else None
 
         if self.old_ensemble is not None:
             Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)

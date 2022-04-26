@@ -9,7 +9,9 @@ from sklearn.model_selection import (
     StratifiedKFold,
     StratifiedShuffleSplit,
     TimeSeriesSplit,
-    train_test_split
+    train_test_split,
+    RepeatedKFold,
+    RepeatedStratifiedKFold
 )
 
 from typing_extensions import Protocol
@@ -36,6 +38,16 @@ class HoldOutFunc(Protocol):
     def __call__(self, random_state: np.random.RandomState, val_share: float,
                  indices: np.ndarray, stratify: Optional[Any]
                  ) -> Tuple[np.ndarray, np.ndarray]:
+        ...
+
+
+class RepeatedCrossValFunc(Protocol):
+    def __call__(self,
+                 random_state: np.random.RandomState,
+                 num_splits: int,
+                 num_repeats: int,
+                 indices: np.ndarray,
+                 stratify: Optional[Any]) -> List[List[Tuple[np.ndarray, np.ndarray]]]:
         ...
 
 
@@ -90,8 +102,29 @@ class NoResamplingStrategyTypes(IntEnum):
         return False
 
 
+class RepeatedCrossValTypes(IntEnum):
+    """The type of repeated cross validation
+    This class is used to specify the cross validation function
+    and is not supposed to be instantiated.
+    Examples: This class is supposed to be used as follows
+    >>> cv_type = RepeatedCrossValTypes.repeated_k_fold_cross_validation
+    >>> print(cv_type.name)
+    repeated_k_fold_cross_validation
+    >>> for cross_val_type in CrossValTypes:
+            print(cross_val_type.name, cross_val_type.value)
+    stratified_repeated_k_fold_cross_validation 1
+    repeated_k_fold_cross_validation 2
+    """
+    stratified_repeated_k_fold_cross_validation = 1
+    repeated_k_fold_cross_validation = 2
+
+    def is_stratified(self) -> bool:
+        stratified = [self.stratified_repeated_k_fold_cross_validation]
+        return getattr(self, self.name) in stratified
+
+
 # TODO: replace it with another way
-ResamplingStrategies = Union[CrossValTypes, HoldoutValTypes, NoResamplingStrategyTypes]
+ResamplingStrategies = Union[CrossValTypes, HoldoutValTypes, NoResamplingStrategyTypes, RepeatedCrossValTypes]
 
 DEFAULT_RESAMPLING_PARAMETERS: Dict[
     ResamplingStrategies,
@@ -115,7 +148,11 @@ DEFAULT_RESAMPLING_PARAMETERS: Dict[
     CrossValTypes.time_series_cross_validation: {
         'num_splits': 5,
     },
-    NoResamplingStrategyTypes.no_resampling: {}
+    NoResamplingStrategyTypes.no_resampling: {},
+    RepeatedCrossValTypes.repeated_k_fold_cross_validation: {
+        'num_splits': 5,
+        'num_repeats': 2
+    },
 }
 
 
@@ -270,3 +307,49 @@ class NoResamplingFuncs():
             np.ndarray: array of indices
         """
         return indices
+
+
+# TODO: Add resampling strategy for stacking, depends on the choice of implementation
+class RepeatedCrossValFuncs:
+    @staticmethod
+    def repeated_k_fold_cross_validation(random_state: np.random.RandomState,
+                                       num_splits: int,
+                                       num_repeats: int,
+                                       indices: np.ndarray,
+                                       **kwargs: Any
+                                       ) -> List[List[Tuple[np.ndarray, np.ndarray]]]:
+        cv = RepeatedKFold(n_splits=num_splits, n_repeats=num_repeats, random_state=random_state)
+
+        splits = []
+        for _ in range(num_repeats):
+            folds = []
+            for _ in range(num_splits):
+                folds.append(cv.split(indices))
+            splits.append(folds)
+        return splits
+
+    @staticmethod
+    def stratified_repeated_k_fold_cross_validation(random_state: np.random.RandomState,
+                                                  num_splits: int,
+                                                  num_repeats: int,
+                                                  indices: np.ndarray,
+                                                  **kwargs: Any
+                                                  ) -> List[List[Tuple[np.ndarray, np.ndarray]]]:
+        cv = RepeatedStratifiedKFold(n_splits=num_splits, n_repeats=num_repeats, stratify=kwargs["stratify"], random_state=random_state)
+
+        splits = []
+        for _ in range(num_repeats):
+            folds = []
+            for _ in range(num_splits):
+                folds.append(cv.split(indices))
+            splits.append(folds)
+        return splits
+
+    @classmethod
+    def get_repeated_cross_validators(cls, *repeated_cross_validator_types: RepeatedCrossValTypes
+                                     ) -> Dict[str, RepeatedCrossValFunc]:
+        repeated_cross_validators: Dict[str, RepeatedCrossValFunc] = {
+            repeated_cross_validator.name: getattr(cls, repeated_cross_validator.name)
+            for repeated_cross_validator in repeated_cross_validator_types
+        }
+        return repeated_cross_validators

@@ -177,14 +177,15 @@ class TrainEvaluator(AbstractEvaluator):
         additional_run_info: Optional[Dict] = None
         if self.num_folds == 1:
             split_id = 0
+            repeat_id = 0
             self.logger.info("Starting fit {}".format(split_id))
 
             pipeline = self._get_pipeline()
 
-            train_split, test_split = self.splits[split_id]
+            train_split, test_split = self.splits[repeat_id][split_id]
             self.Y_optimization = self.y_train[test_split]
             self.Y_actual_train = self.y_train[train_split]
-            y_train_pred, y_opt_pred, y_valid_pred, y_test_pred = self._fit_and_predict(pipeline, split_id,
+            y_train_pred, y_opt_pred, y_valid_pred, y_test_pred = self._fit_and_predict(pipeline, split_id, repeat_id,
                                                                                         train_indices=train_split,
                                                                                         test_indices=test_split,
                                                                                         add_pipeline_to_self=True)
@@ -231,11 +232,12 @@ class TrainEvaluator(AbstractEvaluator):
             opt_fold_weights = [np.NaN] * self.num_folds
 
             additional_run_info = {}
+            repeat_id = 0
 
-            for i, (train_split, test_split) in enumerate(self.splits):
+            for i, (train_split, test_split) in enumerate(self.splits[repeat_id]):
 
                 pipeline = self.pipelines[i]
-                train_pred, opt_pred, valid_pred, test_pred = self._fit_and_predict(pipeline, i,
+                train_pred, opt_pred, valid_pred, test_pred = self._fit_and_predict(pipeline, i, repeat_id,
                                                                                     train_indices=train_split,
                                                                                     test_indices=test_split,
                                                                                     add_pipeline_to_self=False)
@@ -350,7 +352,9 @@ class TrainEvaluator(AbstractEvaluator):
                 status=status,
             )
 
-    def _fit_and_predict(self, pipeline: BaseEstimator, fold: int, train_indices: Union[np.ndarray, List],
+    def _fit_and_predict(self, pipeline: BaseEstimator, fold: int,
+                         repeat_id: int,
+                         train_indices: Union[np.ndarray, List],
                          test_indices: Union[np.ndarray, List],
                          add_pipeline_to_self: bool
                          ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
@@ -362,6 +366,7 @@ class TrainEvaluator(AbstractEvaluator):
         X = {'train_indices': train_indices,
              'val_indices': test_indices,
              'split_id': fold,
+             'repeat_id': repeat_id,
              'num_run': self.num_run,
              **self.fit_dictionary}  # fit dictionary
         y = None

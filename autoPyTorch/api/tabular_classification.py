@@ -4,6 +4,8 @@ import numpy as np
 
 import pandas as pd
 
+from smac.optimizer.smbo import SMBO
+
 from autoPyTorch.api.base_task import BaseTask
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import (
@@ -256,6 +258,7 @@ class TabularClassificationTask(BaseTask):
         load_models: bool = True,
         portfolio_selection: Optional[str] = None,
         dataset_compression: Union[Mapping[str, Any], bool] = False,
+        smbo_class: Optional[SMBO] = None
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -455,6 +458,7 @@ class TabularClassificationTask(BaseTask):
             disable_file_output=disable_file_output,
             load_models=load_models,
             portfolio_selection=portfolio_selection,
+            smbo_class=smbo_class            
         )
 
     def predict(

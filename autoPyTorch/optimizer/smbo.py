@@ -10,6 +10,7 @@ import dask.distributed
 
 from smac.facade.smac_ac_facade import SMAC4AC
 from smac.intensification.hyperband import Hyperband
+from smac.optimizer.smbo import SMBO
 from smac.runhistory.runhistory import RunHistory
 from smac.runhistory.runhistory2epm import RunHistory2EPM4LogCost
 from smac.scenario.scenario import Scenario
@@ -43,6 +44,7 @@ def get_smac_object(
     initial_budget: int,
     max_budget: int,
     dask_client: Optional[dask.distributed.Client],
+    smbo_class: Optional[SMBO] = None,
     initial_configurations: Optional[List[Configuration]] = None,
 ) -> SMAC4AC:
     """
@@ -80,6 +82,7 @@ def get_smac_object(
                             'eta': 3, 'min_chall': 1, 'instance_order': 'shuffle_once'},
         dask_client=dask_client,
         n_jobs=n_jobs,
+        smbo_class=smbo_class
     )
 
 
@@ -116,7 +119,9 @@ class AutoMLSMBO(object):
                  pynisher_context: str = 'spawn',
                  min_budget: int = 5,
                  max_budget: int = 50,
-                 ensemble_method: int = EnsembleSelectionTypes.ensemble_selection
+                 ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+                 other_callbacks: Optional[List] = None,
+                 smbo_class: Optional[SMBO] = None
                  ):
         """
         Interface to SMAC. This method calls the SMAC optimize method, and allows
@@ -233,6 +238,9 @@ class AutoMLSMBO(object):
         self.ensemble_method = ensemble_method
 
         self.ensemble_callback = ensemble_callback
+
+        self.other_callbacks = other_callbacks
+        self.smbo_class = smbo_class
 
         self.search_space_updates = search_space_updates
 
@@ -362,11 +370,15 @@ class AutoMLSMBO(object):
                                    initial_budget=self.min_budget,
                                    max_budget=self.max_budget,
                                    dask_client=self.dask_client,
-                                   initial_configurations=self.initial_configurations)
+                                   initial_configurations=self.initial_configurations,
+                                   smbo_class=self.smbo_class)
 
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)
 
+        if self.other_callbacks is not None:
+            for callback in self.other_callbacks:
+                smac.register_callback(callback)
         self.logger.info("initialised SMBO, running SMBO.optimize()")
 
         smac.optimize()

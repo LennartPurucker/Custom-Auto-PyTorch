@@ -9,6 +9,8 @@ import os
 import tempfile as tmp
 import warnings
 
+from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
+
 os.environ['JOBLIB_TEMP_FOLDER'] = tmp.gettempdir()
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -40,12 +42,13 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_02',
-    output_directory='./tmp/autoPyTorch_example_out_02',
+    temporary_directory='./tmp/autoPyTorch_example_tmp_13',
+    output_directory='./tmp/autoPyTorch_example_out_13',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=42,
+    seed=4,
     ensemble_method=EnsembleSelectionTypes.stacking_ensemble,
+    resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     ensemble_size=5
 )
 
@@ -60,7 +63,7 @@ api.search(
     dataset_name='Australian',
     optimize_metric='accuracy',
     total_walltime_limit=1000,
-    func_eval_time_limit_secs=50,
+    func_eval_time_limit_secs=100,
     enable_traditional_pipeline=False,
     smbo_class=autoPyTorchSMBO,
     all_supported_metrics=False

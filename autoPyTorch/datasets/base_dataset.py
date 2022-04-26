@@ -285,7 +285,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
                 num_repeats = self.resampling_strategy_args.get('num_repeats', num_splits)
             # Create the split if it was not created before
             splits.extend(
-                self.create_repeatedcross_val_splits(
+                self.create_repeated_cross_val_splits(
                     repeated_cross_val_type=self.resampling_strategy,
                     num_splits=cast(int, num_splits),
                     num_repeats=cast(int, num_repeats)
@@ -330,7 +330,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             self.random_state, num_splits, self._get_indices(), **kwargs)
         return splits
 
-    def create_repeatedcross_val_splits(
+    def create_repeated_cross_val_splits(
         self,
         repeated_cross_val_type: RepeatedCrossValTypes,
         num_splits: int,

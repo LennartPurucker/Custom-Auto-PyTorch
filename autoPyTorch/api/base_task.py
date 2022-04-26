@@ -654,7 +654,7 @@ class BaseTask(ABC):
             if isinstance(self.resampling_strategy, CrossValTypes):
                 self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
 
-            if isinstance(self.resampling_strategy, CrossValTypes):
+            if isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
                 if len(self.cv_models_) == 0:
                     raise ValueError('No models fitted!')
 
@@ -2003,7 +2003,7 @@ class BaseTask(ABC):
 
         if isinstance(self.resampling_strategy, (HoldoutValTypes, NoResamplingStrategyTypes)):
             models = self.models_
-        elif isinstance(self.resampling_strategy, CrossValTypes):
+        elif isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
             models = self.cv_models_
 
         all_predictions = joblib.Parallel(n_jobs=n_jobs)(

@@ -337,11 +337,12 @@ class RepeatedCrossValFuncs:
                                                   ) -> List[List[Tuple[np.ndarray, np.ndarray]]]:
         cv = RepeatedStratifiedKFold(n_splits=num_splits, n_repeats=num_repeats, stratify=kwargs["stratify"], random_state=random_state)
 
+        tmp_splits = list(cv.split(indices))
         splits = []
-        for _ in range(num_repeats):
+        for i in range(num_repeats):
             folds = []
-            for _ in range(num_splits):
-                folds.append(cv.split(indices))
+            for j in range(num_splits):
+                folds.append(tmp_splits[i*num_splits + j])
             splits.append(folds)
         return splits
 

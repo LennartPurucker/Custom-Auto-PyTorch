@@ -160,7 +160,7 @@ class TrainEvaluator(AbstractEvaluator):
                 f'(CrossValTypes, HoldoutValTypes), but got {self.resampling_strategy}'
             )
 
-        self.num_folds: int = len(self.splits)
+        self.num_folds: int = len(self.splits[0])
         self.Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
         self.Y_train_targets: np.ndarray = np.ones(self.y_train.shape) * np.NaN
         self.pipelines: List[Optional[BaseEstimator]] = [None] * self.num_folds

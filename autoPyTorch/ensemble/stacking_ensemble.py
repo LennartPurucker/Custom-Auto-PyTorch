@@ -19,13 +19,17 @@ class StackingEnsemble(AbstractEnsemble):
         metric: autoPyTorchMetric,
         task_type: int,
         random_state: np.random.RandomState,
-        ensemble_slot_j: int
+        ensemble_slot_j: int,
+        cur_stacking_layer: int,
+        stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]]
     ) -> None:
         self.ensemble_size = ensemble_size
         self.metric = metric
         self.random_state = random_state
         self.task_type = task_type
         self.ensemble_slot_j = ensemble_slot_j
+        self.cur_stacking_layer = cur_stacking_layer
+        self.stacked_ensemble_identifiers = stacked_ensemble_identifiers
 
     def __getstate__(self) -> Dict[str, Any]:
         # Cannot serialize a metric if
@@ -68,6 +72,7 @@ class StackingEnsemble(AbstractEnsemble):
         ensemble_identifiers[self.ensemble_slot_j] = best_model_identifier
         self._fit(predictions_ensemble, labels)
         self.identifiers_ = ensemble_identifiers
+        self.stacked_ensemble_identifiers[self.cur_stacking_layer] = ensemble_identifiers
         self._calculate_weights()
         return self
 
@@ -200,7 +205,7 @@ class StackingEnsemble(AbstractEnsemble):
             output (List[Tuple[int, int, float]]):
                 The models actually used by ensemble selection
         """
-        return self.identifiers_
+        return self.stacked_ensemble_identifiers
 
     def get_validation_performance(self) -> float:
         """

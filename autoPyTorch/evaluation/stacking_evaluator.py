@@ -220,7 +220,7 @@ class StackingEvaluator(AbstractEvaluator):
         indices = np.concatenate([train_indices for train_indices, _ in self.splits[repeat_id]])
 
         unique_indices = set(indices)
-        sorted_predictions = np.zeros((len(unique_indices), self.datamanager.num_classes))
+        sorted_predictions = np.zeros((len(unique_indices), self.num_classes))
 
         for i in unique_indices:
             positions = np.where(indices == i)

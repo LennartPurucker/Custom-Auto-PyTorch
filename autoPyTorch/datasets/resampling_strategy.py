@@ -150,7 +150,7 @@ DEFAULT_RESAMPLING_PARAMETERS: Dict[
     },
     NoResamplingStrategyTypes.no_resampling: {},
     RepeatedCrossValTypes.repeated_k_fold_cross_validation: {
-        'num_splits': 5,
+        'num_splits': 2,
         'num_repeats': 2
     },
 }
@@ -320,11 +320,12 @@ class RepeatedCrossValFuncs:
                                        ) -> List[List[Tuple[np.ndarray, np.ndarray]]]:
         cv = RepeatedKFold(n_splits=num_splits, n_repeats=num_repeats, random_state=random_state)
 
+        tmp_splits = list(cv.split(indices))
         splits = []
-        for _ in range(num_repeats):
+        for i in range(num_repeats):
             folds = []
-            for _ in range(num_splits):
-                folds.append(cv.split(indices))
+            for j in range(num_splits):
+                folds.append(tmp_splits[i*num_splits + j])
             splits.append(folds)
         return splits
 

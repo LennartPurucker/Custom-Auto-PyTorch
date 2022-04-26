@@ -61,7 +61,9 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         random_state: Optional[Union[int, np.random.RandomState]] = None,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         unit_test: bool = False,
-        use_ensemble_opt_loss=False
+        use_ensemble_opt_loss=False,
+        num_stacking_layers: int = 2,
+        cur_stacking_layer: int = 0
     ):
         """
             Constructor
@@ -129,9 +131,23 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         # we still need to store ensemble identifiers as this class is not persistant
         # we can do this by either storing and reading them in this class
         # or passing them via the ensemble builder manager which has persistency with the futures stored.
-        self.ensemble_identifiers: Optional[List[Optional[str]]] = None
         self.read_losses = {}
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
+        self.num_stacking_layers = num_stacking_layers
+        self.cur_stacking_layer = cur_stacking_layer
+
+    def run(
+        self,
+        iteration: int,
+        pynisher_context: str,
+        cur_stacking_layer: int,
+        time_left: Optional[float] = None,
+        end_at: Optional[float] = None,
+        time_buffer: int = 5,
+        return_predictions: bool = False,
+        ) -> Tuple[List[Dict[str, float]], int, Optional[np.ndarray], Optional[np.ndarray]]:
+        self.cur_stacking_layer = cur_stacking_layer
+        return super().run(iteration, pynisher_context, time_left, end_at, time_buffer, return_predictions)
 
     # This is the main wrapper to the EnsembleSelection class which fits the ensemble
     def main(
@@ -199,10 +215,17 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             time_left - used_time,
         )
 
+        self.current_ensemble_identifiers = self._load_current_ensemble_identifiers(cur_stacking_layer=self.cur_stacking_layer)
         self.ensemble_slot_j = np.mod(iteration, self.ensemble_size)
-        self.ensemble_identifiers = self._load_ensemble_identifiers()
+        self.cutoff_num_run = self._load_ensemble_cutoff_num_run()
+        # checks if we have moved to a new stacking layer.
+        if all(slot is None for slot in self.current_ensemble_identifiers):
+            # to exclude the latest model we subtract 1 from last available num run
+            self.cutoff_num_run = self.backend.get_next_num_run(peek=True) - 1 
+
         self.logger.debug(f"Iteration for ensemble building:{iteration}, "
-                          f"current model to be updated: {self.ensemble_identifiers[self.ensemble_slot_j]} at slot : {self.ensemble_slot_j}")
+                          f"current model to be updated: {self.current_ensemble_identifiers[self.ensemble_slot_j]}"
+                          f" at slot : {self.ensemble_slot_j} with cur_stacking_layer: {self.cur_stacking_layer}")
         # populates self.read_preds and self.read_losses with individual model predictions and ensemble loss.
         if not self.compute_ensemble_loss_per_model():
             if return_predictions:
@@ -243,10 +266,12 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         if ensemble is not None and self.SAVE2DISC:
             self.backend.save_ensemble(ensemble, iteration, self.seed)
             ensemble_identifiers=self._get_identifiers_from_num_runs(ensemble.identifiers_)
-            # self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
-            self._save_ensemble_identifiers(
-                ensemble_identifiers=ensemble_identifiers
+            self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
+            self._save_current_ensemble_identifiers(
+                ensemble_identifiers=ensemble_identifiers,
+                cur_stacking_layer=self.cur_stacking_layer
                 )
+            self._save_ensemble_cutoff_num_run(cutoff_num_run=self.cutoff_num_run)
         # Delete files of non-candidate models - can only be done after fitting the ensemble and
         # saving it to disc so we do not accidentally delete models in the previous ensemble
         if self.max_resident_models is not None:
@@ -286,6 +311,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         else:
             return self.ensemble_history, self.ensemble_nbest, None, None
 
+    # TODO: change to calculate stacked ensemble loss per model
     def compute_ensemble_loss_per_model(self) -> bool:
         """
             Compute the loss of the predictions on ensemble building data set;
@@ -337,6 +363,11 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         # Mypy assumes sorted returns an object because of the lambda. Can't get to recognize the list
         # as a returning list, so as a work-around we skip next line
         for y_ens_fn, match, _seed, _num_run, _budget in sorted(to_read, key=lambda x: x[3]):  # type: ignore
+
+            # skip models that were part of previous stacking layer
+            if _num_run < self.cutoff_num_run:
+                continue
+
             if self.read_at_most and n_read_files >= self.read_at_most:
                 # limit the number of files that will be read
                 # to limit memory consumption
@@ -373,7 +404,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
 
             # actually read the predictions and compute their respective loss
             try:
-                ensemble_idenitfiers = self.ensemble_identifiers.copy()
+                ensemble_idenitfiers = self.current_ensemble_identifiers.copy()
                 ensemble_idenitfiers[self.ensemble_slot_j] = y_ens_fn
                 y_ensemble = self._read_np_fn(y_ens_fn)
                 losses = self.get_ensemble_loss_with_model(
@@ -426,29 +457,28 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             ensemble: StackingEnsemble
                 trained Ensemble
         """
-
-        assert self.ensemble_identifiers is not None
+        assert self.current_ensemble_identifiers is not None
 
         if self.unit_test:
             raise MemoryError()
 
-        predictions_train = [self.read_preds[k][Y_ENSEMBLE] if k is not None else None for k in self.ensemble_identifiers]
+        predictions_train = [self.read_preds[k][Y_ENSEMBLE] if k is not None else None for k in self.current_ensemble_identifiers]
         best_model_predictions = self.read_preds[best_model_identifier][Y_ENSEMBLE]
 
-        ensemble_num_runs = [
-            (
-                self.read_losses[k]["seed"],
-                self.read_losses[k]["num_run"],
-                self.read_losses[k]["budget"],
-            )
-            if k is not None else None
-            for k in self.ensemble_identifiers]
+        ensemble_num_runs = self._get_num_runs_from_identifiers(self.current_ensemble_identifiers)
 
         best_model_num_run = (
             self.read_losses[best_model_identifier]["seed"],
             self.read_losses[best_model_identifier]["num_run"],
             self.read_losses[best_model_identifier]["budget"],
         )
+
+        stacked_ensemble_identifiers = self._load_stacked_ensemble_identifiers()
+        self.logger.debug(f"Stacked ensemble identifiers: {stacked_ensemble_identifiers}")
+        stacked_ensemble_num_runs = [
+            self._get_num_runs_from_identifiers(layer_identifiers)
+            for layer_identifiers in stacked_ensemble_identifiers
+        ]
 
         opt_metric = [m for m in self.metrics if m.name == self.opt_metric][0]
         if not opt_metric:
@@ -460,7 +490,9 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             metric=opt_metric,
             random_state=self.random_state,
             task_type=self.task_type,
-            ensemble_slot_j=self.ensemble_slot_j
+            ensemble_slot_j=self.ensemble_slot_j,
+            cur_stacking_layer=self.cur_stacking_layer,
+            stacked_ensemble_identifiers=stacked_ensemble_num_runs
         )
 
         try:
@@ -468,7 +500,8 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             #     "Fitting the ensemble on %d models.",
             #     len(predictions_train),
             # )
-            # self.logger.debug(f"predictions sent to ensemble: {predictions_train}")
+            self.logger.debug(f"predictions sent to ensemble: {predictions_train}")
+            self.logger.debug(f"best model predictions: {best_model_predictions}")
             start_time = time.time()
             ensemble.fit(
                 predictions_train, 
@@ -637,20 +670,42 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble, self.task_type)
         return loss
 
-    def _get_ensemble_identifiers_filename(self):
-        return os.path.join(self.backend.internals_directory, 'ensemble_identifiers.pkl')
+    def _get_ensemble_identifiers_filename(self, cur_stacking_layer) -> str:
+        return os.path.join(self.backend.internals_directory, f'ensemble_identifiers_{cur_stacking_layer}.pkl')
 
-    def _save_ensemble_identifiers(self, ensemble_identifiers: List[Optional[str]]) -> None:
-        with open(self._get_ensemble_identifiers_filename(), "wb") as file:
+    def _get_ensemble_cutoff_num_run_filename(self):
+        return os.path.join(self.backend.internals_directory, 'ensemble_cutoff_run.txt')
+
+    def _save_ensemble_cutoff_num_run(self, cutoff_num_run: int) -> None:
+        with open(self._get_ensemble_cutoff_num_run_filename(), "w") as file:
+            file.write(str(cutoff_num_run))
+
+    def _load_ensemble_cutoff_num_run(self) -> Optional[int]:
+        if os.path.exists(self._get_ensemble_cutoff_num_run_filename()):
+            with open(self._get_ensemble_cutoff_num_run_filename(), "r") as file:
+                cutoff_num_run = int(file.read())
+        else:
+            cutoff_num_run = None
+        return cutoff_num_run
+
+    def _save_current_ensemble_identifiers(self, ensemble_identifiers: List[Optional[str]], cur_stacking_layer) -> None:
+        with open(self._get_ensemble_identifiers_filename(cur_stacking_layer=cur_stacking_layer), "wb") as file:
             pickle.dump(ensemble_identifiers, file=file)
     
-    def _load_ensemble_identifiers(self) -> List[Optional[str]]:
-        if os.path.exists(self._get_ensemble_identifiers_filename()):
-            with open(self._get_ensemble_identifiers_filename(), "rb") as file:
+    def _load_current_ensemble_identifiers(self, cur_stacking_layer) -> List[Optional[str]]:
+        file_name = self._get_ensemble_identifiers_filename(cur_stacking_layer)
+        if os.path.exists(file_name):
+            with open(file_name, "rb") as file:
                 identifiers = pickle.load(file)
         else:
             identifiers = [None]*self.ensemble_size
         return identifiers
+
+    def _load_stacked_ensemble_identifiers(self) -> List[List[Optional[str]]]:
+        ensemble_identifiers = list()
+        for i in range(self.num_stacking_layers):
+            ensemble_identifiers.append(self._load_current_ensemble_identifiers(cur_stacking_layer=i))
+        return ensemble_identifiers
 
     def _get_identifiers_from_num_runs(self, num_runs, subset='ensemble') -> List[Optional[str]]:
         identifiers: List[Optional[str]] = []
@@ -665,3 +720,18 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             identifiers.append(identifier)
         return identifiers
 
+    def _get_num_runs_from_identifiers(self, identifiers) -> List[Optional[Tuple[int, int, float]]]:
+        num_runs: List[Optional[Tuple[int, int, float]]] = []
+        for identifier in identifiers:
+            num_run = None
+            if identifier is not None:
+                match = self.model_fn_re.search(identifier)
+                if match is None:
+                    raise ValueError(f"Could not interpret file {identifier} "
+                                    "Something went wrong while scoring predictions")
+                _seed = int(match.group(1))
+                _num_run = int(match.group(2))
+                _budget = float(match.group(3))
+                num_run = (_seed, _num_run, _budget)
+            num_runs.append(num_run)
+        return num_runs

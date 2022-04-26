@@ -21,7 +21,8 @@ class StackingEnsemble(AbstractEnsemble):
         random_state: np.random.RandomState,
         ensemble_slot_j: int,
         cur_stacking_layer: int,
-        stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]]
+        stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]],
+        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]]
     ) -> None:
         self.ensemble_size = ensemble_size
         self.metric = metric
@@ -30,6 +31,7 @@ class StackingEnsemble(AbstractEnsemble):
         self.ensemble_slot_j = ensemble_slot_j
         self.cur_stacking_layer = cur_stacking_layer
         self.stacked_ensemble_identifiers = stacked_ensemble_identifiers
+        self.predictions_stacking_ensemble = predictions_stacking_ensemble
 
     def __getstate__(self) -> Dict[str, Any]:
         # Cannot serialize a metric if
@@ -194,6 +196,14 @@ class StackingEnsemble(AbstractEnsemble):
     def __str__(self) -> str:
         return f"Ensemble Selection:\n\tWeights: {self.weights_}\
             \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.identifiers_) if self.weights_[idx] > 0])}"
+
+    def get_layer_stacking_ensemble_predictions(
+        self,
+        stacking_layer: int,
+        dataset: str = 'ensemble'
+    ) -> List[Optional[np.ndarray]]:
+
+        return [predictions[dataset] if predictions is not None else None for predictions in self.predictions_stacking_ensemble[stacking_layer]]
 
     def get_selected_model_identifiers(self) -> List[Tuple[int, int, float]]:
         """

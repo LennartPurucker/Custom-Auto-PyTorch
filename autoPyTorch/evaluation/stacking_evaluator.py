@@ -119,7 +119,8 @@ class StackingEvaluator(AbstractEvaluator):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False) -> None:
+                 use_ensemble_opt_loss=False,
+                 cur_stacking_layer: int = 0) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -141,9 +142,17 @@ class StackingEvaluator(AbstractEvaluator):
             use_ensemble_opt_loss=use_ensemble_opt_loss
         )
 
+        self.cur_stacking_layer = cur_stacking_layer
         self.num_repeats = len(self.splits)
         self.num_folds = len(self.splits[0])
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
+        self.old_ensemble: Optional[StackingEnsemble] = None
+        ensemble_dir = self.backend.get_ensemble_dir()
+        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
+            self.old_ensemble = self.backend.load_ensemble(self.seed)
+            assert isinstance(self.old_ensemble, StackingEnsemble)
+
+        self.logger.debug("Search space updates :{}".format(self.search_space_updates))
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],
@@ -423,12 +432,9 @@ class StackingEvaluator(AbstractEvaluator):
         Y_valid_pred = np.mean(Y_valid_pred, axis=0) if Y_valid_pred is not None else None
         Y_test_pred = np.mean(Y_test_pred, axis=0) if Y_test_pred is not None else None
 
-        ensemble_dir = self.backend.get_ensemble_dir()
-        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
-            old_ensemble = self.backend.load_ensemble(self.seed)
-            assert isinstance(old_ensemble, StackingEnsemble)
-            Y_ensemble_optimization_pred = old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
-            Y_ensemble_preds = old_ensemble.get_ensemble_predictions_with_current_pipeline(Y_pipeline_optimization_pred)
+        if self.old_ensemble is not None:
+            Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
+            Y_ensemble_preds = self.old_ensemble.get_ensemble_predictions_with_current_pipeline(Y_pipeline_optimization_pred)
         else:
             Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
             Y_ensemble_preds = [Y_pipeline_optimization_pred]
@@ -536,6 +542,7 @@ def eval_function(
     all_supported_metrics: bool = True,
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
+    cur_stacking_layer: int = 0,
     instance: str = None,
 ) -> None:
     """
@@ -618,6 +625,7 @@ def eval_function(
         all_supported_metrics=all_supported_metrics,
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
-        use_ensemble_opt_loss=use_ensemble_opt_loss
+        use_ensemble_opt_loss=use_ensemble_opt_loss,
+        cur_stacking_layer=cur_stacking_layer
     )
     evaluator.fit_predict_and_loss()

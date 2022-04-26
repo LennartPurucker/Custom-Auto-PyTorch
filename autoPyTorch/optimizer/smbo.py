@@ -2,11 +2,14 @@ import copy
 import json
 import logging.handlers
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import os
 
 import ConfigSpace
 from ConfigSpace.configuration_space import Configuration
 
 import dask.distributed
+
+import numpy as np
 
 from smac.facade.smac_ac_facade import SMAC4AC
 from smac.intensification.hyperband import Hyperband
@@ -18,6 +21,7 @@ from smac.tae.dask_runner import DaskParallelRunner
 from smac.tae.serial_runner import SerialRunner
 from smac.utils.io.traj_logging import TrajEntry
 
+from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.base_dataset import BaseDataset
 from autoPyTorch.datasets.resampling_strategy import (
@@ -27,10 +31,12 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingStrategyTypes
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
+from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.optimizer.utils import read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
+from autoPyTorch.utils.pipeline import get_configuration_space, get_dataset_requirements
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import get_named_client_logger
 from autoPyTorch.utils.stopwatch import StopWatch
@@ -282,6 +288,19 @@ class AutoMLSMBO(object):
         if self.datamanager is not None and self.datamanager.task_type is not None:
             self.task = self.datamanager.task_type
 
+    def reset_attributes(self) -> None:
+        self.backend.save_datamanager(self.datamanager)
+        self.reset_data_manager()
+
+        dataset_requirements = get_dataset_requirements(
+            info=self.datamanager.get_required_dataset_info(),
+            include=self.include_components,
+            exclude=self.exclude_components,
+            search_space_updates=self.search_space_updates)
+        self._dataset_requirements = dataset_requirements
+        dataset_properties = self.datamanager.get_dataset_properties(dataset_requirements)
+        self.config_space = get_configuration_space(dataset_properties, include=self.include, exclude=self.exclude, search_space_updates=self.search_space_updates)
+
     def _run_smbo(
         self,
         cur_stacking_layer: int,
@@ -334,7 +353,8 @@ class AutoMLSMBO(object):
             search_space_updates=self.search_space_updates,
             pynisher_context=self.pynisher_context,
             ensemble_method=self.ensemble_method,
-            use_ensemble_opt_loss=self.use_ensemble_opt_loss
+            use_ensemble_opt_loss=self.use_ensemble_opt_loss,
+            cur_stacking_layer=cur_stacking_layer
         )
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")
@@ -440,7 +460,34 @@ class AutoMLSMBO(object):
                 initial_num_run=initial_num_run,
                 func=func
                 )
+            old_ensemble: Optional[StackingEnsemble] = None
+            ensemble_dir = self.backend.get_ensemble_dir()
+            if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
+                old_ensemble = self.backend.load_ensemble(self.seed)
+                assert isinstance(old_ensemble, StackingEnsemble)
+
+            previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
+            previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')
+            X_train, y_train = self.datamanager.train_tensors
+            X_test, y_test = self.datamanager.test_tensors
+            self.logger.debug(f"Before concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
+            for model_predictions_train, model_predictions_test in zip(previous_layer_predictions_train, previous_layer_predictions_test):
+                if model_predictions_train is not None and model_predictions_test is not None:
+                    self.logger.debug(f"model_predictions_train: {model_predictions_train.shape}, model_predictions_test: {model_predictions_test.shape}")
+                    X_train = np.concatenate([X_train, model_predictions_train], axis=1)
+                    X_test = np.concatenate([X_test, model_predictions_test], axis=1)
+                else:
+                    self.logger.debug(f"model_predictions_train: {model_predictions_train}, model_predictions_test: {model_predictions_test }")
+
+            self.logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
+            validator = TabularInputValidator(is_classification=True)
+            validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)
+            # self.datamanager.infer_dataset_attributes(validator, X_train, y_train, X_test, y_test)
+
             self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
             self.trajectory.extend(trajectory)
             initial_num_run = self.backend.get_next_num_run(peek=True)
+            initial_num_run = self.backend.get_next_num_run()
+            self.logger.debug(f"cutoff num_run: {initial_num_run}")
+
         return self.run_history, self.trajectory, self._budget_type

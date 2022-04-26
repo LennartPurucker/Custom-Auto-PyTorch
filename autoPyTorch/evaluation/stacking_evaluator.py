@@ -114,7 +114,6 @@ class StackingEvaluator(AbstractEvaluator):
                  disable_file_output: Union[bool, List] = False,
                  init_params: Optional[Dict[str, Any]] = None,
                  logger_port: Optional[int] = None,
-                 keep_models: Optional[bool] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None) -> None:
         super().__init__(
@@ -141,14 +140,7 @@ class StackingEvaluator(AbstractEvaluator):
         # TODO: Therefore we will have to store pipelines using datamanager and load them, see if we only need predictions.
         # TODO: but we will need the whole pipeline as we would like to predict with different dataset, like val or something
 
-        self.num_folds: int = len(self.splits)
-        self.Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
-        self.Y_train_targets: np.ndarray = np.ones(self.y_train.shape) * np.NaN
-        self.pipelines: List[Optional[BaseEstimator]] = [None] * self.num_folds
-        self.indices: List[Optional[Tuple[Union[np.ndarray, List], Union[np.ndarray, List]]]] = [None] * self.num_folds
-
         self.logger.debug("Search space updates :{}".format(self.search_space_updates))
-        self.keep_models = keep_models
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],
@@ -310,8 +302,7 @@ class StackingEvaluator(AbstractEvaluator):
             y_test_pred
         ) = self._fit_and_predict(pipeline, split_id,
                                   train_indices=train_split,
-                                  test_indices=test_split,
-                                  add_pipeline_to_self=True)
+                                  test_indices=test_split)
 
         train_loss = self._loss(self.y_train[train_split], y_train_pred)
         loss = self._loss(self.y_train[test_split], y_ensemble_opt_pred)
@@ -339,11 +330,13 @@ class StackingEvaluator(AbstractEvaluator):
         )
 
 
-    def _fit_and_predict(self, pipeline: BaseEstimator, fold: int, train_indices: Union[np.ndarray, List],
-                         test_indices: Union[np.ndarray, List],
-                         add_pipeline_to_self: bool
-                         ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
-        self.indices[fold] = ((train_indices, test_indices))
+    def _fit_and_predict(
+        self,
+        pipeline: BaseEstimator,
+        fold: int,
+        train_indices: Union[np.ndarray, List],
+        test_indices: Union[np.ndarray, List],
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
 
         # See autoPyTorch/pipeline/components/base_component.py::autoPyTorchComponent for more details
         # about fit_dictionary
@@ -361,10 +354,7 @@ class StackingEvaluator(AbstractEvaluator):
             test_indices=test_indices,
         )
 
-        if add_pipeline_to_self:
-            self.pipeline = pipeline
-        else:
-            self.pipelines[fold] = pipeline
+        self.pipeline = pipeline
 
         return Y_train_pred, Y_pipeline_opt_pred, Y_ensemble_opt_pred, Y_valid_pred, Y_test_pred
 

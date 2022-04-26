@@ -145,15 +145,24 @@ class autoPyTorchSMBO(SMBO):
                 self._stop = True
 
         for callback in self._callbacks['_adjust_run_history']:
-            response = callback(smbo=self)
+            response = callback()
             if response is not None:
                 for run_key, cost in response:
                     run_value = self.runhistory.data.get(run_key, None)
                     if run_value is not None:
-                        run_value.cost = cost
+                        self.logger.debug(f"updated run_key: {run_key} with cost: {cost}")
+                        updated_run_value = RunValue(
+                            cost,
+                            run_value.time,
+                            run_value.status,
+                            run_value.starttime,
+                            run_value.endtime,
+                            run_value.additional_info
+                            )
+                        self.runhistory.data[run_key] = updated_run_value
                 self.epm_chooser.runhistory = self.runhistory
 
-        self.logger.debug(f"\nafter runhistory updater, result: {result}, \nrunhistory: {dict_repr(self.runhistory.data)}")
+        # self.logger.debug(f"\nafter runhistory updater, result: {result}, \nrunhistory: {dict_repr(self.runhistory.data)}")
 
         # Update the intensifier with the result of the runs
         self.incumbent, inc_perf = self.intensifier.process_results(

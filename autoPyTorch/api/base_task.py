@@ -49,6 +49,7 @@ from autoPyTorch.datasets.resampling_strategy import (
 )
 from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
+from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
@@ -171,6 +172,7 @@ class BaseTask(ABC):
         logging_config: Optional[Dict] = None,
         ensemble_size: int = 50,
         ensemble_nbest: int = 50,
+        ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
         output_directory: Optional[str] = None,
@@ -193,6 +195,7 @@ class BaseTask(ABC):
         self.n_threads = n_threads
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
+        self.ensemble_method = ensemble_method
         self.max_models_on_disc = max_models_on_disc
         self.logging_config: Optional[Dict] = logging_config
         self.include_components: Optional[Dict] = include_components
@@ -1249,7 +1252,8 @@ class BaseTask(ABC):
                                                         ensemble_size=self.ensemble_size,
                                                         ensemble_nbest=self.ensemble_nbest,
                                                         precision=precision,
-                                                        optimize_metric=self.opt_metric
+                                                        optimize_metric=self.opt_metric,
+                                                        ensemble_method=self.ensemble_method
                                                         )
             self._stopwatch.stop_task(ensemble_task_name)
 
@@ -1705,6 +1709,7 @@ class BaseTask(ABC):
             precision: Optional[int] = None,
             ensemble_nbest: int = 50,
             ensemble_size: int = 50,
+            ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
             load_models: bool = True,
             time_for_task: int = 100,
             func_eval_time_limit_secs: int = 50,
@@ -1815,6 +1820,7 @@ class BaseTask(ABC):
             precision=precision,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
+            ensemble_method=ensemble_method,
         )
 
         manager.build_ensemble(self._dask_client)
@@ -1834,6 +1840,7 @@ class BaseTask(ABC):
             self,
             time_left_for_ensembles: float,
             optimize_metric: str,
+            ensemble_method: int,
             ensemble_nbest: int,
             ensemble_size: int,
             precision: int = 32,
@@ -1887,6 +1894,7 @@ class BaseTask(ABC):
             opt_metric=optimize_metric,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
+            ensemble_method=ensemble_method,
             max_models_on_disc=self.max_models_on_disc,
             seed=self.seed,
             max_iterations=None,

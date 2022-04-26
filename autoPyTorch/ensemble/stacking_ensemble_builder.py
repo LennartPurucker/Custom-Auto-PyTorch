@@ -20,11 +20,26 @@ from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss, calculate_score
 from autoPyTorch.utils.logging_ import get_named_client_logger
+from autoPyTorch.metrics import zero_one_loss
+
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
 
 MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
+
+
+def calculate_nomalised_margin_loss(ensemble_predictions, y_true) -> float:
+    nonnull_preds = 0
+    margin: float = 0
+    for pred in ensemble_predictions:
+        if pred is not None:
+            nonnull_preds += 1
+            margin += (1 - 2*zero_one_loss(y_true, pred))
+
+    margin /= nonnull_preds
+
+    return pow((1-margin), 2)/4
 
 
 # TODO: make functions to support stacking.
@@ -185,8 +200,9 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         )
 
         self.ensemble_slot_j = np.mod(iteration, self.ensemble_size)
-        self.logger.debug(f"Iteration for ensemble building:{iteration}")
         self.ensemble_identifiers = self._load_ensemble_identifiers()
+        self.logger.debug(f"Iteration for ensemble building:{iteration}, "
+                          f"current model to be updated: {self.ensemble_identifiers[self.ensemble_slot_j]} at slot : {self.ensemble_slot_j}")
         # populates self.read_preds and self.read_losses with individual model predictions and ensemble loss.
         if not self.compute_ensemble_loss_per_model():
             if return_predictions:
@@ -366,7 +382,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
                     )
 
                 self.read_losses[y_ens_fn]["ens_loss"] = losses[self.opt_metric]
-
+                # self.read_losses[y_ens_fn]["ens_loss"] = losses["ensemble_opt_loss"]
                 # It is not needed to create the object here
                 # To save memory, we just compute the loss.
                 self.read_losses[y_ens_fn]["mtime_ens"] = os.path.getmtime(y_ens_fn)
@@ -598,6 +614,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
         weight = 1. / float(nonnull_identifiers)
         # if prediction model.shape[0] == len(non_null_weights),
         # predictions do not include those of zero-weight models.
+        ensemble_predictions = list()
         for identifier in ensemble_identifiers:
             if identifier is not None:
                 if self.read_preds[identifier][Y_ENSEMBLE] is None:
@@ -607,6 +624,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             else:
                 break
 
+            ensemble_predictions.append(predictions)
             np.multiply(predictions, weight, out=tmp_predictions)
             np.add(average_predictions, tmp_predictions, out=average_predictions)
 
@@ -616,6 +634,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
                 prediction=average_predictions,
                 task_type=self.task_type,
             )
+        # loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble)
         return loss
 
     def _get_ensemble_identifiers_filename(self):

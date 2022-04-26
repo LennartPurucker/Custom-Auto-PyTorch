@@ -195,6 +195,7 @@ class StackingEvaluator(AbstractEvaluator):
         if test_loss is not None:
             additional_run_info['test_loss'] = test_loss
 
+        additional_run_info['opt_loss'] = loss
         rval_dict = {'loss': cost,
                      'additional_run_info': additional_run_info,
                      'status': status}
@@ -374,10 +375,10 @@ class StackingEvaluator(AbstractEvaluator):
                                          self.y_train[train_indices])
 
         ensemble_dir = self.backend.get_ensemble_dir()
-        if len(os.listdir(ensemble_dir)) >= 1:
+        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
             old_ensemble = self.backend.load_ensemble(self.seed)
             assert isinstance(old_ensemble, StackingEnsemble)
-            ensemble_opt_pred = old_ensemble.predict_with_current_model(pipeline_opt_pred)
+            ensemble_opt_pred = old_ensemble.predict_with_current_pipeline(pipeline_opt_pred)
         else:
             ensemble_opt_pred = pipeline_opt_pred.copy()
 

@@ -25,6 +25,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingStrategyTypes
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
+from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.optimizer.utils import read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
@@ -115,6 +116,7 @@ class AutoMLSMBO(object):
                  pynisher_context: str = 'spawn',
                  min_budget: int = 5,
                  max_budget: int = 50,
+                 ensemble_method: int = EnsembleSelectionTypes.ensemble_selection
                  ):
         """
         Interface to SMAC. This method calls the SMAC optimize method, and allows
@@ -228,6 +230,7 @@ class AutoMLSMBO(object):
         self.pynisher_context = pynisher_context
         self.min_budget = min_budget
         self.max_budget = max_budget
+        self.ensemble_method = ensemble_method
 
         self.ensemble_callback = ensemble_callback
 
@@ -292,6 +295,7 @@ class AutoMLSMBO(object):
             pipeline_config=self.pipeline_config,
             search_space_updates=self.search_space_updates,
             pynisher_context=self.pynisher_context,
+            ensemble_method=self.ensemble_method
         )
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")

@@ -463,7 +463,8 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             raise MemoryError()
 
         predictions_train = [self.read_preds[k][Y_ENSEMBLE] if k is not None else None for k in self.current_ensemble_identifiers]
-        best_model_predictions = self.read_preds[best_model_identifier][Y_ENSEMBLE]
+        best_model_predictions_ensemble = self.read_preds[best_model_identifier][Y_ENSEMBLE]
+        best_model_predictions_test = self.read_preds[best_model_identifier][Y_TEST]
 
         ensemble_num_runs = self._get_num_runs_from_identifiers(self.current_ensemble_identifiers)
 
@@ -509,11 +510,12 @@ class StackingEnsembleBuilder(EnsembleBuilder):
             #     len(predictions_train),
             # )
             self.logger.debug(f"predictions sent to ensemble: {predictions_train}")
-            self.logger.debug(f"best model predictions: {best_model_predictions}")
+            self.logger.debug(f"best model predictions: {best_model_predictions_ensemble}")
             start_time = time.time()
             ensemble.fit(
                 predictions_train, 
-                best_model_predictions,
+                best_model_predictions_ensemble,
+                best_model_predictions_test,
                 self.y_true_ensemble,
                 ensemble_num_runs,
                 best_model_num_run

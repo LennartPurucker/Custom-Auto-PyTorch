@@ -160,7 +160,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes, RepeatedCrossValTypes)):
             if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
                 eval_function = eval_train_function
-            elif ensemble_method.is_stacking_ensemble():
+            elif ensemble_method.is_stacking_ensemble() or ensemble_method == EnsembleSelectionTypes.stacking_repeat_base_models:
                 eval_function = autoPyTorch.evaluation.stacking_evaluator.eval_function
             self.output_y_hat_optimization = output_y_hat_optimization
         elif isinstance(self.resampling_strategy, NoResamplingStrategyTypes):

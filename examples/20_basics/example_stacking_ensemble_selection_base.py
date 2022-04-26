@@ -9,6 +9,9 @@ with AutoPyTorch
 import os
 import tempfile as tmp
 import warnings
+from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
+
+from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 os.environ['JOBLIB_TEMP_FOLDER'] = tmp.gettempdir()
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -22,7 +25,7 @@ import sklearn.datasets
 import sklearn.model_selection
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-
+from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 
 ############################################################################
 # Data Loading
@@ -40,11 +43,14 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_12',
-    output_directory='./tmp/autoPyTorch_example_out_12',
+    temporary_directory='./tmp/autoPyTorch_example_tmp_11',
+    output_directory='./tmp/autoPyTorch_example_out_11',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=42,
+    ensemble_method=EnsembleSelectionTypes.stacking_repeat_base_models,
+    resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
+    ensemble_size=5
 )
 
 ############################################################################
@@ -57,18 +63,21 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=300,
-    func_eval_time_limit_secs=50
+    total_walltime_limit=400,
+    func_eval_time_limit_secs=150,
+    enable_traditional_pipeline=False,
+    # smbo_class=autoPyTorchSMBO,
+    all_supported_metrics=False 
 )
 
 ############################################################################
 # Print the final ensemble performance
 # ====================================
 y_pred = api.predict(X_test)
-score = api.score(y_pred, y_test)
+score = api.score(y_pred, y_test, metric='accuracy')
 print(score)
 # Print the final ensemble built by AutoPyTorch
 print(api.show_models())
 
 # Print statistics from search
-print(api.sprint_statistics())
+# print(api.sprint_statistics())

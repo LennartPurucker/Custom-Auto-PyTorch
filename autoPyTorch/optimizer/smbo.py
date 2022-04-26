@@ -514,6 +514,10 @@ class AutoMLSMBO(object):
                 initial_num_run=initial_num_run,
                 func=func
                 )
+            if self.num_stacking_layers <= 1:
+                self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
+                self.trajectory.extend(trajectory)
+                break 
             old_ensemble: Optional[EnsembleOptimisationStackingEnsemble] = None
             ensemble_dir = self.backend.get_ensemble_dir()
             if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:

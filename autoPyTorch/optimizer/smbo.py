@@ -121,7 +121,8 @@ class AutoMLSMBO(object):
                  max_budget: int = 50,
                  ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
                  other_callbacks: Optional[List] = None,
-                 smbo_class: Optional[SMBO] = None
+                 smbo_class: Optional[SMBO] = None,
+                 use_ensemble_opt_loss: bool = False
                  ):
         """
         Interface to SMAC. This method calls the SMAC optimize method, and allows
@@ -253,6 +254,8 @@ class AutoMLSMBO(object):
                                               port=self.logger_port)
         self.logger.info("initialised {}".format(self.__class__.__name__))
 
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
+
         self.initial_configurations: Optional[List[Configuration]] = None
         if portfolio_selection is not None:
             initial_configurations = read_return_initial_configurations(config_space=config_space,
@@ -303,7 +306,8 @@ class AutoMLSMBO(object):
             pipeline_config=self.pipeline_config,
             search_space_updates=self.search_space_updates,
             pynisher_context=self.pynisher_context,
-            ensemble_method=self.ensemble_method
+            ensemble_method=self.ensemble_method,
+            use_ensemble_opt_loss=self.use_ensemble_opt_loss
         )
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")

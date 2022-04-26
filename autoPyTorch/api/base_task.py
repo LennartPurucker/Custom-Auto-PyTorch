@@ -48,7 +48,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingStrategyTypes,
     ResamplingStrategies,
 )
-from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilderManager
+from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
@@ -649,9 +649,10 @@ class BaseTask(ABC):
 
         if self.ensemble_:
             identifiers = self.ensemble_.get_selected_model_identifiers()
-            self.models_ = self._backend.load_models_by_identifiers(identifiers)
+            nonnull_identifiers = [i for i in identifiers if i is not None]
+            self.models_ = self._backend.load_models_by_identifiers(nonnull_identifiers)
             if isinstance(self.resampling_strategy, CrossValTypes):
-                self.cv_models_ = self._backend.load_cv_models_by_identifiers(identifiers)
+                self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
 
             if isinstance(self.resampling_strategy, CrossValTypes):
                 if len(self.cv_models_) == 0:
@@ -977,7 +978,8 @@ class BaseTask(ABC):
         load_models: bool = True,
         portfolio_selection: Optional[str] = None,
         dask_client: Optional[dask.distributed.Client] = None,
-        smbo_class: Optional[SMBO] = None
+        smbo_class: Optional[SMBO] = None,
+        use_ensemble_opt_loss: bool = False
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -1234,6 +1236,7 @@ class BaseTask(ABC):
                                     func_eval_time_limit_secs=func_eval_time_limit_secs)
 
         # ============> Starting ensemble
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
         self.precision = precision
         self.opt_metric = optimize_metric
         elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
@@ -1309,6 +1312,7 @@ class BaseTask(ABC):
                 portfolio_selection=portfolio_selection,
                 pynisher_context=self._multiprocessing_context,
                 smbo_class = smbo_class,
+                use_ensemble_opt_loss=self.use_ensemble_opt_loss,
                 other_callbacks=[proc_runhistory_updater] if proc_runhistory_updater is not None else None
             )
             try:
@@ -1915,6 +1919,7 @@ class BaseTask(ABC):
             random_state=self.seed,
             precision=precision,
             logger_port=self._logger_port,
+            use_ensemble_loss=self.use_ensemble_opt_loss
         )
         self._stopwatch.stop_task(ensemble_task_name)
 
@@ -2005,7 +2010,7 @@ class BaseTask(ABC):
             joblib.delayed(_pipeline_predict)(
                 models[identifier], X_test, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
             )
-            for identifier in self.ensemble_.get_selected_model_identifiers()
+            for identifier in self.ensemble_.get_selected_model_identifiers() if identifier is not None
         )
 
         if len(all_predictions) == 0:

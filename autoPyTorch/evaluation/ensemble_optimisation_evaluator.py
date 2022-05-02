@@ -24,13 +24,13 @@ from autoPyTorch.evaluation.abstract_evaluator import (
     AbstractEvaluator,
     fit_and_suppress_warnings
 )
-from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
+from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.evaluation.utils import VotingRegressorWrapper
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, subsampler
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 
-__all__ = ['StackingEvaluator', 'eval_function']
+__all__ = ['EnsembleOptimisationEvaluator', 'eval_ensemble_optimise_function']
 
 
 def _get_y_array(y: np.ndarray, task_type: int) -> np.ndarray:
@@ -41,7 +41,7 @@ def _get_y_array(y: np.ndarray, task_type: int) -> np.ndarray:
         return y
 
 
-class StackingEvaluator(AbstractEvaluator):
+class EnsembleOptimisationEvaluator(AbstractEvaluator):
     """
     This class builds a pipeline using the provided configuration.
     A pipeline implementing the provided configuration is fitted
@@ -147,11 +147,11 @@ class StackingEvaluator(AbstractEvaluator):
         self.num_repeats = len(self.splits)
         self.num_folds = len(self.splits[0])
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
-        self.old_ensemble: Optional[StackingEnsemble] = None
+        self.old_ensemble: Optional[EnsembleOptimisationStackingEnsemble] = None
         ensemble_dir = self.backend.get_ensemble_dir()
         if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
             self.old_ensemble = self.backend.load_ensemble(self.seed)
-            assert isinstance(self.old_ensemble, StackingEnsemble)
+            assert isinstance(self.old_ensemble, EnsembleOptimisationStackingEnsemble)
 
         self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 
@@ -534,7 +534,7 @@ class StackingEvaluator(AbstractEvaluator):
 
 
 # create closure for evaluating an algorithm
-def eval_function(
+def eval_ensemble_optimise_function(
     backend: Backend,
     queue: Queue,
     metric: autoPyTorchMetric,
@@ -618,7 +618,7 @@ def eval_function(
             This instance is a compatibility argument for SMAC, that is capable of working
             with multiple datasets at the same time.
     """
-    evaluator = StackingEvaluator(
+    evaluator = EnsembleOptimisationEvaluator(
         backend=backend,
         queue=queue,
         metric=metric,

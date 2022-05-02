@@ -31,7 +31,8 @@ from autoPyTorch.datasets.resampling_strategy import (
     NoResamplingStrategyTypes,
     RepeatedCrossValTypes
 )
-import autoPyTorch.evaluation.stacking_evaluator
+from autoPyTorch.evaluation.ensemble_optimisation_evaluator import eval_ensemble_optimise_function
+from autoPyTorch.evaluation.repeated_crossval_evaluator import eval_repeated_cv_function
 from autoPyTorch.evaluation.test_evaluator import eval_test_function
 from autoPyTorch.evaluation.train_evaluator import eval_train_function
 from autoPyTorch.evaluation.utils import (
@@ -132,7 +133,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         logger_port: int = None,
         all_supported_metrics: bool = True,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-        ensemble_method = None,
+        ensemble_method: EnsembleSelectionTypes = None,
         use_ensemble_opt_loss=False,
         cur_stacking_layer: int = 0
     ):
@@ -155,8 +156,10 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes, RepeatedCrossValTypes)):
             if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
                 eval_function = eval_train_function
-            elif ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
-                eval_function = autoPyTorch.evaluation.stacking_evaluator.eval_function
+            elif ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble:
+                eval_function = eval_ensemble_optimise_function
+            elif ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+                eval_function = eval_repeated_cv_function
             self.output_y_hat_optimization = output_y_hat_optimization
         elif isinstance(self.resampling_strategy, NoResamplingStrategyTypes):
             eval_function = eval_test_function

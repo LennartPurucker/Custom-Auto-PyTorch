@@ -64,72 +64,9 @@ class EnsembleSelectionPerLayerStackingEnsemble(AbstractEnsemble):
         self.ensemble_predictions[self.cur_stacking_layer] = cur_ensemble_predictions
         return self
 
-    # def _load_ensemble_for_layer(self, backend: Backend, seed, layer):
-    #     path = backend.get_ensemble_dir()
-    #     cur_layer_ensembles = glob.glob(f"{path}/{seed}.{layer}*.ensemble").sort()
-    #     with open(cur_layer_ensembles[-1], "rb") as fh:
-    #         latest_ensemble_for_layer = cast(AbstractEnsemble, pickle.load(fh))
-    #     return latest_ensemble_for_layer
-
-    # TODO: return 1 for models in layer 0, 2 for next and so on
-    # TODO: 0 for models that are not in stack
-    # def _calculate_weights(self) -> None:
-    #     """
-    #     Calculates the contribution each of the individual models
-    #     should have, in the final ensemble soft voting. It does so by
-    #     a frequency counting scheme. In particular, how many times a model
-    #     was used during hill climbing optimization.
-    #     """
-    #     weights = np.zeros(
-    #         self.ensemble_size,
-    #         dtype=np.float64,
-    #     )
-    #     current_size = len([id for id in self.identifiers_ if id is not None])
-    #     for i, identifier in enumerate(self.identifiers_):
-    #         if identifier is not None:
-    #             weights[i] = (1. / float(current_size))
-
-    #     self.weights_ = weights
-
     def predict(self, predictions: List[np.ndarray]) -> np.ndarray:
         # should be the last layer
         return self.ensembles[self.cur_stacking_layer].predict(predictions)
-        # last_ensemble = [ensemble for ensemble in self.ensembles if ensemble is not None][-1]
-        # return last_ensemble.predict(predictions)
-
-    # def _predict(self, predictions, weights):
-    #     """
-    #     Given a list of predictions from the individual model, this method
-    #     aggregates the predictions using a soft voting scheme with the weights
-    #     found during training.
-
-    #     Args:
-    #         predictions (List[np.ndarray]):
-    #             A list of predictions from the individual base models.
-
-    #     Returns:
-    #         average (np.ndarray): Soft voting predictions of ensemble models, using
-    #                             the weights
-    #     """
-
-    #     average = np.zeros_like(predictions[0], dtype=np.float64)
-    #     tmp_predictions = np.empty_like(predictions[0], dtype=np.float64)
-
-    #     # if prediction model.shape[0] == len(non_null_weights),
-    #     # predictions do not include those of zero-weight models.
-    #     if len([pred for pred in predictions if pred is not None]) == np.count_nonzero(weights):
-    #         for pred, weight in zip(predictions, weights):
-    #             if pred is not None:
-    #                 np.multiply(pred, weight, out=tmp_predictions)
-    #                 np.add(average, tmp_predictions, out=average)
-
-    #     # If none of the above applies, then something must have gone wrong.
-    #     else:
-    #         raise ValueError(f"{len(predictions)}, {self.weights_}\n"
-    #                          f"The dimensions of non null ensemble predictions"
-    #                          f" and ensemble weights do not match!")
-    #     del tmp_predictions
-    #     return average
 
     def __str__(self) -> str:
         return f"Ensemble Selection:\n\tWeights: {self.weights_}\
@@ -186,10 +123,23 @@ class EnsembleSelectionPerLayerStackingEnsemble(AbstractEnsemble):
 
         return outputs
 
+    def get_expanded_layer_stacking_ensemble_predictions(
+        self,
+        stacking_layer: int,
+        raw_stacking_layer_ensemble_predictions
+    ) -> List[np.ndarray]:
+        layer_weights = self.ensembles[stacking_layer].weights_
+        layer_size = self.ensembles[stacking_layer].ensemble_size
+        ensemble_predictions = []
+        for weight, pred in zip(layer_weights, raw_stacking_layer_ensemble_predictions):
+            ensemble_predictions.extend([pred] * int(weight * layer_size))
+        return ensemble_predictions
+
     def get_layer_stacking_ensemble_predictions(
         self,
         stacking_layer: int,
         dataset: str = 'ensemble'
     ) -> List[Optional[np.ndarray]]:
+        raw_stacking_layer_ensemble_predictions = self.ensemble_predictions[stacking_layer][dataset]
 
-        return self.ensemble_predictions[stacking_layer][dataset]
+        return self.get_expanded_layer_stacking_ensemble_predictions(stacking_layer=stacking_layer, raw_stacking_layer_ensemble_predictions=raw_stacking_layer_ensemble_predictions)

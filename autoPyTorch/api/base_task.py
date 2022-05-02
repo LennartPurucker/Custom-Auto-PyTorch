@@ -2059,7 +2059,10 @@ class BaseTask(ABC):
                     )
                     for identifier in layer_identifiers if identifier is not None
                 )
-                for prediction in all_predictions:
+                if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+                    concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
+                        stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
+                for prediction in concat_all_predictions:
                     X_test_copy = np.concatenate([X_test_copy, prediction], axis=1)
         else:
             all_predictions = joblib.Parallel(n_jobs=n_jobs)(

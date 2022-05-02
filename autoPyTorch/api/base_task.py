@@ -661,6 +661,7 @@ class BaseTask(ABC):
 
             self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
             if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
+                nonnull_identifiers = [i for i in identifiers if i is not None]
                 models = []
                 cv_models = []
                 for identifier in identifiers:

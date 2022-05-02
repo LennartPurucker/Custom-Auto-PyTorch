@@ -28,7 +28,7 @@ Y_TEST = 1
 MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 
-def calculate_nomalised_margin_loss(ensemble_predictions, y_true, task_type) -> float:
+def calculate_nomalised_margin_loss(ensemble_predictions, y_true) -> float:
     n_ensemble = 0
     loss = 0
     for pred in ensemble_predictions:
@@ -677,7 +677,7 @@ class StackingEnsembleBuilder(EnsembleBuilder):
                 prediction=average_predictions,
                 task_type=self.task_type,
             )
-        loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble, self.task_type)
+        loss["ensemble_opt_loss"] = calculate_nomalised_margin_loss(ensemble_predictions, self.y_true_ensemble)
         return loss
 
     def _get_ensemble_identifiers_filename(self, cur_stacking_layer) -> str:

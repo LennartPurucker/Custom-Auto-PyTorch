@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-
 import logging
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -48,12 +48,14 @@ class TabularInputValidator(BaseInputValidator):
         logger_port: Optional[int] = None,
         dataset_compression: Optional[DatasetCompressionSpec] = None,
         seed: int = 42,
+        feat_type: Optional[List[str]] = None
     ):
         self.dataset_compression = dataset_compression
         self._reduced_dtype: Optional[DatasetDTypeContainerType] = None
         self.is_classification = is_classification
         self.logger_port = logger_port
         self.seed = seed
+        self.feat_type = feat_type
         if self.logger_port is not None:
             self.logger: Union[logging.Logger, PicklableClientLogger] = get_named_client_logger(
                 name='Validation',
@@ -63,7 +65,8 @@ class TabularInputValidator(BaseInputValidator):
             self.logger = logging.getLogger('Validation')
 
         self.feature_validator = TabularFeatureValidator(
-            logger=self.logger)
+            logger=self.logger,
+            feat_type=self.feat_type)
         self.target_validator = TabularTargetValidator(
             is_classification=self.is_classification,
             logger=self.logger

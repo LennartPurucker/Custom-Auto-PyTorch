@@ -24,11 +24,12 @@ from smac.utils.io.traj_logging import TrajEntry
 from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.base_dataset import BaseDataset
+from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.datasets.resampling_strategy import (
-    CrossValTypes,
+    ResamplingStrategies,
     DEFAULT_RESAMPLING_PARAMETERS,
     HoldoutValTypes,
-    NoResamplingStrategyTypes
+    CrossValTypes
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
@@ -109,9 +110,7 @@ class AutoMLSMBO(object):
                  pipeline_config: Dict[str, Any],
                  start_num_run: int = 1,
                  seed: int = 1,
-                 resampling_strategy: Union[HoldoutValTypes,
-                                            CrossValTypes,
-                                            NoResamplingStrategyTypes] = HoldoutValTypes.holdout_validation,
+                 resampling_strategy: ResamplingStrategies = HoldoutValTypes.holdout_validation,
                  resampling_strategy_args: Optional[Dict[str, Any]] = None,
                  include: Optional[Dict[str, Any]] = None,
                  exclude: Optional[Dict[str, Any]] = None,
@@ -288,17 +287,16 @@ class AutoMLSMBO(object):
         if self.datamanager is not None and self.datamanager.task_type is not None:
             self.task = self.datamanager.task_type
 
-    def reset_attributes(self) -> None:
-        self.backend.save_datamanager(self.datamanager)
-        self.reset_data_manager()
+    def reset_attributes(self, datamanager: BaseDataset) -> None:
+        self.backend.save_datamanager(datamanager=datamanager)
 
         dataset_requirements = get_dataset_requirements(
-            info=self.datamanager.get_required_dataset_info(),
+            info=datamanager.get_required_dataset_info(),
             include=self.include,
             exclude=self.exclude,
             search_space_updates=self.search_space_updates)
         self._dataset_requirements = dataset_requirements
-        dataset_properties = self.datamanager.get_dataset_properties(dataset_requirements)
+        dataset_properties = datamanager.get_dataset_properties(dataset_requirements)
         self.config_space = get_configuration_space(dataset_properties, include=self.include, exclude=self.exclude, search_space_updates=self.search_space_updates)
 
     def _run_smbo(
@@ -453,13 +451,20 @@ class AutoMLSMBO(object):
                  ) -> Tuple[RunHistory, List[TrajEntry], str]:
         individual_wall_times = self.total_walltime_limit / self.num_stacking_layers
         initial_num_run = self.start_num_run
+        self.reset_data_manager()
         for cur_stacking_layer in range(self.num_stacking_layers):
+            if cur_stacking_layer == 0:
+                self.logger.debug(f"Initial feat_types = {self.datamanager.feat_type}")
             run_history, trajectory, _ = self._run_smbo(
                 walltime_limit=individual_wall_times,
                 cur_stacking_layer=cur_stacking_layer,
                 initial_num_run=initial_num_run,
                 func=func
                 )
+            self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
+            self.trajectory.extend(trajectory)
+            if self.num_stacking_layers <= 1:
+                break 
             old_ensemble: Optional[StackingEnsemble] = None
             ensemble_dir = self.backend.get_ensemble_dir()
             if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
@@ -471,7 +476,7 @@ class AutoMLSMBO(object):
             X_train, y_train = self.datamanager.train_tensors
             X_test, y_test = self.datamanager.test_tensors
             self.logger.debug(f"Before concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-            for model_predictions_train, model_predictions_test in zip(previous_layer_predictions_train, previous_layer_predictions_test):
+            for i, (model_predictions_train, model_predictions_test) in enumerate(zip(previous_layer_predictions_train, previous_layer_predictions_test)):
                 if model_predictions_train is not None and model_predictions_test is not None:
                     self.logger.debug(f"model_predictions_train: {model_predictions_train.shape}, model_predictions_test: {model_predictions_test.shape}")
                     X_train = np.concatenate([X_train, model_predictions_train], axis=1)
@@ -480,14 +485,16 @@ class AutoMLSMBO(object):
                     self.logger.debug(f"model_predictions_train: {model_predictions_train}, model_predictions_test: {model_predictions_test }")
 
             self.logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-            validator = TabularInputValidator(is_classification=True)
+            self.logger.debug(f"After search feat_types = {self.datamanager.feat_type}")
+            new_feat_types = self.datamanager.feat_type
+            new_feat_types.extend(['numerical'] * (i+1))
+            self.logger.debug(f"new feat_types = {new_feat_types}")
+            validator = TabularInputValidator(is_classification=True, feat_type=new_feat_types)
             validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)
             # self.datamanager.infer_dataset_attributes(validator, X_train, y_train, X_test, y_test)
+            datamanager = TabularDataset(X=X_train, Y=y_train, X_test=X_test, Y_test=y_test, validator=validator, resampling_strategy=self.resampling_strategy, resampling_strategy_args=self.resampling_strategy_args)
+            self.reset_attributes(datamanager=datamanager)
 
-            self.reset_attributes()
-            self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
-            self.trajectory.extend(trajectory)
-            initial_num_run = self.backend.get_next_num_run(peek=True)
             initial_num_run = self.backend.get_next_num_run()
             self.logger.debug(f"cutoff num_run: {initial_num_run}")
 

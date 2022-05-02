@@ -500,7 +500,7 @@ class AbstractEvaluator(object):
             else self.pipeline_class.get_default_pipeline_options()
         self.budget_type = pipeline_config['budget_type'] if budget_type is None else budget_type
         self.budget = pipeline_config[self.budget_type] if budget == 0 else budget
-
+        self.cutoff = pipeline_config['func_eval_time_limit_secs'] * 0.9
         self.num_run = 0 if num_run is None else num_run
 
         logger_name = '%s(%d)' % (self.__class__.__name__.split('.')[-1],

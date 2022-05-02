@@ -98,8 +98,10 @@ class TabularFeatureValidator(BaseFeatureValidator):
     def __init__(
         self,
         logger: Optional[Union[PicklableClientLogger, Logger]] = None,
+        feat_type: Optional[List[str]] = None
     ):
         super().__init__(logger)
+        self.feat_type = feat_type
 
     @staticmethod
     def _comparator(cmp1: str, cmp2: str) -> int:
@@ -168,7 +170,10 @@ class TabularFeatureValidator(BaseFeatureValidator):
             self.dtypes = [dt.name for dt in X.dtypes]  # Also note this change in self.dtypes
             self.all_nan_columns = set(all_nan_columns)
 
-            self.enc_columns, self.feat_type = self._get_columns_info(X)
+            if self.feat_type is not None:
+                self.enc_columns = [X.columns[i] for i, col in enumerate(self.feat_type) if col.lower() == 'categorical']
+            else:
+                self.enc_columns, self.feat_type = self._get_columns_info(X)
 
             if len(self.enc_columns) > 0:
 

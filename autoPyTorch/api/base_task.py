@@ -654,10 +654,10 @@ class BaseTask(ABC):
 
         if self.ensemble_:
             identifiers = self.ensemble_.get_selected_model_identifiers()
-            nonnull_identifiers = [i for i in identifiers if i is not None]
-            self.models_ = self._backend.load_models_by_identifiers(nonnull_identifiers)
-            if isinstance(self.resampling_strategy, CrossValTypes):
-                self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
+            # nonnull_identifiers = [i for i in identifiers if i is not None]
+            # self.models_ = self._backend.load_models_by_identifiers(nonnull_identifiers)
+            # if isinstance(self.resampling_strategy, CrossValTypes):
+            #     self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
 
             self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
             if self.ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
@@ -1239,6 +1239,7 @@ class BaseTask(ABC):
                 )
             )
 
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
         # ============> Run dummy predictions
         # We only want to run dummy predictions in case we want to build an ensemble
         if self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_ensemble:
@@ -1321,6 +1322,8 @@ class BaseTask(ABC):
                 all_supported_metrics=self._all_supported_metrics,
                 smac_scenario_args=smac_scenario_args,
                 get_smac_object_callback=get_smac_object_callback,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
                 pipeline_config=self.pipeline_options,
                 min_budget=min_budget,
                 max_budget=max_budget,
@@ -1654,7 +1657,7 @@ class BaseTask(ABC):
 
         pipeline_options = self.pipeline_options.copy().update(pipeline_options) if pipeline_options is not None \
             else self.pipeline_options.copy()
-
+        pipeline_options['func_eval_time_limit_secs'] = run_time_limit_secs
         assert pipeline_options is not None
 
         if budget_type is not None:

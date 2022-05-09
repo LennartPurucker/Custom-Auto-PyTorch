@@ -1,7 +1,9 @@
+import copy
 from enum import Enum
+from math import floor
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Type, Union
 
-from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.configuration_space import ConfigurationSpace, Configuration
 from ConfigSpace.hyperparameters import (
     CategoricalHyperparameter,
     Constant,
@@ -283,3 +285,23 @@ def check_none(p: Any) -> bool:
     if p in ("None", "none", None):
         return True
     return False
+
+
+def validate_config(config, search_space, has_categorical, has_numerical, n_numerical_in_incumbent_on_task_id, num_numerical):
+    modified_config = config.get_dictionary().copy()
+
+    feature_preprocessing_choice = modified_config['feature_preprocessor:__choice__']
+    to_adjust_hyperparams = ['n_clusters', 'n_components', 'target_dim']
+    children_hyperparameters = [hyp for hyp in search_space.get_children_of('feature_preprocessor:__choice__') if feature_preprocessing_choice in hyp.name]
+    for hyp in children_hyperparameters:
+        children = search_space.get_children_of(hyp)
+        if len(children) > 0:
+            children_hyperparameters.extend(children)
+    children_hyperparameters = [hyp for hyp in children_hyperparameters if hyp.name in modified_config and any([ta_hyp in hyp.name for ta_hyp in to_adjust_hyperparams])]
+
+    for child_hyperparam in children_hyperparameters:
+        modified_config[child_hyperparam.name] = floor(modified_config[child_hyperparam.name]/n_numerical_in_incumbent_on_task_id * num_numerical)
+
+    return Configuration(search_space, modified_config)
+
+

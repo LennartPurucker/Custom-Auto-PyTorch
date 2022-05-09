@@ -128,7 +128,7 @@ class EnsembleSelectionPerLayerStackingEnsemble(AbstractEnsemble):
         stacking_layer: int,
         raw_stacking_layer_ensemble_predictions
     ) -> List[np.ndarray]:
-        layer_weights = self.ensembles[stacking_layer].weights_
+        layer_weights = [weight for weight in self.ensembles[stacking_layer].weights_ if weight > 0]
         layer_size = self.ensembles[stacking_layer].ensemble_size
         ensemble_predictions = []
         for weight, pred in zip(layer_weights, raw_stacking_layer_ensemble_predictions):

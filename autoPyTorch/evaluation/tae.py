@@ -158,7 +158,10 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
                 eval_function = eval_train_function
             elif ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble:
                 eval_function = eval_ensemble_optimise_function
-            elif ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+            elif (
+                ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
+                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_base_models
+            ):
                 eval_function = eval_repeated_cv_function
             self.output_y_hat_optimization = output_y_hat_optimization
         elif isinstance(self.resampling_strategy, NoResamplingStrategyTypes):

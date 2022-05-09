@@ -22,7 +22,7 @@ from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes, get_ensemble_builder_class
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.logging_ import get_named_client_logger
-
+from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
 
 class EnsembleBuilderManager(IncorporateRunResultCallback):
     def __init__(
@@ -367,7 +367,7 @@ def fit_and_return_ensemble(
         'return_predictions': return_predictions,
         'pynisher_context': pynisher_context,
     }
-    if ensemble_method.is_stacking_ensemble():
+    if ensemble_method.is_stacking_ensemble() and ensemble_method != EnsembleSelectionTypes.stacking_repeat_base_models:
         ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
 
     if ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:

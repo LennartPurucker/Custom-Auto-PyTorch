@@ -55,6 +55,7 @@ class AdjustRunHistoryCallback:
     def __call__(self, smbo: 'SMBO') -> RunHistory:
         pass
 
+
 class autoPyTorchSMBO(SMBO):
     def __init__(self,
                  scenario: Scenario,

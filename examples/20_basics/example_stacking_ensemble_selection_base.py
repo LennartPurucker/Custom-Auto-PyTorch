@@ -2,14 +2,16 @@
 ======================
 Tabular Classification
 ======================
+
 The following example shows how to fit a sample classification model
 with AutoPyTorch
 """
 import os
 import tempfile as tmp
 import warnings
-
 from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
+
+from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 os.environ['JOBLIB_TEMP_FOLDER'] = tmp.gettempdir()
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -24,7 +26,6 @@ import sklearn.model_selection
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
-from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 ############################################################################
 # Data Loading
@@ -42,14 +43,18 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_23',
-    output_directory='./tmp/autoPyTorch_example_out_23',
+    temporary_directory='./tmp/autoPyTorch_example_tmp_24',
+    output_directory='./tmp/autoPyTorch_example_out_24',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=4,
-    ensemble_method=EnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
+    seed=1,
+    ensemble_method=EnsembleSelectionTypes.stacking_repeat_base_models,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
-    ensemble_size=5
+    resampling_strategy_args={
+        'num_splits': 2,
+        'num_repeats': 1
+    },
+    ensemble_size=5,
 )
 
 ############################################################################
@@ -62,12 +67,11 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=500,
-    func_eval_time_limit_secs=100,
+    total_walltime_limit=1000,
+    func_eval_time_limit_secs=300,
     enable_traditional_pipeline=False,
-    smbo_class=autoPyTorchSMBO,
-    all_supported_metrics=False,
-    # use_ensemble_opt_loss=True
+    # smbo_class=autoPyTorchSMBO,
+    all_supported_metrics=False 
 )
 
 ############################################################################

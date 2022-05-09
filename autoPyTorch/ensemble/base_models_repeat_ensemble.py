@@ -87,16 +87,12 @@ class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
                 performance. Notice that ensemble selection solves a minimization
                 problem.
         """
-        output = []
-        for i, weight in enumerate(self.base_ensemble.weights_):
-            if weight > 0.0:
-                identifier = self.base_ensemble.identifiers_[i]
-                model = models[identifier]
-                output.append((weight, model))
+        outputs = []
+        first_layer_models = models[0]
+        for _ in models:
+            outputs.append(self.base_ensemble.get_models_with_weights(first_layer_models))
 
-        output.sort(reverse=True, key=lambda t: t[0])
-
-        return output
+        return outputs
 
     def get_expanded_layer_stacking_ensemble_predictions(
         self,

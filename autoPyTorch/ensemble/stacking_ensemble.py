@@ -275,13 +275,13 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
                 performance. Notice that ensemble selection solves a minimization
                 problem.
         """
-        output = []
-        for i, weight in enumerate(self.weights_):
-            if weight > 0.0:
-                identifier = self.identifiers_[i]
-                model = models[identifier]
-                output.append((weight, model))
+        outputs = []
+        for layer_models in models:
+            output = []
+            num_models = len(layer_models)
+            for model in layer_models:
+                output.append((1/num_models, model))
+            output.sort(reverse=True, key=lambda t: t[0])
+            outputs.append(output)
 
-        output.sort(reverse=True, key=lambda t: t[0])
-
-        return output
+        return outputs

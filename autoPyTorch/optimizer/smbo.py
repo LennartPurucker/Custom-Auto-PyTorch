@@ -493,7 +493,14 @@ class AutoMLSMBO(object):
             validator = TabularInputValidator(is_classification=True, feat_type=new_feat_types)
             validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)
             # self.datamanager.infer_dataset_attributes(validator, X_train, y_train, X_test, y_test)
-            datamanager = TabularDataset(X=X_train, Y=y_train, X_test=X_test, Y_test=y_test, validator=validator, resampling_strategy=self.resampling_strategy, resampling_strategy_args=self.resampling_strategy_args)
+            datamanager = TabularDataset(
+                X=X_train,
+                Y=y_train,
+                X_test=X_test,
+                Y_test=y_test,
+                validator=validator,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args)
             self.reset_attributes(datamanager=datamanager)
 
             initial_num_run = self.backend.get_next_num_run()

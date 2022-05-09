@@ -1308,6 +1308,8 @@ class BaseTask(ABC):
                 ensemble_callback=proc_ensemble,
                 ensemble_method=self.ensemble_method,
                 logger_port=self._logger_port,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
                 # We do not increase the num_run here, this is something
                 # smac does internally
                 start_num_run=smac_initial_num_run,
@@ -1664,7 +1666,6 @@ class BaseTask(ABC):
                                                             )
 
             self._run_smbo(
-                dataset=dataset,
                 min_budget=min_budget,
                 max_budget=max_budget,
                 total_walltime_limit=total_walltime_limit,
@@ -2484,7 +2485,7 @@ class BaseTask(ABC):
             self._load_models()
 
         assert self.ensemble_ is not None
-        models_with_weights: List[Tuple[float, BasePipeline]] = self.ensemble_.get_models_with_weights(self.models_[0])
+        models_with_weights: List[Tuple[float, BasePipeline]] = self.ensemble_.get_models_with_weights(self.models_)
         return models_with_weights
 
     def show_models(self) -> str:

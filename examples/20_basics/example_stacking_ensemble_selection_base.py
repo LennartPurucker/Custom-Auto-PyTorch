@@ -43,8 +43,8 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_24',
-    output_directory='./tmp/autoPyTorch_example_out_24',
+    temporary_directory='./tmp/autoPyTorch_example_tmp_04',
+    output_directory='./tmp/autoPyTorch_example_out_04',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,

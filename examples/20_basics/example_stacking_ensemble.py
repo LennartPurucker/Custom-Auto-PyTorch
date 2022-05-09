@@ -42,12 +42,12 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_23',
-    output_directory='./tmp/autoPyTorch_example_out_23',
+    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_01',
+    output_directory='./tmp/stacking_optimisation_ensemble_out_01',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
-    ensemble_method=EnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
+    ensemble_method=EnsembleSelectionTypes.stacking_optimisation_ensemble,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     ensemble_size=5
 )

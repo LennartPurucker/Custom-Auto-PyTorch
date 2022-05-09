@@ -32,7 +32,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     CrossValTypes
 )
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
-from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash

@@ -1,7 +1,7 @@
 from enum import IntEnum
 
 from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
-from autoPyTorch.ensemble.stacking_ensemble_builder import EnsembleOptimisationStackingEnsembleBuilder
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble_builder import EnsembleOptimisationStackingEnsembleBuilder
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble_builder import EnsembleSelectionPerLayerStackingEnsembleBuilder
 
 

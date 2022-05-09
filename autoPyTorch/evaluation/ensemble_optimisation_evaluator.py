@@ -19,12 +19,12 @@ from autoPyTorch.constants import (
     MULTICLASSMULTIOUTPUT,
 )
 from autoPyTorch.datasets.resampling_strategy import HoldoutValTypes, RepeatedCrossValTypes
-from autoPyTorch.ensemble.stacking_ensemble_builder import calculate_nomalised_margin_loss
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble_builder import calculate_nomalised_margin_loss
 from autoPyTorch.evaluation.abstract_evaluator import (
     AbstractEvaluator,
     fit_and_suppress_warnings
 )
-from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.evaluation.utils import VotingRegressorWrapper
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, subsampler

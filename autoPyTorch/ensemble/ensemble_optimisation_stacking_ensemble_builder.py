@@ -16,7 +16,7 @@ from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
-from autoPyTorch.ensemble.stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss, calculate_score
 from autoPyTorch.utils.logging_ import get_named_client_logger

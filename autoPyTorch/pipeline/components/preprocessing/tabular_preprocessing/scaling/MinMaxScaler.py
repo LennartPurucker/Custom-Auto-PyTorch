@@ -23,7 +23,8 @@ class MinMaxScaler(BaseScaler):
 
         self.check_requirements(X, y)
 
-        self.preprocessor['numerical'] = SklearnMinMaxScaler(feature_range=self.feature_range, copy=False)
+        if self._has_scale_columns(X):
+            self.preprocessor['scale'] = SklearnMinMaxScaler(feature_range=self.feature_range, copy=False)
         return self
 
     @staticmethod

@@ -32,20 +32,6 @@ class NoScaler(BaseScaler):
 
         return self
 
-    def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        The transform function calls the transform function of the
-        underlying model and returns the transformed array.
-
-        Args:
-            X (np.ndarray): input features
-
-        Returns:
-            np.ndarray: Transformed features
-        """
-        X.update({'scaler': self.preprocessor})
-        return X
-
     @staticmethod
     def get_properties(dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None
                        ) -> Dict[str, Union[str, bool]]:

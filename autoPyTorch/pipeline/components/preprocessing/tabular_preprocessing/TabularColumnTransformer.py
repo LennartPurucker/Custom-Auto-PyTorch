@@ -23,7 +23,10 @@ class TabularColumnTransformer(autoPyTorchTabularPreprocessingComponent):
         self.preprocessor: Optional[ColumnTransformer] = None
         self.add_fit_requirements([
             FitRequirement('numerical_columns', (List,), user_defined=True, dataset_property=True),
-            FitRequirement('categorical_columns', (List,), user_defined=True, dataset_property=True)])
+            FitRequirement('categorical_columns', (List,), user_defined=True, dataset_property=True),
+            FitRequirement('skew_columns', (List,), user_defined=True, dataset_property=False),
+            FitRequirement('encode_columns', (List,), user_defined=True, dataset_property=False),
+            FitRequirement('embed_columns', (List,), user_defined=True, dataset_property=False)])
 
     def get_column_transformer(self) -> ColumnTransformer:
         """
@@ -62,6 +65,21 @@ class TabularColumnTransformer(autoPyTorchTabularPreprocessingComponent):
             categorical_pipeline = make_pipeline(*preprocessors['categorical'])
             column_transformers.append(
                 ('categorical_pipeline', categorical_pipeline, X['dataset_properties']['categorical_columns'])
+            )
+        if len(preprocessors['skew']) > 0:
+            skew_pipeline = make_pipeline(*preprocessors['skew'])
+            column_transformers.append(
+                ('skew_pipeline', skew_pipeline, X['skew_columns'])
+            )
+        if len(preprocessors['encode']) > 0:
+            encode_pipeline = make_pipeline(*preprocessors['encode'])
+            column_transformers.append(
+                ('encode_pipeline', encode_pipeline, X['encode_columns'])
+            )
+        if len(preprocessors['scale']) > 0:
+            scale_pipeline = make_pipeline(*preprocessors['scale'])
+            column_transformers.append(
+                ('scale_pipeline', scale_pipeline, X['scale_columns'])
             )
 
         # in case the preprocessing steps are disabled

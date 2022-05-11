@@ -6,27 +6,28 @@ from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.base_ta
 from autoPyTorch.utils.common import FitRequirement
 
 
-class BaseEncoder(autoPyTorchTabularPreprocessingComponent):
+class BaseSkewTransformer(autoPyTorchTabularPreprocessingComponent):
     """
-    Base class for encoder
+    Provides abstract class interface for Scalers in AutoPytorch
     """
+
     def __init__(self) -> None:
         super().__init__()
         self.add_fit_requirements([
-            FitRequirement('encode_columns', (List,), user_defined=True, dataset_property=False)])
+            FitRequirement('skew_columns', (List,), user_defined=True, dataset_property=False)])
 
     @staticmethod
-    def _has_encode_columns(X: Dict[str, Any]):
-        return len(X.get('encode_columns', [])) > 0
+    def _has_skew_columns(X: Dict[str, Any]):
+        return len(X.get('skew_columns', [])) > 0
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Adds the self into the 'X' dictionary and returns it.
+        Adds the fitted scalar into the 'X' dictionary and returns it.
         Args:
             X (Dict[str, Any]): 'X' dictionary
 
         Returns:
             (Dict[str, Any]): the updated 'X' dictionary
         """
-        X.update({'encoder': self.preprocessor})
+        X.update({'skew_transformer': self.preprocessor})
         return X

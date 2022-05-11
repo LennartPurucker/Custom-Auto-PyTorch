@@ -2335,7 +2335,7 @@ class BaseTask(ABC):
                     )
                     for identifier in layer_identifiers if identifier is not None
                 )
-                if self.ensemble_method in (EnsembleSelectionTypes.stacking_ensemble_selection_per_layer, EnsembleSelectionTypes.stacking_repeat_models, EnsembleSelectionTypes):
+                if self.ensemble_method in (EnsembleSelectionTypes.stacking_ensemble_selection_per_layer, EnsembleSelectionTypes.stacking_repeat_models, EnsembleSelectionTypes.stacking_autogluon):
                     concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
                         stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
                 else:

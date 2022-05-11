@@ -37,7 +37,7 @@ def run_models_on_dataset(
     multiprocessing_context,
     n_jobs: int,
     current_search_space: ConfigurationSpace,
-    smac_initial_num_run: int
+    smac_initial_run: int
 ) -> RunHistory:
     starttime = time.time()
     run_history = RunHistory()
@@ -62,9 +62,9 @@ def run_models_on_dataset(
 
             if isinstance(config, Configuration):
                 config.config_id = n_r
-                init_num_run = smac_initial_num_run
+                init_num_run = smac_initial_run
             else:
-                init_num_run = smac_initial_num_run + n_r
+                init_num_run = smac_initial_run + n_r
 
             ta = ExecuteTaFuncWithQueue(
                 pynisher_context=multiprocessing_context,

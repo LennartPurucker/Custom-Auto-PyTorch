@@ -43,18 +43,19 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/autoPyTorch_example_tmp_04',
-    output_directory='./tmp/autoPyTorch_example_out_04',
+    temporary_directory='./tmp/stacking_repeat_base_models_tmp_02',
+    output_directory='./tmp/stacking_repeat_base_models_out_02',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,
-    ensemble_method=EnsembleSelectionTypes.stacking_repeat_base_models,
+    ensemble_method=EnsembleSelectionTypes.stacking_repeat_models,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
         'num_splits': 2,
         'num_repeats': 1
     },
     ensemble_size=5,
+    num_stacking_layers=3
 )
 
 ############################################################################
@@ -67,7 +68,7 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=1000,
+    total_walltime_limit=1800,
     func_eval_time_limit_secs=300,
     enable_traditional_pipeline=False,
     # smbo_class=autoPyTorchSMBO,
@@ -85,3 +86,4 @@ print(api.show_models())
 
 # Print statistics from search
 # print(api.sprint_statistics())
+

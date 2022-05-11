@@ -160,7 +160,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
                 eval_function = eval_ensemble_optimise_function
             elif (
                 ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
-                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_base_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
             ):
                 eval_function = eval_repeated_cv_function
             self.output_y_hat_optimization = output_y_hat_optimization
@@ -521,3 +522,4 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             )
         )
         return status, cost, runtime, additional_run_info
+

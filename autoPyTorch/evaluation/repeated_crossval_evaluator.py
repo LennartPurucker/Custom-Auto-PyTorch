@@ -202,6 +202,9 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         if pipeline_loss is not None:
             additional_run_info['pipeline_loss'] = pipeline_loss
         additional_run_info['opt_loss'] = loss
+        additional_run_info['configuration'] = self.configuration if not isinstance(self.configuration, Configuration) else self.configuration.get_dictionary()
+        additional_run_info['budget'] = self.budget
+
         rval_dict = {'loss': cost,
                      'additional_run_info': additional_run_info,
                      'status': status}

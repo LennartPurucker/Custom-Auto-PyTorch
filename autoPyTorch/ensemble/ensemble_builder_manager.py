@@ -367,7 +367,7 @@ def fit_and_return_ensemble(
         'return_predictions': return_predictions,
         'pynisher_context': pynisher_context,
     }
-    if ensemble_method.is_stacking_ensemble() and ensemble_method != EnsembleSelectionTypes.stacking_repeat_base_models:
+    if ensemble_method.is_stacking_ensemble() and ensemble_method != EnsembleSelectionTypes.stacking_repeat_models:
         ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
 
     if ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:

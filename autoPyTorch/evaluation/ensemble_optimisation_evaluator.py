@@ -207,6 +207,8 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
             additional_run_info['validation_loss'] = validation_loss
         if test_loss is not None:
             additional_run_info['test_loss'] = test_loss
+        additional_run_info['configuration'] = self.configuration if not isinstance(self.configuration, Configuration) else self.configuration.get_dictionary()
+        additional_run_info['budget'] = self.budget
 
         additional_run_info['opt_loss'] = loss
         rval_dict = {'loss': cost,

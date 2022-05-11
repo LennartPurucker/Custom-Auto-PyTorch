@@ -2,7 +2,7 @@ import json
 import logging.handlers
 import os as os
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from catboost import CatBoost
 
@@ -13,7 +13,8 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
-from autoPyTorch.constants import REGRESSION_TASKS, STRING_TO_TASK_TYPES
+from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
+from autoPyTorch.constants import REGRESSION_TASKS, STRING_TO_OUTPUT_TYPES, STRING_TO_TASK_TYPES
 from autoPyTorch.pipeline.components.training.metrics.utils import get_metrics
 from autoPyTorch.utils.logging_ import get_named_client_logger
 
@@ -42,6 +43,8 @@ class BaseTraditionalLearner:
     def __init__(self,
                  task_type: str,
                  output_type: str,
+                 params_func: Optional[Callable],
+                 dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
                  optimize_metric: Optional[str] = None,
                  logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                  random_state: Optional[np.random.RandomState] = None,
@@ -61,13 +64,15 @@ class BaseTraditionalLearner:
             self.random_state = check_random_state(1)
         else:
             self.random_state = check_random_state(random_state)
-        self.config = self.get_config()
+
+        self.output_type = STRING_TO_OUTPUT_TYPES[output_type]
+        self.config = params_func(self.output_type)
 
         self.all_nan: Optional[np.ndarray] = None
         self.num_classes: Optional[int] = None
 
         self.is_classification = STRING_TO_TASK_TYPES[task_type] not in REGRESSION_TASKS
-
+        self.dataset_properties = dataset_properties
         self.metric = get_metrics(dataset_properties={'task_type': task_type,
                                                       'output_type': output_type},
                                   names=[optimize_metric] if optimize_metric is not None else None)[0]
@@ -76,16 +81,7 @@ class BaseTraditionalLearner:
         """
         Load the parameters for the classifier model from ../estimator_configs/modelname.json.
         """
-        dirname = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(dirname, "../estimator_configs", self.name + ".json")
-        with open(config_path, "r") as f:
-            config: Dict[str, Union[int, str, float, bool]] = json.load(f)
-        for k, v in config.items():
-            if v == "True":
-                config[k] = True
-            if v == "False":
-                config[k] = False
-        return config
+        return self.config
 
     def _preprocess(self,
                     X: np.ndarray

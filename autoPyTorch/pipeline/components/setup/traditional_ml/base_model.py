@@ -84,6 +84,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
                                       logger_port=X['logger_port'] if 'logger_port' in X else
                                       logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                                       output_shape=output_shape,
+                                      dataset_properties=X['dataset_properties'],
                                       task_type=X['dataset_properties']['task_type'],
                                       output_type=X['dataset_properties']['output_type'],
                                       optimize_metric=X['optimize_metric'] if 'optimize_metric' in X else None)

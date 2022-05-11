@@ -181,7 +181,7 @@ class BaseTask(ABC):
         ensemble_size: int = 5,
         ensemble_nbest: int = 50,
         ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
-        num_stacking_layers: int = 2,
+        num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
         output_directory: Optional[str] = None,
@@ -880,7 +880,8 @@ class BaseTask(ABC):
                     stats=stats,
                     memory_limit=memory_limit,
                     disable_file_output=self._disable_file_output,
-                    all_supported_metrics=self._all_supported_metrics
+                    all_supported_metrics=self._all_supported_metrics,
+                    pipeline_config=self.pipeline_options,
                 )
                 dask_futures.append([
                     classifier,

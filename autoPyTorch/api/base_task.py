@@ -868,7 +868,8 @@ class BaseTask(ABC):
             seed=self.seed,
             multiprocessing_context=self._multiprocessing_context,
             n_jobs=self.n_jobs,
-            current_search_space=self.search_space
+            current_search_space=self.search_space,
+            smac_initial_run=self._backend.get_next_num_run()
         )
 
         self._logger.debug("Run history traditional: {}".format(run_history))
@@ -1016,7 +1017,7 @@ class BaseTask(ABC):
         self._backend.save_ensemble(ensemble, 1, self.seed)
         self._load_models()
 
-    def _run_seach_stacking(
+    def _run_search_stacking(
         self,
         optimize_metric: str,
         min_budget,
@@ -1035,7 +1036,7 @@ class BaseTask(ABC):
         self._stopwatch.start_task(stacking_task_name)
         self.precision = precision
         self.opt_metric = optimize_metric
-        time_left_for_search_base_models = 400 # math.floor(0.5*total_walltime_limit)
+        time_left_for_search_base_models = math.floor(0.5*total_walltime_limit)
         proc_ensemble = None
         if time_left_for_search_base_models <= 0:
             # Fit only raises error when ensemble_size is not zero but
@@ -1136,9 +1137,12 @@ class BaseTask(ABC):
         X_test = np.concatenate([X_test, *nonnull_model_predictions_test], axis=1)
 
         self._logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-        new_feat_types = self.dataset.feat_type
-        new_feat_types.extend(['numerical'] * (len(nonnull_model_predictions_train)+1))
-        self._logger.debug(f"new feat_types = {new_feat_types}")
+        self._logger.debug(f"Original feat types: {self.dataset.feat_type}, len: {len(self.dataset.feat_type)}")
+        new_feat_types = self.dataset.feat_type.copy()
+        self._logger.debug(f"Non nulll predictions: {nonnull_model_predictions_train}")
+        self._logger.debug(f"length Non nulll predictions: {len(nonnull_model_predictions_train)}")
+        new_feat_types.extend(['numerical'] * (self.dataset.num_classes * len(nonnull_model_predictions_train)))
+        self._logger.debug(f"new feat_types = {new_feat_types}, len: {len(new_feat_types)}")
         dataset = self.get_dataset(
                 X_train=X_train,
                 y_train=y_train,
@@ -1161,6 +1165,7 @@ class BaseTask(ABC):
                                 include=self.include_components,
                                 exclude=self.exclude_components,
                                 search_space_updates=self.search_space_updates)
+        self._logger.debug(f"dataset properties after appending predictions: {dict_repr(dataset.get_dataset_properties(dataset_requirements))}")
         has_numerical = len(dataset.numerical_columns) > 0
         has_categorical = len(dataset.categorical_columns) > 0
         n_numerical_in_incumbent_on_task_id = len(self.dataset.numerical_columns)
@@ -1488,7 +1493,7 @@ class BaseTask(ABC):
         if self.ensemble_method == EnsembleSelectionTypes.stacking_repeat_models:
             elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
             time_left_for_stacking = max(0, total_walltime_limit - elapsed_time)
-            self._run_seach_stacking(
+            self._run_search_stacking(
                 optimize_metric=optimize_metric,
                 min_budget=min_budget,
                 max_budget=max_budget,

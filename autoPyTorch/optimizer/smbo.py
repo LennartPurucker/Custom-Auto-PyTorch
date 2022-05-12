@@ -487,8 +487,8 @@ class AutoMLSMBO(object):
 
             self.logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
             self.logger.debug(f"After search feat_types = {self.datamanager.feat_type}")
-            new_feat_types = self.datamanager.feat_type
-            new_feat_types.extend(['numerical'] * (i+1))
+            new_feat_types = self.datamanager.feat_type.copy()
+            new_feat_types.extend(['numerical'] * (2*i))
             self.logger.debug(f"new feat_types = {new_feat_types}")
             validator = TabularInputValidator(is_classification=True, feat_type=new_feat_types)
             validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)

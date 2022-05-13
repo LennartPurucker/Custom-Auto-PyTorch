@@ -2,8 +2,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace
 from ConfigSpace.hyperparameters import (
-    UniformIntegerHyperparameter,
-    UniformFloatHyperparameter
+    CategoricalHyperparameter,
 )
 
 import pandas as pd
@@ -87,18 +86,15 @@ class ColumnSplitter(autoPyTorchTabularPreprocessingComponent):
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
         min_categories_for_embedding: HyperparameterSearchSpace = HyperparameterSearchSpace(
             hyperparameter="min_categories_for_embedding",
-            value_range=(3, 7),
-            default_value=3,
-            log=True),
+            value_range=(3, 4, 10, 100, 1000),
+            default_value=4),
         skew_threshold: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter="skew_threshold",
-                                                                                   value_range=(0.1, 1),
-                                                                                   default_value=0.99,
-                                                                                   log=True
-                                                                                   )
+                                                                              value_range=(0.2, 0.3, 0.5, 0.8, 0.99, 10.0, 100.0),
+                                                                              default_value=0.99,)
     ) -> ConfigurationSpace:
         cs = ConfigurationSpace()
 
-        add_hyperparameter(cs, min_categories_for_embedding, UniformIntegerHyperparameter)
-        add_hyperparameter(cs, skew_threshold, UniformFloatHyperparameter)
+        add_hyperparameter(cs, min_categories_for_embedding, CategoricalHyperparameter)
+        add_hyperparameter(cs, skew_threshold, CategoricalHyperparameter)
 
         return cs

@@ -1,4 +1,5 @@
-from typing import Any, Dict, Type, Union
+from typing import Any, Dict, Optional, Type, Union
+from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 
 from autoPyTorch.pipeline.components.base_component import (
     ThirdPartyComponents,
@@ -35,7 +36,14 @@ def add_traditional_learner(traditional_learner: BaseTraditionalLearner) -> None
     _addons.add_component(traditional_learner)
 
 
-def get_available_traditional_learners() -> Dict[str, Union[Type[BaseTraditionalLearner], Any]]:
+def get_available_traditional_learners(
+    dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+) -> Dict[str, Union[Type[BaseTraditionalLearner], Any]]:
     traditional_learners = dict()
     traditional_learners.update(_traditional_learners)
+    traditional_learners.update(_addons.components)
+
+    if dataset_properties is not None and len(dataset_properties['numerical_columns']) ==0:
+        traditional_learners.pop('knn', None)
+
     return traditional_learners

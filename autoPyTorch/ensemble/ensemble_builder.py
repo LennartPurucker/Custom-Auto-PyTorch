@@ -59,6 +59,7 @@ class EnsembleBuilder(object):
         random_state: Optional[Union[int, np.random.RandomState]] = None,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         unit_test: bool = False,
+        initial_num_run: int = 0,
         num_stacking_layers: Optional[int] = None,
         use_ensemble_opt_loss = False
     ):
@@ -127,6 +128,7 @@ class EnsembleBuilder(object):
         self.ensemble_size = ensemble_size
         self.performance_range_threshold = performance_range_threshold
 
+        self.initial_num_run = initial_num_run
         if isinstance(ensemble_nbest, numbers.Integral) and ensemble_nbest < 1:
             raise ValueError("Integer ensemble_nbest has to be larger 1: %s" %
                              ensemble_nbest)
@@ -595,6 +597,8 @@ class EnsembleBuilder(object):
         # Mypy assumes sorted returns an object because of the lambda. Can't get to recognize the list
         # as a returning list, so as a work-around we skip next line
         for y_ens_fn, match, _seed, _num_run, _budget in sorted(to_read, key=lambda x: x[3]):  # type: ignore
+            if _num_run < self.initial_num_run:
+                continue
             if self.read_at_most and n_read_files >= self.read_at_most:
                 # limit the number of files that will be read
                 # to limit memory consumption

@@ -47,6 +47,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         random_state: int,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         pynisher_context: str = 'fork',
+        initial_num_run: int = 0,
         use_ensemble_loss=False,
         num_stacking_layers: Optional[int] = None
     ):
@@ -144,6 +145,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.start_time = time.time()
 
         self.use_ensemble_loss = use_ensemble_loss
+        self.initial_num_run = initial_num_run
 
     def __call__(
         self,
@@ -239,7 +241,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     use_ensemble_opt_loss=self.use_ensemble_loss,
                     cur_stacking_layer=self.cur_stacking_layer,
                     is_new_layer=self.is_new_layer,
-                    num_stacking_layers=self.num_stacking_layers
+                    num_stacking_layers=self.num_stacking_layers,
+                    initial_num_run=self.initial_num_run
                 ))
 
                 logger.info(
@@ -295,7 +298,8 @@ def fit_and_return_ensemble(
     use_ensemble_opt_loss=False,
     cur_stacking_layer: Optional[int] = None,
     is_new_layer: bool = False,
-    num_stacking_layers: Optional[int] = None
+    num_stacking_layers: Optional[int] = None,
+    initial_num_run: int = 0,
 ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -393,7 +397,8 @@ def fit_and_return_ensemble(
         logger_port=logger_port,
         unit_test=unit_test,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
-        num_stacking_layers=num_stacking_layers
+        num_stacking_layers=num_stacking_layers,
+        initial_num_run=initial_num_run
     ).run(
         **ensemble_builder_run_kwargs
     )

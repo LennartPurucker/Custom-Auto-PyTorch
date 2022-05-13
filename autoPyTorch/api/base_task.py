@@ -33,6 +33,7 @@ from smac.stats.stats import Stats
 from smac.tae import StatusType
 
 from autoPyTorch import metrics
+from autoPyTorch.api.utils import get_autogluon_default_nn_config
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -494,17 +495,30 @@ class BaseTask(ABC):
         if self.search_space is not None:
             return self.search_space
         elif dataset is not None:
-            dataset_requirements = get_dataset_requirements(
-                info=dataset.get_required_dataset_info(),
-                include=self.include_components,
-                exclude=self.exclude_components,
+            return self._get_search_space(
+                dataset,
+                include_components=self.include_components,
+                exclude_components=self.exclude_components,
                 search_space_updates=self.search_space_updates)
-            return get_configuration_space(info=dataset.get_dataset_properties(dataset_requirements),
-                                           include=self.include_components,
-                                           exclude=self.exclude_components,
-                                           search_space_updates=self.search_space_updates)
         raise ValueError("No search space initialised and no dataset passed. "
                          "Can't create default search space without the dataset")
+
+    @staticmethod
+    def _get_search_space(
+        dataset: BaseDataset,
+        include_components,
+        exclude_components,
+        search_space_updates,
+    ) -> ConfigurationSpace:
+        dataset_requirements = get_dataset_requirements(
+                info=dataset.get_required_dataset_info(),
+                include=include_components,
+                exclude=exclude_components,
+                search_space_updates=search_space_updates)
+        return get_configuration_space(info=dataset.get_dataset_properties(dataset_requirements),
+                                           include=include_components,
+                                           exclude=exclude_components,
+                                           search_space_updates=search_space_updates)
 
     def _get_logger(self, name: str) -> PicklableClientLogger:
         """
@@ -909,7 +923,18 @@ class BaseTask(ABC):
         )
         self._stopwatch.stop_task(traditional_task_name)
 
-    def _fit_models_on_dataset(self, model_configs, func_eval_time_limit_secs, stacking_layer, time_left, current_search_space, smac_initial_run):
+    def _fit_models_on_dataset(
+        self,
+        model_configs,
+        func_eval_time_limit_secs,
+        stacking_layer,
+        time_left,
+        current_search_space,
+        smac_initial_run,
+        search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None
+    ) -> List[Tuple]:\
+        
+        search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
 
         run_history, model_identifiers = run_models_on_dataset(
             time_left=time_left,
@@ -926,7 +951,7 @@ class BaseTask(ABC):
             ensemble_method=self.ensemble_method,
             include=self.include_components,
             exclude=self.exclude_components,
-            search_space_updates=self.search_space_updates,
+            search_space_updates=search_space_updates,
             pipeline_options=self.pipeline_options,
             seed=self.seed,
             multiprocessing_context=self._multiprocessing_context,
@@ -945,7 +970,7 @@ class BaseTask(ABC):
     def _reset_datamanager_in_backend(self, datamanager)-> None:
         self._backend.save_datamanager(datamanager)
 
-    def _run_automl_stacking(
+    def _run_autogluon_stacking(
         self,
         optimize_metric: str,
         dataset: BaseDataset,
@@ -984,23 +1009,39 @@ class BaseTask(ABC):
             dask_client=dask_client
         )
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
-        available_classifiers = get_available_traditional_learners()
+        available_classifiers = get_available_traditional_learners(dataset_properties=self.dataset.get_dataset_properties(self._dataset_requirements))
         model_configs = [(key, self.pipeline_options[self.pipeline_options['budget_type']]) for key in available_classifiers.keys()]
 
+        if self.feat_type is None:
+            raise ValueError("Cant run autogluon stacking without information about dataset features passed with `feat_type`")
+        autogluon_nn_search_space_updates = get_autogluon_default_nn_config(feat_type=self.feat_type)
+        autogluon_nn_search_space = self._get_search_space(
+                self.dataset,
+                include_components=self.include_components,
+                exclude_components=self.exclude_components,
+                search_space_updates=autogluon_nn_search_space_updates)
+
+        default_nn_config = autogluon_nn_search_space.get_default_configuration()
+        model_configs.append((default_nn_config, self.pipeline_options[self.pipeline_options['budget_type']]))
         self._logger.info("Starting Autogluon Stacking.")
 
         model_identifiers = []
         stacked_weights = []
         for stacking_layer in range(self.num_stacking_layers):
             smac_initial_run=self._backend.get_next_num_run()
-            updated_model_configs, current_search_space = self._update_configs_for_current_config_space(model_configs, dataset)
+            updated_model_configs, current_search_space = self._update_configs_for_current_config_space(
+                model_configs,
+                dataset,
+                autogluon_nn_search_space_updates,
+                assert_skew_transformer_quantile=True)
             layer_model_identifiers = self._fit_models_on_dataset(
                 updated_model_configs,
                 func_eval_time_limit_secs,
                 stacking_layer,
-                time_left=total_walltime_limit/(self.num_stacking_layers - 1),
+                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers - 1),
                 current_search_space=current_search_space,
-                smac_initial_run=smac_initial_run)
+                smac_initial_run=smac_initial_run,
+                search_space_updates=autogluon_nn_search_space_updates)
             nonnull_identifiers = [identifier for identifier in layer_model_identifiers if identifier is not None]
             if len(nonnull_identifiers) > 0:
                 model_identifiers.append(
@@ -1019,6 +1060,7 @@ class BaseTask(ABC):
             )
             self._reset_datamanager_in_backend(datamanager=dataset)
 
+        
         ensemble = AutogluonStackingEnsemble()
         ensemble = ensemble.fit(model_identifiers, stacked_weights)
         self._backend.save_ensemble(ensemble, 1, self.seed)
@@ -1146,20 +1188,28 @@ class BaseTask(ABC):
         return model_configs,previous_layer_predictions_train,previous_layer_predictions_test
 
 
-    def _update_configs_for_current_config_space(self, model_description: List[Tuple], dataset: BaseDataset) -> List[Tuple]:
+    def _update_configs_for_current_config_space(
+        self,
+        model_description: List[Tuple],
+        dataset: BaseDataset,
+        search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
+        assert_skew_transformer_quantile: bool = False
+        ) -> List[Tuple]:
+        
+        search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
         
         dataset_requirements = get_dataset_requirements(
                 info=dataset.get_required_dataset_info(),
                 include=self.include_components,
                 exclude=self.exclude_components,
-                search_space_updates=self.search_space_updates)
-        current_search_space = get_configuration_space(info=dataset.get_dataset_properties(dataset_requirements),
-                                include=self.include_components,
-                                exclude=self.exclude_components,
-                                search_space_updates=self.search_space_updates)
+                search_space_updates=search_space_updates)
+
+        current_search_space = self._get_search_space(
+                                                dataset,
+                                                include_components=self.include_components,
+                                                exclude_components=self.exclude_components,
+                                                search_space_updates=search_space_updates)
         self._logger.debug(f"dataset properties after appending predictions: {dict_repr(dataset.get_dataset_properties(dataset_requirements))}")
-        has_numerical = len(dataset.numerical_columns) > 0
-        has_categorical = len(dataset.categorical_columns) > 0
         n_numerical_in_incumbent_on_task_id = len(self.dataset.numerical_columns)
         num_numerical = len(dataset.numerical_columns)
         updated_model_descriptions = []
@@ -1170,10 +1220,9 @@ class BaseTask(ABC):
             updated_config = validate_config(
                         config=config,
                         search_space=current_search_space,
-                        has_categorical=has_categorical,
-                        has_numerical=has_numerical,
                         num_numerical=num_numerical,
-                        n_numerical_in_incumbent_on_task_id=n_numerical_in_incumbent_on_task_id
+                        n_numerical_in_incumbent_on_task_id=n_numerical_in_incumbent_on_task_id,
+                        assert_autogluon_numerical_hyperparameters=assert_skew_transformer_quantile
                     )
             updated_model_descriptions.append((updated_config, budget))
         return updated_model_descriptions, current_search_space
@@ -2028,6 +2077,8 @@ class BaseTask(ABC):
             ensemble_nbest: int = 50,
             ensemble_size: int = 50,
             ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+            num_stacking_layers: int = 1,
+            initial_num_run: int = 0,
             load_models: bool = True,
             time_for_task: int = 100,
             func_eval_time_limit_secs: int = 50,
@@ -2138,6 +2189,9 @@ class BaseTask(ABC):
             precision=precision,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
+            ensemble_method=ensemble_method,
+            num_stacking_layers=num_stacking_layers,
+            initial_num_run=initial_num_run
         )
 
         manager.build_ensemble(self._dask_client)
@@ -2162,6 +2216,7 @@ class BaseTask(ABC):
             ensemble_size: int,
             num_stacking_layer: Optional[int] = None,
             precision: int = 32,
+            initial_num_run: int = 0
     ) -> EnsembleBuilderManager:
         """
         Initializes an `EnsembleBuilderManager`.
@@ -2222,7 +2277,8 @@ class BaseTask(ABC):
             precision=precision,
             logger_port=self._logger_port,
             use_ensemble_loss=self.use_ensemble_opt_loss,
-            num_stacking_layers=num_stacking_layer
+            num_stacking_layers=num_stacking_layer,
+            initial_num_run=initial_num_run
         )
         self._stopwatch.stop_task(ensemble_task_name)
 

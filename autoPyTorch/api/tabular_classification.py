@@ -243,7 +243,7 @@ class TabularClassificationTask(BaseTask):
 
         return dataset, input_validator
 
-    def run_automl_stacking(
+    def run_autogluon_stacking(
         self,
         optimize_metric: str,
         X_train: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
@@ -274,7 +274,7 @@ class TabularClassificationTask(BaseTask):
             dataset_name=dataset_name,
             dataset_compression=self._dataset_compression)
 
-        return self._run_automl_stacking(
+        return self._run_autogluon_stacking(
             optimize_metric=optimize_metric,
             dataset=self.dataset,
             max_budget=max_budget,

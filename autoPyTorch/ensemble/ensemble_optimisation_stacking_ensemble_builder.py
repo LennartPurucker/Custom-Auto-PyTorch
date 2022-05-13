@@ -63,7 +63,8 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
         unit_test: bool = False,
         use_ensemble_opt_loss=False,
         num_stacking_layers: int = 2,
-        cur_stacking_layer: int = 0
+        cur_stacking_layer: int = 0,
+        initial_num_run: int = 0
     ):
         """
             Constructor

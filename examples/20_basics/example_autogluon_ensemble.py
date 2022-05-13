@@ -21,7 +21,7 @@ os.environ['MKL_NUM_THREADS'] = '1'
 warnings.simplefilter(action='ignore', category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-import sklearn.datasets
+import openml
 import sklearn.model_selection
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
@@ -30,12 +30,28 @@ from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 ############################################################################
 # Data Loading
 # ============
-X, y = sklearn.datasets.fetch_openml(data_id=40981, return_X_y=True, as_frame=True)
-X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
-    X,
-    y,
-    random_state=1,
+task = openml.tasks.get_task(task_id=146821)
+dataset = task.get_dataset()
+X, y, categorical_indicator, _ = dataset.get_data(
+    dataset_format='dataframe',
+    target=dataset.default_target_attribute,
 )
+
+train_indices, test_indices = task.get_train_test_split_indices()
+# AutoPyTorch fails when it is given a y DataFrame with False and True
+# values and category as dtype. in its inner workings it uses sklearn
+# which cannot detect the column type.
+if isinstance(y[1], bool):
+    y = y.astype('bool')
+
+# uncomment only for np.arrays
+
+X_train = X.iloc[train_indices]
+y_train = y.iloc[train_indices]
+X_test = X.iloc[test_indices]
+y_test = y.iloc[test_indices]
+
+feat_type = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
 
 ############################################################################
 # Build and fit a classifier
@@ -43,8 +59,8 @@ X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_autogluon_tmp_01',
-    output_directory='./tmp/stacking_autogluon_out_01',
+    temporary_directory='./tmp/stacking_autogluon_tmp_02',
+    output_directory='./tmp/stacking_autogluon_out_02',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,
@@ -55,13 +71,14 @@ api = TabularClassificationTask(
         'num_repeats': 1
     },
     ensemble_size=5,
-    num_stacking_layers=3
+    num_stacking_layers=2,
+    feat_type=feat_type
 )
 
 ############################################################################
 # Search for an ensemble of machine learning algorithms
 # =====================================================
-api.run_automl_stacking(
+api.run_autogluon_stacking(
     X_train=X_train,
     y_train=y_train,
     X_test=X_test.copy(),
@@ -70,7 +87,8 @@ api.run_automl_stacking(
     optimize_metric='accuracy',
     total_walltime_limit=1800,
     func_eval_time_limit_secs=300,
-    all_supported_metrics=False 
+    all_supported_metrics=False,
+    max_budget=10
 )
 
 ############################################################################

@@ -11,6 +11,7 @@ from ConfigSpace.hyperparameters import (
     UniformFloatHyperparameter,
     UniformIntegerHyperparameter,
 )
+from cv2 import add
 
 import numpy as np
 
@@ -287,10 +288,31 @@ def check_none(p: Any) -> bool:
     return False
 
 
-def validate_config(config, search_space, has_categorical, has_numerical, n_numerical_in_incumbent_on_task_id, num_numerical):
+def validate_config(config, search_space: ConfigurationSpace, n_numerical_in_incumbent_on_task_id, num_numerical, assert_autogluon_numerical_hyperparameters: bool=False):
     modified_config = config.get_dictionary().copy()
 
+
+
+    if num_numerical > 0:
+        problem_hyperparameters = ["imputer:numerical_strategy", "skew_transformer:__choice__"]
+        # if imputer_numerical_hyperparameter not in modified_config:
+        #     modified_config[imputer_numerical_hyperparameter] = search_space.get_hyperparameter(imputer_numerical_hyperparameter).default_value
+        skew_transformer_choice = modified_config['skew_transformer:__choice__']
+        imputer_numerical_hyperparameter = "imputer:numerical_strategy" 
+        if imputer_numerical_hyperparameter not in modified_config:
+            modified_config[imputer_numerical_hyperparameter] = search_space.get_hyperparameter(imputer_numerical_hyperparameter).default_value if not assert_autogluon_numerical_hyperparameters else 'median'
+        if assert_autogluon_numerical_hyperparameters:
+            quantile_hp_name = 'QuantileTransformer'
+            if skew_transformer_choice != quantile_hp_name:
+                to_remove_hps = [hyp.name for hyp in search_space.get_children_of('skew_transformer:__choice__') if skew_transformer_choice in hyp.name]
+                to_add_hps = [hyp for hyp in search_space.get_children_of('skew_transformer:__choice__') if quantile_hp_name in hyp.name]
+                [modified_config.pop(remove_hp, None) for remove_hp in to_remove_hps]
+                modified_config['skew_transformer:__choice__'] = quantile_hp_name
+                for add_hp in to_add_hps:
+                    modified_config[add_hp.name] = add_hp.default_value
+
     feature_preprocessing_choice = modified_config['feature_preprocessor:__choice__']
+
     to_adjust_hyperparams = ['n_clusters', 'n_components', 'target_dim']
     children_hyperparameters = [hyp for hyp in search_space.get_children_of('feature_preprocessor:__choice__') if feature_preprocessing_choice in hyp.name]
     for hyp in children_hyperparameters:

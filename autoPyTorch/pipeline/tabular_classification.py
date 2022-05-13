@@ -32,6 +32,7 @@ from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.feature
 )
 from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.imputation.SimpleImputer import SimpleImputer
 from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.scaling import ScalerChoice
+from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.skew_transformer import SkewTransformerChoice
 from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.variance_thresholding. \
     VarianceThreshold import VarianceThreshold
 from autoPyTorch.pipeline.components.setup.early_preprocessor.EarlyPreprocessing import EarlyPreprocessing
@@ -295,6 +296,7 @@ class TabularClassificationPipeline(ClassifierMixin, BasePipeline):
             ("column_splitter", ColumnSplitter(random_state=self.random_state)),
             ("encoder", EncoderChoice(default_dataset_properties, random_state=self.random_state)),
             ("scaler", ScalerChoice(default_dataset_properties, random_state=self.random_state)),
+            ("skew_transformer", SkewTransformerChoice(default_dataset_properties, random_state=self.random_state)),
             ("feature_preprocessor", FeatureProprocessorChoice(default_dataset_properties,
                                                                random_state=self.random_state)),
             ("tabular_transformer", TabularColumnTransformer(random_state=self.random_state)),

@@ -50,6 +50,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     ResamplingStrategies,
     RepeatedCrossValTypes
 )
+from autoPyTorch.datasets.utils import get_appended_dataset
 from autoPyTorch.ensemble.repeat_models_stacking_ensemble import RepeatModelsStackingEnsemble
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
@@ -1009,7 +1010,13 @@ class BaseTask(ABC):
                 weights = [1/ensemble_size] * ensemble_size
                 stacked_weights.append(weights)
             _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(smac_initial_run, model_identifiers[-1], weights, ensemble_size)
-            dataset = self._get_appended_dataset(previous_layer_predictions_train, previous_layer_predictions_test)
+            dataset = get_appended_dataset(
+                original_dataset=self.dataset,
+                previous_layer_predictions_train=previous_layer_predictions_train,
+                previous_layer_predictions_test=previous_layer_predictions_test,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
+            )
             self._reset_datamanager_in_backend(datamanager=dataset)
 
         ensemble = AutogluonStackingEnsemble()
@@ -1087,7 +1094,19 @@ class BaseTask(ABC):
             time_left_for_higher_stacking_layers = total_walltime_limit -self._stopwatch.wall_elapsed(stacking_task_name)
             if time_left_for_higher_stacking_layers < func_eval_time_limit_secs:
                 break
-            dataset = self._get_appended_dataset(previous_layer_predictions_train, previous_layer_predictions_test)
+            self._logger.debug(f"Original feat types len: {len(self.dataset.feat_type)}")
+            nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
+            nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
+            assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
+            self._logger.debug(f"length Non nulll predictions: {len(nonnull_model_predictions_train)}")
+            dataset = get_appended_dataset(
+                original_dataset=self.dataset,
+                previous_layer_predictions_train=nonnull_model_predictions_train,
+                previous_layer_predictions_test=nonnull_model_predictions_test,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
+            )
+            self._logger.debug(f"new feat_types len: {len(dataset.feat_type)}")
             updated_model_configs, current_search_space = self._update_configs_for_current_config_space(model_configs, dataset)
             self._reset_datamanager_in_backend(datamanager=dataset)
             layer_model_identifiers = self._fit_models_on_dataset(updated_model_configs, func_eval_time_limit_secs, stacking_layer, time_left=time_left_for_higher_stacking_layers/(self.num_stacking_layers - 1), current_search_space=current_search_space, smac_initial_run=smac_layer_initial_run)
@@ -1126,33 +1145,6 @@ class BaseTask(ABC):
                 ), allow_pickle=True)] * int(weight * ensemble_size))
         return model_configs,previous_layer_predictions_train,previous_layer_predictions_test
 
-    def _get_appended_dataset(self, previous_layer_predictions_train, previous_layer_predictions_test):
-        X_train, y_train = self.dataset.train_tensors
-        X_test, y_test = self.dataset.test_tensors
-        self._logger.debug(f"Before concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-        nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
-        nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
-        assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
-        X_train =  np.concatenate([X_train, *nonnull_model_predictions_train], axis=1)
-        X_test = np.concatenate([X_test, *nonnull_model_predictions_test], axis=1)
-
-        self._logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-        self._logger.debug(f"Original feat types: {self.dataset.feat_type}, len: {len(self.dataset.feat_type)}")
-        new_feat_types = self.dataset.feat_type.copy()
-        self._logger.debug(f"Non nulll predictions: {nonnull_model_predictions_train}")
-        self._logger.debug(f"length Non nulll predictions: {len(nonnull_model_predictions_train)}")
-        new_feat_types.extend(['numerical'] * (self.dataset.num_classes * len(nonnull_model_predictions_train)))
-        self._logger.debug(f"new feat_types = {new_feat_types}, len: {len(new_feat_types)}")
-        dataset = self.get_dataset(
-                X_train=X_train,
-                y_train=y_train,
-                X_test=X_test,
-                y_test=y_test,
-                feat_type=new_feat_types,
-                resampling_strategy=self.resampling_strategy,
-                resampling_strategy_args=self.resampling_strategy_args)
-
-        return dataset
 
     def _update_configs_for_current_config_space(self, model_description: List[Tuple], dataset: BaseDataset) -> List[Tuple]:
         

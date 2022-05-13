@@ -59,6 +59,7 @@ class EnsembleBuilder(object):
         random_state: Optional[Union[int, np.random.RandomState]] = None,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         unit_test: bool = False,
+        num_stacking_layers: Optional[int] = None,
         use_ensemble_opt_loss = False
     ):
         """

@@ -31,6 +31,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     HoldoutValTypes,
     CrossValTypes
 )
+from autoPyTorch.datasets.utils import get_appended_dataset
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
@@ -313,8 +314,8 @@ class AutoMLSMBO(object):
         self.watcher.start_task(current_task_name)
         self.logger.info(f"Started {cur_stacking_layer} run of SMBO")
 
-        # == first things first: load the datamanager
-        self.reset_data_manager()
+        # # == first things first: load the datamanager
+        # self.reset_data_manager()
 
         # == Initialize non-SMBO stuff
         # first create a scenario
@@ -474,33 +475,19 @@ class AutoMLSMBO(object):
 
             previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
             previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')
-            X_train, y_train = self.datamanager.train_tensors
-            X_test, y_test = self.datamanager.test_tensors
-            self.logger.debug(f"Before concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-            for i, (model_predictions_train, model_predictions_test) in enumerate(zip(previous_layer_predictions_train, previous_layer_predictions_test)):
-                if model_predictions_train is not None and model_predictions_test is not None:
-                    self.logger.debug(f"model_predictions_train: {model_predictions_train.shape}, model_predictions_test: {model_predictions_test.shape}")
-                    X_train = np.concatenate([X_train, model_predictions_train], axis=1)
-                    X_test = np.concatenate([X_test, model_predictions_test], axis=1)
-                else:
-                    self.logger.debug(f"model_predictions_train: {model_predictions_train}, model_predictions_test: {model_predictions_test }")
-
-            self.logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-            self.logger.debug(f"After search feat_types = {self.datamanager.feat_type}")
-            new_feat_types = self.datamanager.feat_type.copy()
-            new_feat_types.extend(['numerical'] * (2*i))
-            self.logger.debug(f"new feat_types = {new_feat_types}")
-            validator = TabularInputValidator(is_classification=True, feat_type=new_feat_types)
-            validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)
-            # self.datamanager.infer_dataset_attributes(validator, X_train, y_train, X_test, y_test)
-            datamanager = TabularDataset(
-                X=X_train,
-                Y=y_train,
-                X_test=X_test,
-                Y_test=y_test,
-                validator=validator,
+            self.logger.debug(f"Original feat types len: {len(self.datamanager.feat_type)}")
+            nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
+            nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
+            assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
+            self.logger.debug(f"length Non nulll predictions: {len(nonnull_model_predictions_train)}")
+            datamanager = get_appended_dataset(
+                original_dataset=self.datamanager,
+                previous_layer_predictions_train=nonnull_model_predictions_train,
+                previous_layer_predictions_test=nonnull_model_predictions_test,
                 resampling_strategy=self.resampling_strategy,
-                resampling_strategy_args=self.resampling_strategy_args)
+                resampling_strategy_args=self.resampling_strategy_args,
+            )
+            self.logger.debug(f"new feat_types len: {len(datamanager.feat_type)}")
             self.reset_attributes(datamanager=datamanager)
 
             initial_num_run = self.backend.get_next_num_run()

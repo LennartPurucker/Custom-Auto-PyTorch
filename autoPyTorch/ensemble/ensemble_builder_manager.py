@@ -238,7 +238,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     unit_test=unit_test,
                     use_ensemble_opt_loss=self.use_ensemble_loss,
                     cur_stacking_layer=self.cur_stacking_layer,
-                    is_new_layer=self.is_new_layer
+                    is_new_layer=self.is_new_layer,
+                    num_stacking_layers=self.num_stacking_layers
                 ))
 
                 logger.info(
@@ -293,7 +294,8 @@ def fit_and_return_ensemble(
     unit_test: bool = False,
     use_ensemble_opt_loss=False,
     cur_stacking_layer: Optional[int] = None,
-    is_new_layer: bool = False
+    is_new_layer: bool = False,
+    num_stacking_layers: Optional[int] = None
 ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -390,7 +392,8 @@ def fit_and_return_ensemble(
         random_state=random_state,
         logger_port=logger_port,
         unit_test=unit_test,
-        use_ensemble_opt_loss=use_ensemble_opt_loss
+        use_ensemble_opt_loss=use_ensemble_opt_loss,
+        num_stacking_layers=num_stacking_layers
     ).run(
         **ensemble_builder_run_kwargs
     )

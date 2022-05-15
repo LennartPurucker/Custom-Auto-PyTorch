@@ -17,6 +17,8 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.ca
 
 from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
+from autoPyTorch.utils.early_stopping import get_early_stopping_rounds
+
 
 class CatboostModel(BaseTraditionalLearner):
 
@@ -27,6 +29,7 @@ class CatboostModel(BaseTraditionalLearner):
                  optimize_metric: Optional[str] = None,
                  logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                  random_state: Optional[np.random.RandomState] = None,
+                 time_limit: Optional[int] = None,
                  **kwargs
                  ):
         super(CatboostModel, self).__init__(name="catboost",
@@ -36,6 +39,7 @@ class CatboostModel(BaseTraditionalLearner):
                                             output_type=output_type,
                                             optimize_metric=optimize_metric,
                                             dataset_properties=dataset_properties,
+                                            time_limit=time_limit,
                                             params_func=get_params)
         self.config["train_dir"] = tempfile.gettempdir()
         self.config.update(kwargs)
@@ -59,7 +63,7 @@ class CatboostModel(BaseTraditionalLearner):
              y_val: np.ndarray) -> None:
 
         assert self.model is not None, "No model found. Can't fit without preparing the model"
-        early_stopping = 150 if X_train.shape[0] > 10000 else max(round(150 * 10000 / X_train.shape[0]), 10)
+        early_stopping = get_early_stopping_rounds(num_rows_train=X_train.shape[0])
         callbacks = []
         callbacks.append(EarlyStoppingCallback(stopping_rounds=early_stopping, eval_metric=self.config['eval_metric']))
         num_rows_train = X_train.shape[0]

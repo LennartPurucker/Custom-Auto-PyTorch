@@ -87,7 +87,8 @@ class BaseModelComponent(autoPyTorchSetupComponent):
                                       dataset_properties=X['dataset_properties'],
                                       task_type=X['dataset_properties']['task_type'],
                                       output_type=X['dataset_properties']['output_type'],
-                                      optimize_metric=X['optimize_metric'] if 'optimize_metric' in X else None)
+                                      optimize_metric=X['optimize_metric'] if 'optimize_metric' in X else None,
+                                      time_limit=X['func_eval_time_limit_secs'])
 
         # train model
         blockPrint()
@@ -111,6 +112,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
         logger_port: int,
         task_type: str,
         output_type: str,
+        time_limit: Optional[int] = None,
         optimize_metric: Optional[str] = None
     ) -> BaseTraditionalLearner:
         """

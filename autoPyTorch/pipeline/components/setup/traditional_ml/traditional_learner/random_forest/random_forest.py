@@ -24,6 +24,7 @@ class RFModel(BaseTraditionalLearner):
                  optimize_metric: Optional[str] = None,
                  logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                  random_state: Optional[np.random.RandomState] = None,
+                 time_limit: Optional[int] = None,
                  **kwargs
                  ):
         super(RFModel, self).__init__(name="random_forest",
@@ -33,6 +34,7 @@ class RFModel(BaseTraditionalLearner):
                                       output_type=output_type,
                                       optimize_metric=optimize_metric,
                                       dataset_properties=dataset_properties,
+                                      time_limit=time_limit,
                                       params_func=get_params)
         self.config.update(kwargs)
 

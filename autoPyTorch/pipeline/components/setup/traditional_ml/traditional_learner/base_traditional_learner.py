@@ -48,6 +48,7 @@ class BaseTraditionalLearner:
                  optimize_metric: Optional[str] = None,
                  logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                  random_state: Optional[np.random.RandomState] = None,
+                 time_limit: Optional[int] = None,
                  name: Optional[str] = None):
 
         self.model: Optional[Union[CatBoost, BaseEstimator]] = None
@@ -70,7 +71,7 @@ class BaseTraditionalLearner:
 
         self.all_nan: Optional[np.ndarray] = None
         self.num_classes: Optional[int] = None
-
+        self.time_limit = time_limit
         self.is_classification = STRING_TO_TASK_TYPES[task_type] not in REGRESSION_TASKS
         self.dataset_properties = dataset_properties
         self.metric = get_metrics(dataset_properties={'task_type': task_type,

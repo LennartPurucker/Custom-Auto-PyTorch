@@ -8,16 +8,19 @@ import logging
 from lightgbm import LGBMClassifier, LGBMRegressor
 
 import numpy as np
+from sklearn.compose import make_column_transformer
+from sklearn.preprocessing import OneHotEncoder
 
 from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
     BaseTraditionalLearner
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.lgbm.utils import early_stopping_custom, get_metric, get_params as lgb_get_params, get_train_loss_name
+from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.xgboost.utils import get_metric, get_param_baseline as xgb_get_params
+from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.xgboost.early_stopping_custom import EarlyStoppingCustom
 from autoPyTorch.utils.early_stopping import get_early_stopping_rounds
 
 
 
-class LGBModel(BaseTraditionalLearner):
+class XGBModel(BaseTraditionalLearner):
     def __init__(self,
                  task_type: str,
                  output_type: str,
@@ -28,7 +31,7 @@ class LGBModel(BaseTraditionalLearner):
                  time_limit: Optional[int] = None,
                  **kwargs
                  ):
-        super(LGBModel, self).__init__(name="lgb",
+        super(XGBModel, self).__init__(name="lgb",
                                        logger_port=logger_port,
                                        random_state=random_state,
                                        task_type=task_type,
@@ -36,38 +39,59 @@ class LGBModel(BaseTraditionalLearner):
                                        optimize_metric=optimize_metric,
                                        dataset_properties=dataset_properties,
                                        time_limit=time_limit,
-                                       params_func=lgb_get_params)
+                                       params_func=xgb_get_params)
         self.config.update(kwargs)
+        self.encoder = None
 
     def _prepare_model(self,
                        X_train: np.ndarray,
                        y_train: np.ndarray
                        ) -> None:
-        early_stopping = get_early_stopping_rounds(X_train.shape[0])
-        self.config["early_stopping_rounds"] = early_stopping
-        self.stopping_metric_name = get_metric(output_type=self.output_type, optimize_metric=self.metric.name)
-        self.training_objective = get_train_loss_name(self.output_type)
+        from xgboost import XGBClassifier, XGBRegressor
+        self.eval_metric = get_metric(self.output_type, optimize_metric=self.metric.name)
+        # avoid unnecessary warnings
+        self.config['eval_metric'] = get_metric(self.output_type, optimize_metric=self.metric.name)
         if not self.is_classification:
-            self.model = LGBMRegressor(**self.config, random_state=self.random_state)
+            self.model = XGBRegressor(**self.config, random_state=self.random_state)
         else:
-            self.num_classes = len(np.unique(y_train)) if len(np.unique(y_train)) != 2 else 1  # this fixes a bug
-            self.config["num_class"] = self.num_classes
+            self.config["num_class"] = len(np.unique(y_train)) if len(np.unique(y_train)) != 2 else 1  # this fixes a bug
 
-            self.model = LGBMClassifier(**self.config, random_state=self.random_state)
+            self.model = XGBClassifier(**self.config, random_state=self.random_state)
 
     def _fit(self, X_train: np.ndarray,
              y_train: np.ndarray,
              X_val: np.ndarray,
              y_val: np.ndarray
              ) -> None:
-        assert self.model is not None, "No model found. Can't fit without preparing the model"
         start_time = time()
-        callbacks = [
-            # TODO: pass start time and time limit to early stopping
-            early_stopping_custom(self.config["early_stopping_rounds"], logger=self.logger, metrics_to_use=[('valid_set', self.stopping_metric_name)], max_diff=None, start_time=start_time, time_limit=self.time_limit,
-                                  ignore_dart_warning=True, verbose=False, manual_stop_file=False, train_loss_name=self.training_objective),
-        ]
-        self.model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric=self.training_objective, callbacks=callbacks)
+     
+        assert self.model is not None, "No model found. Can't fit without preparing the model"
+        eval_set = []
+        if X_val is None:
+            early_stopping_rounds = None
+            eval_set = None
+        else:
+            eval_set.append((X_val, y_val))
+            early_stopping_rounds = get_early_stopping_rounds(X_train.shape[0])
+
+        callbacks = []
+        if eval_set is not None:
+            callbacks.append(EarlyStoppingCustom(early_stopping_rounds, start_time=start_time, time_limit=self.time_limit))
+        self.model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric=self.eval_metric, callbacks=callbacks, verbose=False)
+
+    def _preprocess(self,
+                    X: np.ndarray
+                    ) -> np.ndarray:
+
+        super(XGBModel, self)._preprocess(X)
+
+        if len(self.dataset_properties['categorical_columns']) > 0:
+            if self.encoder is None:
+                self.encoder = make_column_transformer((OneHotEncoder(sparse=False, handle_unknown='ignore'), self.dataset_properties['categorical_columns']), remainder="passthrough")
+                self.encoder.fit(X)
+            X = self.encoder.transform(X)   
+
+        return X
 
     def predict(self, X_test: np.ndarray,
                 predict_proba: bool = False,
@@ -94,6 +118,6 @@ class LGBModel(BaseTraditionalLearner):
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None
     ) -> Dict[str, Union[str, bool]]:
         return {
-            'shortname': 'LGBMLearner',
-            'name': 'Light Gradient Boosting Machine Learner',
+            'shortname': 'XGBLearner',
+            'name': 'Xtreme Gradient Boosting Machine Learner',
         }

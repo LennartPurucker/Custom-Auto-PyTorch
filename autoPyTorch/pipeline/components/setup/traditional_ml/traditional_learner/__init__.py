@@ -11,6 +11,7 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.ca
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.random_forest.random_forest import RFModel
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.extratrees.extratrees import ExtraTreesModel
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.knn.knn import KNNModel
+from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.xgboost.xgboost import XGBModel
 
 _traditional_learners = {
     # Sort by more robust models
@@ -28,6 +29,7 @@ _traditional_learners = {
     'random_forest': RFModel,
     'extra_trees': ExtraTreesModel,
     'knn': KNNModel,
+    'xgboost': XGBModel
 }
 _addons = ThirdPartyComponents(BaseTraditionalLearner)
 

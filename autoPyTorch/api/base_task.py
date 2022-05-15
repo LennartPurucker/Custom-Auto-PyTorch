@@ -52,6 +52,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     RepeatedCrossValTypes
 )
 from autoPyTorch.datasets.utils import get_appended_dataset
+from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.repeat_models_stacking_ensemble import RepeatModelsStackingEnsemble
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
@@ -183,6 +184,7 @@ class BaseTask(ABC):
         ensemble_size: int = 5,
         ensemble_nbest: int = 50,
         ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
+        use_ensemble_opt_loss: bool = False,
         num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
@@ -209,6 +211,7 @@ class BaseTask(ABC):
         self.ensemble_nbest = ensemble_nbest
         self.ensemble_method = ensemble_method
         self.num_stacking_layers = num_stacking_layers
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
 
         self.max_models_on_disc = max_models_on_disc
         self.logging_config: Optional[Dict] = logging_config
@@ -682,7 +685,7 @@ class BaseTask(ABC):
             # if isinstance(self.resampling_strategy, CrossValTypes):
             #     self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
 
-            self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
+            # self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
             if self.ensemble_method.is_stacking_ensemble():
                 models = []
                 cv_models = []
@@ -690,7 +693,7 @@ class BaseTask(ABC):
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
                     cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
-                self._logger.debug(f"stacked ensemble models are :{models}")
+                # self._logger.debug(f"stacked ensemble models are :{models}")
                 self.models_ = models
                 self.cv_models_ = cv_models
 
@@ -982,7 +985,7 @@ class BaseTask(ABC):
         all_supported_metrics: bool = True,
         precision: int = 32,
         disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
-        dask_client: Optional[dask.distributed.Client] = None
+        dask_client: Optional[dask.distributed.Client] = None,
     ):
         """
         This function can be used to create a stacking ensemble
@@ -1009,6 +1012,7 @@ class BaseTask(ABC):
             dask_client=dask_client
         )
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+        self.precision = precision
         available_classifiers = get_available_traditional_learners(dataset_properties=self.dataset.get_dataset_properties(self._dataset_requirements))
         model_configs = [(key, self.pipeline_options[self.pipeline_options['budget_type']]) for key in available_classifiers.keys()]
 
@@ -1027,6 +1031,7 @@ class BaseTask(ABC):
 
         model_identifiers = []
         stacked_weights = []
+        last_successful_smac_initial_num_run = None
         for stacking_layer in range(self.num_stacking_layers):
             smac_initial_run=self._backend.get_next_num_run()
             updated_model_configs, current_search_space = self._update_configs_for_current_config_space(
@@ -1047,6 +1052,7 @@ class BaseTask(ABC):
                 model_identifiers.append(
                     nonnull_identifiers
                 )
+                last_successful_smac_initial_num_run = smac_initial_run
                 ensemble_size = len(nonnull_identifiers)
                 weights = [1/ensemble_size] * ensemble_size
                 stacked_weights.append(weights)
@@ -1060,8 +1066,25 @@ class BaseTask(ABC):
             )
             self._reset_datamanager_in_backend(datamanager=dataset)
 
-        
+        self.fit_ensemble(
+            optimize_metric=optimize_metric,
+            precision=self.precision,
+            ensemble_size=ensemble_size,
+            ensemble_nbest=self.ensemble_nbest,
+            initial_num_run=last_successful_smac_initial_num_run,
+            time_for_task=total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name),
+            enable_traditional_pipeline=False,
+            load_models=False
+        )
+        final_ensemble: EnsembleSelection = self._backend.load_ensemble(self.seed)
         ensemble = AutogluonStackingEnsemble()
+        final_model_identifiers = final_ensemble.get_selected_model_identifiers()
+        final_model_identifiers_dict = {identifier: identifier for identifier in final_model_identifiers}
+        models_with_weights = final_ensemble.get_models_with_weights(final_model_identifiers_dict)
+        final_model_identifiers = [identifier[1] for identifier in models_with_weights]
+        final_weights = [identifier[0] for identifier in models_with_weights]
+        model_identifiers[-1] = final_model_identifiers
+        stacked_weights[-1] = final_weights
         ensemble = ensemble.fit(model_identifiers, stacked_weights)
         self._backend.save_ensemble(ensemble, 1, self.seed)
         self._load_models()
@@ -1104,7 +1127,7 @@ class BaseTask(ABC):
                                                         precision=precision,
                                                         optimize_metric=self.opt_metric,
                                                         ensemble_method=self.ensemble_method,
-                                                        num_stacking_layer=1
+                                                        num_stacking_layers=1
                                                         )
 
         smac_initial_run = self._run_smbo(
@@ -1570,7 +1593,7 @@ class BaseTask(ABC):
                                                             precision=precision,
                                                             optimize_metric=self.opt_metric,
                                                             ensemble_method=self.ensemble_method,
-                                                            num_stacking_layer=self.num_stacking_layers
+                                                            num_stacking_layers=self.num_stacking_layers
                                                             )
 
             self._run_smbo(
@@ -2130,7 +2153,7 @@ class BaseTask(ABC):
             self
         """
         # Make sure that input is valid
-        if self.dataset is None or self.opt_metric is None:
+        if self.dataset is None:
             raise ValueError("fit_ensemble() can only be called after `search()`. "
                              "Please call the `search()` method of {} prior to "
                              "fit_ensemble().".format(self.__class__.__name__))
@@ -2214,7 +2237,7 @@ class BaseTask(ABC):
             ensemble_method: int,
             ensemble_nbest: int,
             ensemble_size: int,
-            num_stacking_layer: Optional[int] = None,
+            num_stacking_layers: Optional[int] = None,
             precision: int = 32,
             initial_num_run: int = 0
     ) -> EnsembleBuilderManager:
@@ -2277,7 +2300,7 @@ class BaseTask(ABC):
             precision=precision,
             logger_port=self._logger_port,
             use_ensemble_loss=self.use_ensemble_opt_loss,
-            num_stacking_layers=num_stacking_layer,
+            num_stacking_layers=num_stacking_layers,
             initial_num_run=initial_num_run
         )
         self._stopwatch.stop_task(ensemble_task_name)

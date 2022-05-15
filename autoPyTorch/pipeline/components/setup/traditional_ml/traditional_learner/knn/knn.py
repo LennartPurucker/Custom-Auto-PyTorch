@@ -22,15 +22,17 @@ class KNNModel(BaseTraditionalLearner):
                  optimize_metric: Optional[str] = None,
                  logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                  random_state: Optional[np.random.RandomState] = None,
+                 time_limit: Optional[int] = None,
                  **kwargs
                  ):
         super(KNNModel, self).__init__(name="knn",
                                        logger_port=logger_port,
-                                            random_state=random_state,
-                                            task_type=task_type,
-                                            output_type=output_type,
-                                            optimize_metric=optimize_metric,
-                                            dataset_properties=dataset_properties,
+                                       random_state=random_state,
+                                       task_type=task_type,
+                                       output_type=output_type,
+                                       optimize_metric=optimize_metric,
+                                       dataset_properties=dataset_properties,
+                                       time_limit=time_limit,
                                        params_func=knn_get_params)
         self.categoricals: Optional[np.ndarray[bool]] = None
         self.config.update(kwargs)

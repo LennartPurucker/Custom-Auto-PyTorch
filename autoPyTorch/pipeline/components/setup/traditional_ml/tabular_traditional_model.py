@@ -57,7 +57,8 @@ class TabularTraditionalModel(BaseModelComponent):
 
     def build_model(self, input_shape: Tuple[int, ...], output_shape: Tuple[int, ...],
                     dataset_properties: Dict[str, BaseDatasetPropertiesType],
-                    logger_port: int, task_type: str, output_type: str, optimize_metric: Optional[str] = None
+                    logger_port: int, task_type: str, output_type: str, optimize_metric: Optional[str] = None,
+                    time_limit: Optional[int] = None,
                     ) -> BaseTraditionalLearner:
         """
         This method returns a traditional learner, that is dynamically
@@ -70,7 +71,7 @@ class TabularTraditionalModel(BaseModelComponent):
 
         learner = Learner(random_state=self.random_state, logger_port=logger_port,
                           task_type=task_type, output_type=output_type, optimize_metric=optimize_metric,
-                          dataset_properties=dataset_properties)
+                          dataset_properties=dataset_properties, time_limit=time_limit)
 
         return learner
 

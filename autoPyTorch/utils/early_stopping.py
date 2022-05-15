@@ -35,3 +35,13 @@ class SimpleEarlyStopper(AbstractEarlyStopper):
         if is_best:
             return False
         return current_epoch - self.best_epoch >= self.patience
+
+
+def get_early_stopping_rounds(num_rows_train, min_patience=20, max_patience=300, min_rows=10000):
+
+    modifier = 1 if num_rows_train <= min_rows else min_rows / num_rows_train
+    simple_early_stopping_rounds = max(
+        round(modifier * max_patience),
+        min_patience,
+    )
+    return simple_early_stopping_rounds

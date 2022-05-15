@@ -4,10 +4,13 @@ import sys
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from ConfigSpace.configuration_space import Configuration
+
 import numpy as np
 
 import pandas as pd
 
+from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
 import torch
@@ -102,6 +105,30 @@ class BaseModelComponent(autoPyTorchSetupComponent):
                 X['X_test'] = X['X_test'].to_numpy()
             test_preds = self.model.predict(X_test=X['X_test'], predict_proba=self.model.is_classification)
             self.fit_output["test_preds"] = test_preds
+        return self
+
+    def set_hyperparameters(self,
+                            configuration: Configuration,
+                            init_params: Optional[Dict[str, Any]] = None
+                            ) -> BaseEstimator:
+        """
+        Applies a configuration to the given component.
+        This method translate a hierarchical configuration key,
+        to an actual parameter of the autoPyTorch component.
+
+        Args:
+            configuration (Configuration):
+                Which configuration to apply to the chosen component
+            init_params (Optional[Dict[str, any]]):
+                Optional arguments to initialize the chosen component
+
+        Returns:
+            An instance of self
+        """
+        params = configuration.get_dictionary()
+
+        setattr(self, 'config', params)
+
         return self
 
     @abstractmethod

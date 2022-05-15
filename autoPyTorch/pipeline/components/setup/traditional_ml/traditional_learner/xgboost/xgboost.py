@@ -4,20 +4,21 @@ from typing import Dict, Optional, Union
 
 import logging
 
-
-from lightgbm import LGBMClassifier, LGBMRegressor
+from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.hyperparameters import (
+    UniformIntegerHyperparameter,
+    UniformFloatHyperparameter
+)
 
 import numpy as np
-from sklearn.compose import make_column_transformer
-from sklearn.preprocessing import OneHotEncoder
 
 from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
     BaseTraditionalLearner
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.xgboost.utils import get_metric, get_param_baseline as xgb_get_params
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.xgboost.early_stopping_custom import EarlyStoppingCustom
+from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 from autoPyTorch.utils.early_stopping import get_early_stopping_rounds
-
 
 
 class XGBModel(BaseTraditionalLearner):
@@ -31,7 +32,7 @@ class XGBModel(BaseTraditionalLearner):
                  time_limit: Optional[int] = None,
                  **kwargs
                  ):
-        super(XGBModel, self).__init__(name="lgb",
+        super(XGBModel, self).__init__(name="xgboost",
                                        logger_port=logger_port,
                                        random_state=random_state,
                                        task_type=task_type,
@@ -82,6 +83,8 @@ class XGBModel(BaseTraditionalLearner):
     def _preprocess(self,
                     X: np.ndarray
                     ) -> np.ndarray:
+        from sklearn.compose import make_column_transformer
+        from sklearn.preprocessing import OneHotEncoder
 
         super(XGBModel, self)._preprocess(X)
 
@@ -112,6 +115,78 @@ class XGBModel(BaseTraditionalLearner):
 
         y_pred = self.model.predict(X_test)
         return y_pred
+
+    @staticmethod
+    def get_hyperparameter_search_space(
+        dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+        learning_rate: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='learning_rate',
+            value_range=(5e-3, 0.2),
+            default_value=0.1,
+            log=True
+        ),
+        max_depth: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='max_depth',
+            value_range=(3, 10),
+            default_value=6,
+        ),
+        min_child_weight: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='min_child_weight',
+            value_range=(1, 5),
+            default_value=1,
+        ),
+        gamma: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='gamma',
+            value_range=(0, 5),
+            default_value=0.01,
+        ),
+        subsample: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='subsample',
+            value_range=(0.5, 1),
+            default_value=1,
+        ),
+        colsample_bytree: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='colsample_bytree',
+            value_range=(0.5, 1),
+            default_value=1,
+        ),
+        reg_alpha: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='reg_alpha',
+            value_range=(0, 10),
+            default_value=0,
+        ),
+        reg_lambda: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='reg_lambda',
+            value_range=(0, 10),
+            default_value=0,
+        ),
+    ) -> ConfigurationSpace:
+        """Get the hyperparameter search space for the SimpleImputer
+
+        Args:
+            dataset_properties (Optional[Dict[str, BaseDatasetPropertiesType]])
+                Properties that describe the dataset
+                Note: Not actually Optional, just adhering to its supertype
+            numerical_strategy (HyperparameterSearchSpace: default = ...)
+                The strategy to use for numerical imputation
+
+        Returns:
+            ConfigurationSpace
+                The space of possible configurations for a SimpleImputer with the given
+                `dataset_properties`
+        """
+        cs = ConfigurationSpace()
+
+        add_hyperparameter(cs, colsample_bytree, UniformFloatHyperparameter)
+        add_hyperparameter(cs, subsample, UniformFloatHyperparameter)
+        add_hyperparameter(cs, reg_alpha, UniformFloatHyperparameter)
+        add_hyperparameter(cs, gamma, UniformFloatHyperparameter)
+        add_hyperparameter(cs, min_child_weight, UniformIntegerHyperparameter)
+        add_hyperparameter(cs, learning_rate, UniformFloatHyperparameter)
+        add_hyperparameter(cs, reg_lambda, UniformFloatHyperparameter)
+        add_hyperparameter(cs, max_depth, UniformIntegerHyperparameter)
+
+        return cs
 
     @staticmethod
     def get_properties(

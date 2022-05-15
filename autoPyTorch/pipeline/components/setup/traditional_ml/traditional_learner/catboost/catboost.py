@@ -2,6 +2,11 @@ import logging.handlers
 import tempfile
 from typing import Dict, Optional, Union
 
+from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.hyperparameters import (
+    UniformIntegerHyperparameter,
+    UniformFloatHyperparameter
+)
 
 import numpy as np
 
@@ -16,6 +21,7 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.ca
 )
 
 from catboost import CatBoostClassifier, CatBoostRegressor, Pool
+from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 
 from autoPyTorch.utils.early_stopping import get_early_stopping_rounds
 
@@ -83,6 +89,48 @@ class CatboostModel(BaseTraditionalLearner):
                        early_stopping_rounds=early_stopping,
                        callbacks=callbacks,
                        verbose=False)
+
+    @staticmethod
+    def get_hyperparameter_search_space(
+        dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+        learning_rate: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='learning_rate',
+            value_range=(5e-3, 0.2),
+            default_value=0.05,
+            log=True
+        ),
+        depth: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='depth',
+            value_range=(5, 8),
+            default_value=6,
+        ),
+        l2_leaf_reg: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='l2_leaf_reg',
+            value_range=(1, 5),
+            default_value=3,
+        ),
+    ) -> ConfigurationSpace:
+        """Get the hyperparameter search space for the SimpleImputer
+
+        Args:
+            dataset_properties (Optional[Dict[str, BaseDatasetPropertiesType]])
+                Properties that describe the dataset
+                Note: Not actually Optional, just adhering to its supertype
+            numerical_strategy (HyperparameterSearchSpace: default = ...)
+                The strategy to use for numerical imputation
+
+        Returns:
+            ConfigurationSpace
+                The space of possible configurations for a SimpleImputer with the given
+                `dataset_properties`
+        """
+        cs = ConfigurationSpace()
+
+        add_hyperparameter(cs, l2_leaf_reg, UniformIntegerHyperparameter)
+        add_hyperparameter(cs, depth, UniformIntegerHyperparameter)
+        add_hyperparameter(cs, learning_rate, UniformFloatHyperparameter)
+
+        return cs
 
     @staticmethod
     def get_properties(

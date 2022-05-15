@@ -2,6 +2,8 @@ import logging.handlers
 import tempfile
 from typing import Dict, Optional, Union
 
+from ConfigSpace.configuration_space import ConfigurationSpace
+
 import numpy as np
 
 from sklearn.ensemble import (
@@ -68,6 +70,28 @@ class RFModel(BaseTraditionalLearner):
         if self.config["warm_start"]:
             self.model.n_estimators = self.final_n_estimators
             self.model.fit(X_train, y_train)
+
+    @staticmethod
+    def get_hyperparameter_search_space(
+        dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+    ) -> ConfigurationSpace:
+        """Get the hyperparameter search space for the SimpleImputer
+
+        Args:
+            dataset_properties (Optional[Dict[str, BaseDatasetPropertiesType]])
+                Properties that describe the dataset
+                Note: Not actually Optional, just adhering to its supertype
+            numerical_strategy (HyperparameterSearchSpace: default = ...)
+                The strategy to use for numerical imputation
+
+        Returns:
+            ConfigurationSpace
+                The space of possible configurations for a SimpleImputer with the given
+                `dataset_properties`
+        """
+        cs = ConfigurationSpace()
+
+        return cs
 
     @staticmethod
     def get_properties(

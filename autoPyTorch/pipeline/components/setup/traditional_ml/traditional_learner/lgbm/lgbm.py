@@ -4,6 +4,11 @@ from typing import Dict, Optional, Union
 
 import logging
 
+from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.hyperparameters import (
+    UniformIntegerHyperparameter,
+    UniformFloatHyperparameter
+)
 
 from lightgbm import LGBMClassifier, LGBMRegressor
 
@@ -13,6 +18,7 @@ from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
     BaseTraditionalLearner
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.lgbm.utils import early_stopping_custom, get_metric, get_params as lgb_get_params, get_train_loss_name
+from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 from autoPyTorch.utils.early_stopping import get_early_stopping_rounds
 
 
@@ -88,6 +94,54 @@ class LGBModel(BaseTraditionalLearner):
 
         y_pred = self.model.predict(X_test)
         return y_pred
+
+    @staticmethod
+    def get_hyperparameter_search_space(
+        dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+        learning_rate: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='learning_rate',
+            value_range=(5e-3, 0.2),
+            default_value=0.05,
+            log=True
+        ),
+        feature_fraction: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='feature_fraction',
+            value_range=(0.75, 1),
+            default_value=1,
+        ),
+        min_data_in_leaf: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='min_data_in_leaf',
+            value_range=(2, 60),
+            default_value=20,
+        ),
+        num_leaves: HyperparameterSearchSpace = HyperparameterSearchSpace(
+            hyperparameter='num_leaves',
+            value_range=(16, 96),
+            default_value=31,
+        ),
+    ) -> ConfigurationSpace:
+        """Get the hyperparameter search space for the SimpleImputer
+
+        Args:
+            dataset_properties (Optional[Dict[str, BaseDatasetPropertiesType]])
+                Properties that describe the dataset
+                Note: Not actually Optional, just adhering to its supertype
+            numerical_strategy (HyperparameterSearchSpace: default = ...)
+                The strategy to use for numerical imputation
+
+        Returns:
+            ConfigurationSpace
+                The space of possible configurations for a SimpleImputer with the given
+                `dataset_properties`
+        """
+        cs = ConfigurationSpace()
+
+        add_hyperparameter(cs, num_leaves, UniformIntegerHyperparameter)
+        add_hyperparameter(cs, min_data_in_leaf, UniformIntegerHyperparameter)
+        add_hyperparameter(cs, feature_fraction, UniformFloatHyperparameter)
+        add_hyperparameter(cs, learning_rate, UniformFloatHyperparameter)
+
+        return cs
 
     @staticmethod
     def get_properties(

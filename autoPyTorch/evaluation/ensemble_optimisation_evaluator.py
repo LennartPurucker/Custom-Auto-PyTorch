@@ -460,6 +460,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
         train_loss = self._loss(self.Y_actual_train, Y_train_pred)
         opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
 
+        opt_loss ['ensemble_opt_loss'] = calculate_nomalised_margin_loss(Y_ensemble_preds, self.Y_optimization)
         status = StatusType.SUCCESS
         self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
             self.num_run,

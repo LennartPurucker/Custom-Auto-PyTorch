@@ -2533,16 +2533,14 @@ class BaseTask(ABC):
                 Markdown table of models.
         """
         if self.ensemble_method.is_stacking_ensemble():
-            markdowns = []
+            df = []
             for layer, model_weight in enumerate(self.get_models_with_weights()):
-                df = []
                 for weight, model in model_weight:
                     representation = model.get_pipeline_representation()
-                    representation.update({'Weight': weight})
+                    representation.update({'Weight': weight, "Stacking Layer": layer})
                     df.append(representation)
-                models_markdown: str = pd.DataFrame(df).to_markdown()
-            markdowns.append(models_markdown)
-            return '\n'.join(markdowns)
+            models_markdown: str = pd.DataFrame(df).to_markdown()
+            return models_markdown
         else:
             df = []
             for weight, model in self.get_models_with_weights():

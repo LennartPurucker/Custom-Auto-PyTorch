@@ -117,8 +117,8 @@ class AutogluonStackingEnsemble(AbstractEnsemble):
             for identifier, weight in zip(identifiers, layer_weights):
                 model = layer_models[identifier]
                 output.append((weight, model))
-
             output.sort(reverse=True, key=lambda t: t[0])
+            outputs.append(output)
 
         return outputs
 

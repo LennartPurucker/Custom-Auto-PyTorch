@@ -141,8 +141,6 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
 
         self.train_loss_: float = loss
 
-    # TODO: return 1 for models in layer 0, 2 for next and so on
-    # TODO: 0 for models that are not in stack
     def _calculate_weights(self) -> None:
         """
         Calculates the contribution each of the individual models
@@ -280,7 +278,7 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
             output = []
             num_models = len(layer_models)
             for model in layer_models:
-                output.append((1/num_models, model))
+                output.append((1/num_models, layer_models[model]))
             output.sort(reverse=True, key=lambda t: t[0])
             outputs.append(output)
 

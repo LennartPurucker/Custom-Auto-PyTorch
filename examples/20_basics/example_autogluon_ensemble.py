@@ -59,8 +59,8 @@ feat_type = ["numerical" if not indicator else "categorical" for indicator in ca
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_autogluon_tmp_02',
-    output_directory='./tmp/stacking_autogluon_out_02',
+    temporary_directory='./tmp/stacking_autogluon_tmp_05',
+    output_directory='./tmp/stacking_autogluon_out_05',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,

@@ -2,7 +2,6 @@
 ======================
 Tabular Classification
 ======================
-
 The following example shows how to fit a sample classification model
 with AutoPyTorch
 """
@@ -10,9 +9,8 @@ import os
 import tempfile as tmp
 import warnings
 from autoPyTorch.api.utils import get_autogluon_default_nn_config
-from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
 
-from autoPyTorch.optimizer.utils import autoPyTorchSMBO
+from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
 
 os.environ['JOBLIB_TEMP_FOLDER'] = tmp.gettempdir()
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -26,6 +24,7 @@ import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
+from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 ############################################################################
 # Data Loading
@@ -60,19 +59,19 @@ search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_repeat_base_models_tmp_04',
-    output_directory='./tmp/stacking_repeat_base_models_out_04',
+    temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_01',
+    output_directory='./tmp/stacking_ensemble_selection_per_layer_out_01',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=1,
-    ensemble_method=EnsembleSelectionTypes.stacking_repeat_models,
+    seed=4,
+    ensemble_method=EnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
+    ensemble_size=5,
+    num_stacking_layers=2,
     resampling_strategy_args={
         'num_splits': 2,
         'num_repeats': 1
     },
-    ensemble_size=5,
-    num_stacking_layers=2,
     search_space_updates=search_space_updates
 )
 
@@ -86,11 +85,10 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=2000,
-    func_eval_time_limit_secs=300,
-    # enable_traditional_pipeline=False,
-    # smbo_class=autoPyTorchSMBO,
-    all_supported_metrics=False 
+    total_walltime_limit=1000,
+    func_eval_time_limit_secs=150,
+    enable_traditional_pipeline=True,
+    all_supported_metrics=False,
 )
 
 ############################################################################
@@ -104,4 +102,3 @@ print(api.show_models())
 
 # Print statistics from search
 # print(api.sprint_statistics())
-

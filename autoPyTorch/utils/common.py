@@ -291,25 +291,22 @@ def check_none(p: Any) -> bool:
 def validate_config(config, search_space: ConfigurationSpace, n_numerical_in_incumbent_on_task_id, num_numerical, assert_autogluon_numerical_hyperparameters: bool=False):
     modified_config = config.get_dictionary().copy()
 
-
-
     if num_numerical > 0:
-        problem_hyperparameters = ["imputer:numerical_strategy", "skew_transformer:__choice__"]
-        # if imputer_numerical_hyperparameter not in modified_config:
-        #     modified_config[imputer_numerical_hyperparameter] = search_space.get_hyperparameter(imputer_numerical_hyperparameter).default_value
-        skew_transformer_choice = modified_config['skew_transformer:__choice__']
         imputer_numerical_hyperparameter = "imputer:numerical_strategy" 
         if imputer_numerical_hyperparameter not in modified_config:
             modified_config[imputer_numerical_hyperparameter] = search_space.get_hyperparameter(imputer_numerical_hyperparameter).default_value if not assert_autogluon_numerical_hyperparameters else 'median'
         if assert_autogluon_numerical_hyperparameters:
             quantile_hp_name = 'QuantileTransformer'
-            if skew_transformer_choice != quantile_hp_name:
-                to_remove_hps = [hyp.name for hyp in search_space.get_children_of('skew_transformer:__choice__') if skew_transformer_choice in hyp.name]
-                to_add_hps = [hyp for hyp in search_space.get_children_of('skew_transformer:__choice__') if quantile_hp_name in hyp.name]
-                [modified_config.pop(remove_hp, None) for remove_hp in to_remove_hps]
-                modified_config['skew_transformer:__choice__'] = quantile_hp_name
-                for add_hp in to_add_hps:
-                    modified_config[add_hp.name] = add_hp.default_value
+            skew_transformer_choice = modified_config.get('skew_transformer:__choice__', None)
+            if skew_transformer_choice is not None:
+                if skew_transformer_choice != quantile_hp_name:
+                    to_remove_hps = [hyp.name for hyp in search_space.get_children_of('skew_transformer:__choice__') if skew_transformer_choice in hyp.name]
+                    [modified_config.pop(remove_hp, None) for remove_hp in to_remove_hps]
+
+            to_add_hps = [hyp for hyp in search_space.get_children_of('skew_transformer:__choice__') if quantile_hp_name in hyp.name]
+            modified_config['skew_transformer:__choice__'] = quantile_hp_name
+            for add_hp in to_add_hps:
+                modified_config[add_hp.name] = add_hp.default_value
 
     feature_preprocessing_choice = modified_config['feature_preprocessor:__choice__']
 

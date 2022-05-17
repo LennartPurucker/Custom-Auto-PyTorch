@@ -59,15 +59,15 @@ search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_05',
-    output_directory='./tmp/stacking_optimisation_ensemble_out_05',
+    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_08',
+    output_directory='./tmp/stacking_optimisation_ensemble_out_08',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
     ensemble_method=EnsembleSelectionTypes.stacking_optimisation_ensemble,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     ensemble_size=5,
-    num_stacking_layers=1,
+    num_stacking_layers=2,
     resampling_strategy_args={
         'num_splits': 2,
         'num_repeats': 1
@@ -85,12 +85,13 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=400,
-    func_eval_time_limit_secs=100,
-    enable_traditional_pipeline=False,
+    total_walltime_limit=1000,
+    func_eval_time_limit_secs=150,
+    enable_traditional_pipeline=True,
     smbo_class=autoPyTorchSMBO,
     all_supported_metrics=False,
-    use_ensemble_opt_loss=True
+    use_ensemble_opt_loss=True,
+    posthoc_ensemble_fit_stacking_ensemble_optimization=True
 )
 
 ############################################################################

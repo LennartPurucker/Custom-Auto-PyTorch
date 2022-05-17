@@ -69,8 +69,8 @@ class EnsembleSelectionPerLayerStackingEnsemble(AbstractEnsemble):
         return self.ensembles[self.cur_stacking_layer].predict(predictions)
 
     def __str__(self) -> str:
-        return f"Ensemble Selection:\n\tWeights: {self.weights_}\
-            \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.identifiers_) if self.weights_[idx] > 0])}"
+        return f"Ensemble Selection Per Layer Stacking Ensemble:\n\tWeights: {self.ensembles[self.cur_stacking_layer].weights_}\
+            \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.ensembles[self.cur_stacking_layer].identifiers_) if self.ensembles[self.cur_stacking_layer].weights_[idx] > 0])}"
 
     def get_selected_model_identifiers(self) -> List[Tuple[int, int, float]]:
         """

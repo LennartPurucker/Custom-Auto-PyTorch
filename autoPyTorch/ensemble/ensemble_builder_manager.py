@@ -49,7 +49,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         pynisher_context: str = 'fork',
         initial_num_run: int = 0,
         use_ensemble_loss=False,
-        num_stacking_layers: Optional[int] = None
+        num_stacking_layers: Optional[int] = None,
+        iteration=0
     ):
         """ SMAC callback to handle ensemble building
         Args:
@@ -139,7 +140,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.futures: List[dask.Future] = []
 
         # The last criteria is the number of iterations
-        self.iteration = 0
+        self.iteration = iteration
 
         # Keep track of when we started to know when we need to finish!
         self.start_time = time.time()

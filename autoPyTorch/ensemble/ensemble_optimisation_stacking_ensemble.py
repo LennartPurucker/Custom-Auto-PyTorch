@@ -197,7 +197,7 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         return average
 
     def __str__(self) -> str:
-        return f"Ensemble Selection:\n\tWeights: {self.weights_}\
+        return f"Ensemble Optimisation Stacking Ensemble:\n\tWeights: {self.weights_}\
             \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.identifiers_) if self.weights_[idx] > 0])}"
 
     def get_layer_stacking_ensemble_predictions(

@@ -34,7 +34,7 @@ from smac.stats.stats import Stats
 from smac.tae import StatusType
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config
+from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -69,7 +69,7 @@ from autoPyTorch.pipeline.base_pipeline import BasePipeline
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import get_available_traditional_learners
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
-from autoPyTorch.utils.common import FitRequirement, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.common import FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, dict_repr, replace_string_bool_to_bool, validate_config
 from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import (
@@ -1070,7 +1070,12 @@ class BaseTask(ABC):
         ensemble = AutogluonStackingEnsemble()
         iteration = 0
         time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
-        final_model_identifiers, final_weights = self._posthoc_fit_ensemble(optimize_metric, time_left_for_ensemble, last_successful_smac_initial_num_run, ensemble_size, iteration)
+        final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
+            optimize_metric,
+            time_left_for_ensemble,
+            last_successful_smac_initial_num_run,
+            ensemble_size,
+            iteration)
         model_identifiers[-1] = final_model_identifiers
         stacked_weights[-1] = final_weights
         ensemble = ensemble.fit(model_identifiers, stacked_weights)
@@ -1085,8 +1090,9 @@ class BaseTask(ABC):
         ensemble_size,
         iteration,
         enable_traditional_pipeline=False,
-        cleanup=True
-        ):
+        cleanup=True,
+        func_eval_time_limit_secs: int = 50,
+    ):
         self.fit_ensemble(
             optimize_metric=optimize_metric,
             precision=self.precision,
@@ -1095,6 +1101,7 @@ class BaseTask(ABC):
             initial_num_run=last_successful_smac_initial_num_run,
             time_for_task=time_left_for_ensemble,
             enable_traditional_pipeline=enable_traditional_pipeline,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
             iteration=iteration,
             cleanup=cleanup,
             load_models=False
@@ -1207,6 +1214,7 @@ class BaseTask(ABC):
         model_configs = []
         previous_layer_predictions_train = []
         previous_layer_predictions_test = []
+        self._logger.debug(f'id_config: {self.run_history.ids_config}')
         for weight, model_identifier in zip(weights, model_identifiers):
             if model_identifier is None:
                 model_configs.append(None)
@@ -1214,8 +1222,10 @@ class BaseTask(ABC):
                 previous_layer_predictions_test.append(None)
                 continue
             seed, num_run, budget = model_identifier
-
-            config = self.run_history.ids_config.get(num_run-smac_initial_run, None)
+            
+            self._logger.debug(f'num_run: {num_run}')
+            config = get_config_from_run_history(self.run_history, num_run=num_run) #  self.run_history.ids_config.get(num_run-smac_initial_run, None)
+            self._logger.debug(f'Configuration from previous layer: {config}')
             model_configs.append((config, budget))
             previous_layer_predictions_train.extend(
                 [np.load(os.path.join(
@@ -1227,7 +1237,6 @@ class BaseTask(ABC):
                 self._backend.get_prediction_filename('test', seed, num_run, budget)
                 ), allow_pickle=True)] * int(weight * ensemble_size))
         return model_configs,previous_layer_predictions_train,previous_layer_predictions_test
-
 
     def _update_configs_for_current_config_space(
         self,
@@ -1253,7 +1262,7 @@ class BaseTask(ABC):
             if config is None:
                 continue
 
-            if not isinstance(config, Configuration):
+            if not isinstance(config, (Configuration, dict)):
                 updated_model_descriptions.append((config, budget))
                 continue
 
@@ -1645,7 +1654,7 @@ class BaseTask(ABC):
             ensemble = self._backend.load_ensemble(self.seed)
             initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
             time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
-            iteration = (self.num_stacking_layers+1)*1e10
+            iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
             final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
                 optimize_metric=self.opt_metric,
                 time_left_for_ensemble=time_for_post_fit_ensemble,
@@ -1653,7 +1662,8 @@ class BaseTask(ABC):
                 ensemble_size=self.ensemble_size,
                 iteration=iteration,
                 enable_traditional_pipeline=enable_traditional_pipeline,
-                cleanup=False
+                cleanup=False,
+                func_eval_time_limit_secs=0.5*func_eval_time_limit_secs
             )
             ensemble.identifiers_ = final_model_identifiers
             stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers

@@ -11,7 +11,6 @@ from ConfigSpace.hyperparameters import (
     UniformFloatHyperparameter,
     UniformIntegerHyperparameter,
 )
-from cv2 import add
 
 import numpy as np
 
@@ -24,6 +23,8 @@ from torch.utils.data.dataloader import default_collate
 
 HyperparameterValueType = Union[int, str, float]
 
+
+ENSEMBLE_ITERATION_MULTIPLIER = 1e8
 
 def ispandas(X: Any) -> bool:
     """ Whether X is pandas.DataFrame or pandas.Series """
@@ -289,7 +290,7 @@ def check_none(p: Any) -> bool:
 
 
 def validate_config(config, search_space: ConfigurationSpace, n_numerical_in_incumbent_on_task_id, num_numerical, assert_autogluon_numerical_hyperparameters: bool=False):
-    modified_config = config.get_dictionary().copy()
+    modified_config = config.get_dictionary().copy() if isinstance(config, Configuration) else config.copy()
 
     if num_numerical > 0:
         imputer_numerical_hyperparameter = "imputer:numerical_strategy" 

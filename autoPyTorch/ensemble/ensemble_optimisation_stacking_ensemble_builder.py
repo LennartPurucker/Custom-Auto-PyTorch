@@ -3,11 +3,9 @@ import logging
 import logging.handlers
 import os
 import pickle
-import re
 import time
 import traceback
 import warnings
-import zlib
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -20,7 +18,7 @@ from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import Ensembl
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss, calculate_score
 from autoPyTorch.utils.logging_ import get_named_client_logger
-
+from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
@@ -265,7 +263,7 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
 
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
-            self.backend.save_ensemble(ensemble, (self.cur_stacking_layer)*1e10 + iteration, self.seed)
+            self.backend.save_ensemble(ensemble, (self.cur_stacking_layer)*ENSEMBLE_ITERATION_MULTIPLIER + iteration, self.seed)
             ensemble_identifiers=self._get_identifiers_from_num_runs(ensemble.identifiers_)
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
             self._save_current_ensemble_identifiers(

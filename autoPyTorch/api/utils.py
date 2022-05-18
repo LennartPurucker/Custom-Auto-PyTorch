@@ -1,5 +1,5 @@
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
-
+from smac.runhistory.runhistory import RunHistory
 
 def get_autogluon_default_nn_config(feat_type):
     has_numerical_features = "numerical" in feat_type
@@ -130,3 +130,10 @@ def get_autogluon_default_nn_config(feat_type):
         )
 
     return search_space_updates
+
+
+def get_config_from_run_history(run_history: RunHistory, num_run: int):
+    for _, run_value in run_history.data.items():
+        if run_value.additional_info.get('num_run', -1) == num_run:  # to ensure that unsuccessful configs are not returned
+            return run_value.additional_info['configuration']
+    

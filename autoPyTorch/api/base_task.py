@@ -1595,7 +1595,8 @@ class BaseTask(ABC):
             time_left_for_ensembles = max(0, total_walltime_limit - elapsed_time)
             posthoc_ensemble_fit_stacking_ensemble_optimization = posthoc_ensemble_fit_stacking_ensemble_optimization \
                 and self.ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
-            time_left_for_ensembles = int(time_left_for_ensembles * 0.9) if posthoc_ensemble_fit_stacking_ensemble_optimization else time_left_for_ensembles
+            TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = 0.95
+            time_left_for_ensembles = int(time_left_for_ensembles * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT) if posthoc_ensemble_fit_stacking_ensemble_optimization else time_left_for_ensembles
             proc_ensemble = None
             if time_left_for_ensembles <= 0:
                 # Fit only raises error when ensemble_size is not zero but
@@ -1620,7 +1621,7 @@ class BaseTask(ABC):
             self._run_smbo(
                 min_budget=min_budget,
                 max_budget=max_budget,
-                total_walltime_limit=total_walltime_limit * 0.95 \
+                total_walltime_limit=total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
                     if posthoc_ensemble_fit_stacking_ensemble_optimization \
                         else total_walltime_limit,
                 func_eval_time_limit_secs=func_eval_time_limit_secs,

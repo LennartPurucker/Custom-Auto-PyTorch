@@ -17,7 +17,7 @@ def get_autogluon_default_nn_config(feat_type):
     search_space_updates.append(
         node_name='network_head',
         hyperparameter='no_head:activation',
-        value_range=['relu'],
+        value_range=['relu', 'elu'],
         default_value='relu',
     )
 
@@ -31,7 +31,7 @@ def get_autogluon_default_nn_config(feat_type):
     search_space_updates.append(
         node_name='network_backbone',
         hyperparameter='MLPBackbone:num_groups',
-        value_range=(1, 5),
+        value_range=(2, 4),
         default_value=4,
     )
     search_space_updates.append(
@@ -50,7 +50,7 @@ def get_autogluon_default_nn_config(feat_type):
     search_space_updates.append(
         node_name='network_backbone',
         hyperparameter='MLPBackbone:activation',
-        value_range=['relu'],
+        value_range=['relu', 'elu'],
         default_value='relu',
     )
 
@@ -70,13 +70,13 @@ def get_autogluon_default_nn_config(feat_type):
     search_space_updates.append(
         node_name='optimizer',
         hyperparameter='AdamOptimizer:lr',
-        value_range=[3e-4],
-        default_value=1e-3,
+        value_range=[1e-4, 3e-2],
+        default_value=3e-4,
     )
     search_space_updates.append(
         node_name='optimizer',
         hyperparameter='AdamOptimizer:weight_decay',
-        value_range=(1E-7, 0.1),
+        value_range=(1E-12, 0.1),
         default_value=1e-6,
     )
     search_space_updates.append(
@@ -119,7 +119,7 @@ def get_autogluon_default_nn_config(feat_type):
         search_space_updates.append(
             node_name='encoder',
             hyperparameter='__choice__',
-            value_range=['OneHotEncoder'],
+            value_range=['OneHotEncoder', 'NoEncoder'],
             default_value='OneHotEncoder',
         )
         search_space_updates.append(

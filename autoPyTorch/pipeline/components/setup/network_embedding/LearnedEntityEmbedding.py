@@ -3,8 +3,9 @@ from typing import Any, Dict, List, Optional, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace
 from ConfigSpace.hyperparameters import (
+    CategoricalHyperparameter,
     UniformFloatHyperparameter,
-    UniformIntegerHyperparameter
+    UniformIntegerHyperparameter,
 )
 
 import numpy as np
@@ -114,16 +115,16 @@ class LearnedEntityEmbedding(NetworkEmbeddingComponent):
                                                                                    value_range=(100,),
                                                                                    default_value=100),
         embedding_size_factor: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter="embedding_size_factor",
-                                                                                   value_range=(0.01,100),
-                                                                                   default_value=1,
-                                                                                   log=True),
+                                                                                     value_range=(1.0, 0.5, 1.5, 0.7, 0.6, 0.8, 0.9, 1.1, 1.2, 1.3, 1.4),
+                                                                                     default_value=1,
+                                                                                     ),
     ) -> ConfigurationSpace:
         cs = ConfigurationSpace()
         if dataset_properties is not None:
             if len(dataset_properties['categorical_columns']) > 0:
                 add_hyperparameter(cs, embed_exponent, UniformFloatHyperparameter)
                 add_hyperparameter(cs, max_embedding_dim, UniformIntegerHyperparameter)
-                add_hyperparameter(cs, embedding_size_factor, UniformFloatHyperparameter)
+                add_hyperparameter(cs, embedding_size_factor, CategoricalHyperparameter)
 
         return cs
 

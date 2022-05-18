@@ -56,52 +56,54 @@ search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
 ############################################################################
 # Build and fit a classifier
 # ==========================
-api = TabularClassificationTask(
-    # To maintain logs of the run, you can uncomment the
-    # Following lines
-    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_08',
-    output_directory='./tmp/stacking_optimisation_ensemble_out_08',
-    delete_tmp_folder_after_terminate=False,
-    delete_output_folder_after_terminate=False,
-    seed=4,
-    ensemble_method=EnsembleSelectionTypes.stacking_optimisation_ensemble,
-    resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
-    ensemble_size=5,
-    num_stacking_layers=2,
-    resampling_strategy_args={
-        'num_splits': 2,
-        'num_repeats': 1
-    },
-    search_space_updates=search_space_updates
-)
+if __name__ == '__main__':
+    api = TabularClassificationTask(
+        # To maintain logs of the run, you can uncomment the
+        # Following lines
+        temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_12',
+        output_directory='./tmp/stacking_optimisation_ensemble_out_12',
+        delete_tmp_folder_after_terminate=False,
+        delete_output_folder_after_terminate=False,
+        seed=4,
+        ensemble_method=EnsembleSelectionTypes.stacking_optimisation_ensemble,
+        resampling_strategy=RepeatedCrossValTypes.stratified_repeated_k_fold_cross_validation,
+        ensemble_size=5,
+        num_stacking_layers=2,
+        resampling_strategy_args={
+            'num_splits': 2,
+            'num_repeats': 1
+        },
+        search_space_updates=search_space_updates,
+        n_jobs=2
+    )
 
-############################################################################
-# Search for an ensemble of machine learning algorithms
-# =====================================================
-api.search(
-    X_train=X_train,
-    y_train=y_train,
-    X_test=X_test.copy(),
-    y_test=y_test.copy(),
-    dataset_name='Australian',
-    optimize_metric='accuracy',
-    total_walltime_limit=1000,
-    func_eval_time_limit_secs=150,
-    enable_traditional_pipeline=True,
-    smbo_class=autoPyTorchSMBO,
-    all_supported_metrics=False,
-    use_ensemble_opt_loss=True,
-    posthoc_ensemble_fit_stacking_ensemble_optimization=True
-)
+    ############################################################################
+    # Search for an ensemble of machine learning algorithms
+    # =====================================================
+    api.search(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test.copy(),
+        y_test=y_test.copy(),
+        dataset_name='Australian',
+        optimize_metric='balanced_accuracy',
+        total_walltime_limit=900,
+        func_eval_time_limit_secs=150,
+        enable_traditional_pipeline=True,
+        smbo_class=autoPyTorchSMBO,
+        all_supported_metrics=False,
+        use_ensemble_opt_loss=True,
+        posthoc_ensemble_fit_stacking_ensemble_optimization=True
+    )
 
-############################################################################
-# Print the final ensemble performance
-# ====================================
-y_pred = api.predict(X_test)
-score = api.score(y_pred, y_test, metric='accuracy')
-print(score)
-# Print the final ensemble built by AutoPyTorch
-print(api.show_models())
+    ############################################################################
+    # Print the final ensemble performance
+    # ====================================
+    y_pred = api.predict(X_test)
+    score = api.score(y_pred, y_test, metric='accuracy')
+    print(score)
+    # Print the final ensemble built by AutoPyTorch
+    print(api.show_models())
 
-# Print statistics from search
-# print(api.sprint_statistics())
+    # Print statistics from search
+    # print(api.sprint_statistics())

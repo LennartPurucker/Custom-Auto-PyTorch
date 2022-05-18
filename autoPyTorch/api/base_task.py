@@ -1658,7 +1658,7 @@ class BaseTask(ABC):
             final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
                 optimize_metric=self.opt_metric,
                 time_left_for_ensemble=time_for_post_fit_ensemble,
-                last_successful_smac_initial_num_run=initial_num_run,
+                last_successful_smac_initial_num_run=initial_num_run + 1,
                 ensemble_size=self.ensemble_size,
                 iteration=iteration,
                 enable_traditional_pipeline=enable_traditional_pipeline,

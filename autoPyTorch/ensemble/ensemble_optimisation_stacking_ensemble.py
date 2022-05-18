@@ -103,9 +103,10 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
                 A list of model identifiers, each with the form
                 (seed, number of run, budget)
         """
+        nonnull_predictions = [pred for pred in predictions if pred is not None]
 
         weighted_ensemble_prediction = np.zeros(
-            predictions[0].shape,
+            nonnull_predictions[0].shape,
             dtype=np.float64,
         )
 
@@ -114,7 +115,6 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
             dtype=np.float64,
         )
 
-        nonnull_predictions = [pred for pred in predictions if pred is not None]
         size = len(nonnull_predictions)
         for pred in nonnull_predictions:
             np.add(
@@ -177,12 +177,13 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
                                 the weights
         """
 
-        average = np.zeros_like(predictions[0], dtype=np.float64)
-        tmp_predictions = np.empty_like(predictions[0], dtype=np.float64)
+        nonnull_predictions = [pred for pred in predictions if pred is not None]
+        average = np.zeros_like(nonnull_predictions[0], dtype=np.float64)
+        tmp_predictions = np.empty_like(nonnull_predictions[0], dtype=np.float64)
 
         # if prediction model.shape[0] == len(non_null_weights),
         # predictions do not include those of zero-weight models.
-        if len([pred for pred in predictions if pred is not None]) == np.count_nonzero(weights):
+        if len(nonnull_predictions) == np.count_nonzero(weights):
             for pred, weight in zip(predictions, weights):
                 if pred is not None:
                     np.multiply(pred, weight, out=tmp_predictions)

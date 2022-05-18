@@ -2,6 +2,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
+import pandas as pd
+
 from autoPyTorch.data.base_validator import BaseInputValidator
 from autoPyTorch.datasets.base_dataset import BaseDataset
 from autoPyTorch.datasets.resampling_strategy import ResamplingStrategies
@@ -23,8 +25,8 @@ def get_appended_dataset(
     X_train, y_train = original_dataset.train_tensors
     X_test, y_test = original_dataset.test_tensors
     
-    X_train = np.concatenate([X_train, *previous_layer_predictions_train], axis=1)
-    X_test = np.concatenate([X_test, *previous_layer_predictions_test], axis=1)
+    X_train = pd.DataFrame(np.concatenate([X_train, *previous_layer_predictions_train], axis=1))
+    X_test = pd.DataFrame(np.concatenate([X_test, *previous_layer_predictions_test], axis=1))
 
     new_feat_types: List[str] = original_dataset.feat_type.copy()
     new_feat_types.extend(['numerical'] * (original_dataset.num_classes * len(previous_layer_predictions_train)))

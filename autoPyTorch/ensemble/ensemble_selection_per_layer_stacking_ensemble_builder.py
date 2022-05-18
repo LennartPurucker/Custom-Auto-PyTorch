@@ -116,7 +116,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
             performance_range_threshold=performance_range_threshold,
             seed=seed, precision=precision, memory_limit=memory_limit,
             read_at_most=read_at_most, random_state=random_state,
-            logger_port=logger_port, unit_test=unit_test)
+            logger_port=logger_port, unit_test=unit_test, initial_num_run=initial_num_run if cur_stacking_layer==0 else 1)
 
         self.num_stacking_layers = num_stacking_layers
         self.cur_stacking_layer = cur_stacking_layer
@@ -210,13 +210,13 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
         )
 
         
-        self.cutoff_num_run = self._load_ensemble_cutoff_num_run()
-        # TODO: check how to handle this now.
-        # checks if we have moved to a new stacking layer.
-        if self.cutoff_num_run is None or self.is_new_layer:
-            # to exclude the latest model we subtract 1 from last available num run
-            self.cutoff_num_run = self.backend.get_next_num_run(peek=True) - 1
-            self.logger.debug(f"Updated cut off num run to : {self.cutoff_num_run}")
+        # self.cutoff_num_run = self._load_ensemble_cutoff_num_run()
+        # # TODO: check how to handle this now.
+        # # checks if we have moved to a new stacking layer.
+        # if self.cutoff_num_run is None or self.is_new_layer:
+        #     # to exclude the latest model we subtract 1 from last available num run
+        #     self.cutoff_num_run = self.backend.get_next_num_run(peek=True) - 1
+        #     self.logger.debug(f"Updated cut off num run to : {self.cutoff_num_run}")
 
         # populates self.read_preds and self.read_losses with individual model predictions and ensemble loss.
         if not self.compute_loss_per_model():
@@ -260,7 +260,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
             self.backend.save_ensemble(ensemble, iteration + (pow(10, 9))* self.cur_stacking_layer, self.seed)
-            self._save_ensemble_cutoff_num_run(cutoff_num_run=self.cutoff_num_run)
+            # self._save_ensemble_cutoff_num_run(cutoff_num_run=self.cutoff_num_run)
         # Delete files of non-candidate models - can only be done after fitting the ensemble and
         # saving it to disc so we do not accidentally delete models in the previous ensemble
         if self.max_resident_models is not None:
@@ -352,7 +352,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
         # as a returning list, so as a work-around we skip next line
         for y_ens_fn, match, _seed, _num_run, _budget in sorted(to_read, key=lambda x: x[3]):  # type: ignore
             # skip models that were part of previous stacking layer
-            if _num_run < self.cutoff_num_run:
+            if _num_run < self.initial_num_run:
                 if y_ens_fn in self.read_losses:
                     del self.read_losses[y_ens_fn]
                 continue

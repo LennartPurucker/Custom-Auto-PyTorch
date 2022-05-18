@@ -425,7 +425,7 @@ class AutoMLSMBO(object):
                                    smbo_class=self.smbo_class)
 
         if self.ensemble_method.is_stacking_ensemble():
-            self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer)
+            self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer, initial_num_run)
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)
         if self.other_callbacks is not None:

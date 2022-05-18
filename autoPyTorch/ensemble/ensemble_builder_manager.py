@@ -265,12 +265,13 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 logger.critical(exception_traceback)
                 logger.critical(error_message)
 
-    def update_for_new_stacking_layer(self, cur_stacking_layer: int) -> None:
+    def update_for_new_stacking_layer(self, cur_stacking_layer: int, initial_num_run: int) -> None:
         if cur_stacking_layer >= self.num_stacking_layers:
             raise ValueError(f"Unexpected value '{cur_stacking_layer}' for cur_stacking_layer. "
                              f"Max stacking layers are : {self.num_stacking_layers}.")
         self.cur_stacking_layer = cur_stacking_layer
         self.iteration = 0
+        self.initial_num_run = initial_num_run
         self.is_new_layer = True
 
 

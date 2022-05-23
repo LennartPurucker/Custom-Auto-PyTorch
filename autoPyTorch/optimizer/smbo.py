@@ -411,7 +411,8 @@ class AutoMLSMBO(object):
                                                  initial_budget=self.min_budget,
                                                  max_budget=self.max_budget,
                                                  dask_client=self.dask_client,
-                                                 initial_configurations=self.initial_configurations)
+                                                 initial_configurations=self.initial_configurations,
+                                                 smbo_class=self.smbo_class)
         else:
             smac = get_smac_object(scenario_dict=scenario_dict,
                                    seed=seed,

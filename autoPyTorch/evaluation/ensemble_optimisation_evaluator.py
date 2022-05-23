@@ -416,6 +416,8 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
                         self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
                                           f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
                         total_repeats = expected_total_repeats
+                        if total_repeats <= repeat_id:
+                            raise ValueError("Not expected to complete first repeat, terminating configuration")
 
             Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)

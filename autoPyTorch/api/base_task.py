@@ -1044,7 +1044,7 @@ class BaseTask(ABC):
                 updated_model_configs,
                 func_eval_time_limit_secs,
                 stacking_layer,
-                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers - 1),
+                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers),
                 current_search_space=current_search_space,
                 smac_initial_run=smac_initial_run,
                 search_space_updates=autogluon_nn_search_space_updates)

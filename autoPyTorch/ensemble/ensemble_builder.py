@@ -655,7 +655,6 @@ class EnsembleBuilder(object):
                         os.path.getmtime(y_ens_fn),
                     )
 
-                self.logger.debug(f"keys in losses {losses.keys()}")
                 self.read_losses[y_ens_fn]["ens_loss"] = losses[self.opt_metric]
 
                 # It is not needed to create the object here
@@ -1113,7 +1112,7 @@ class EnsembleBuilder(object):
             # We want small num_run first
             key=lambda x: (x[1], x[2]),
         ))
-        self.logger.debug(f"Selected keys: {sorted_keys}")
+        # self.logger.debug(f"Selected keys: {sorted_keys}")
         return sorted_keys
 
     def _delete_excess_models(self, selected_keys: List[str]) -> None:
@@ -1135,6 +1134,8 @@ class EnsembleBuilder(object):
         if len(sorted_keys) <= self.max_resident_models:
             # Don't waste time if not enough models to delete
             return
+
+        self.logger.debug(f"num sorted_keys before delete: {len(sorted_keys)}, pred files: {len(self.y_ens_files)}")
 
         # The top self.max_resident_models models would be the candidates
         # Any other low performance model will be deleted
@@ -1160,7 +1161,8 @@ class EnsembleBuilder(object):
             _budget = float(match.group(3))
 
             # Do not delete the dummy prediction
-            if _num_run == 1:
+            if _num_run == 1 or _num_run < self.initial_num_run:
+                self.logger.debug(f"skipping for numrun {_num_run}")
                 continue
 
             numrun_dir = self.backend.get_numrun_directory(_seed, _num_run, _budget)

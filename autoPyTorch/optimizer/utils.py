@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import warnings
 from typing import Any, Dict, List, Union
 
@@ -47,6 +48,14 @@ def read_return_initial_configurations(
                           f"Therefore, it can't be used as an initial "
                           f"configuration as it does not match the current config space. ")
     return initial_configurations
+
+
+def delete_other_runs(ensemble_runs, runs_directory):
+    all_runs = os.listdir(runs_directory)
+    for run in all_runs:
+        if run not in ensemble_runs:
+            shutil.rmtree(os.path.join(runs_directory, run))
+
 
 class AdjustRunHistoryCallback:
     """

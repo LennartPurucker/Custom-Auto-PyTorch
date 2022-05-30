@@ -413,7 +413,6 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
                         os.path.getmtime(y_ens_fn),
                     )
 
-                self.logger.debug(f"keys in losses {losses.keys()}")
                 self.read_losses[y_ens_fn]["ens_loss"] = losses[self.opt_metric]
 
                 # It is not needed to create the object here

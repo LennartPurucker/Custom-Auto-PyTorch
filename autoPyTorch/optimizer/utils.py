@@ -145,7 +145,6 @@ class autoPyTorchSMBO(SMBO):
                     "configuration does not crashes. (To deactivate this exception, use the SMAC scenario option "
                     "'abort_on_first_run_crash'). Additional run info: %s" % result.additional_info
                 )
-        self.logger.debug(f"\nbefore ensemble, result: {result}, \nrunhistory: {self.runhistory.data}")
         for callback in self._callbacks['_incorporate_run_results']:
             response = callback(smbo=self, run_info=run_info, result=result, time_left=time_left)
             # If a callback returns False, the optimization loop should be interrupted

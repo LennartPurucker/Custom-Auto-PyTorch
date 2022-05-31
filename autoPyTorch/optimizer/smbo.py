@@ -475,7 +475,8 @@ class AutoMLSMBO(object):
                 assert isinstance(old_ensemble, (EnsembleOptimisationStackingEnsemble, EnsembleSelectionPerLayerStackingEnsemble))
             if cur_stacking_layer != self.num_stacking_layers -1:
                 selected_identifiers = old_ensemble.get_selected_model_identifiers()[old_ensemble.cur_stacking_layer]
-                ensemble_runs = [self.backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in selected_identifiers]
+                nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
+                ensemble_runs = [self.backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
                 self.logger.debug(f"deleting runs other than {ensemble_runs}")
                 delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=self.backend.get_runs_directory())
             previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)

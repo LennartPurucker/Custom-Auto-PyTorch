@@ -265,8 +265,8 @@ class BaseTask(ABC):
         # possibility of a deadlock
         self._dask_client: Optional[dask.distributed.Client] = None
         self._multiprocessing_context = 'forkserver'
-        if self.n_jobs == 1:
-            self._multiprocessing_context = 'fork'
+        # if self.n_jobs == 1:
+        #     self._multiprocessing_context = 'fork'
 
         self.input_validator: Optional[BaseInputValidator] = None
 

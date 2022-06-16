@@ -26,7 +26,7 @@ from autoPyTorch.evaluation.abstract_evaluator import (
     AbstractEvaluator,
     fit_and_suppress_warnings
 )
-from autoPyTorch.evaluation.utils import VotingRegressorWrapper
+from autoPyTorch.evaluation.utils import VotingRegressorWrapper, check_pipeline_is_fitted
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import subsampler
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
@@ -308,7 +308,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
                         pipelines = VotingClassifier(estimators=None, voting='soft', )
                     else:
                         pipelines = VotingRegressorWrapper(estimators=None)
-                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines]
+                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
                 else:
                     pipelines = None
             else:

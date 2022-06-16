@@ -25,7 +25,8 @@ from autoPyTorch.evaluation.abstract_evaluator import (
     fit_and_suppress_warnings
 )
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
-from autoPyTorch.evaluation.utils import VotingRegressorWrapper
+from autoPyTorch.evaluation.utils import VotingRegressorWrapper, check_pipeline_is_fitted
+from autoPyTorch.pipeline.tabular_classification import TabularClassificationPipeline
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, subsampler
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
@@ -314,7 +315,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
                         pipelines = VotingClassifier(estimators=None, voting='soft', )
                     else:
                         pipelines = VotingRegressorWrapper(estimators=None)
-                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines]
+                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
                 else:
                     pipelines = None
             else:

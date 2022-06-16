@@ -36,7 +36,6 @@ class NetworkComponent(autoPyTorchTrainingComponent):
             FitRequirement("network_backbone", (torch.nn.Module,), user_defined=False, dataset_property=False),
             FitRequirement("network_embedding", (torch.nn.Module,), user_defined=False, dataset_property=False),
         ])
-        self.network = network
         self.final_activation: Optional[torch.nn.Module] = None
 
     def fit(self, X: Dict[str, Any], y: Any = None) -> autoPyTorchTrainingComponent:

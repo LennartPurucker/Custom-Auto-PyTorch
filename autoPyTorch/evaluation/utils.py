@@ -2,6 +2,8 @@ import queue
 from multiprocessing.queues import Queue
 from typing import List, Optional, Union
 
+from ConfigSpace.configuration_space import Configuration
+
 import numpy as np
 
 from sklearn.ensemble import VotingRegressor
@@ -18,6 +20,13 @@ __all__ = [
     'empty_queue',
     'VotingRegressorWrapper'
 ]
+
+
+def check_pipeline_is_fitted(pipeline, configuration):
+    if isinstance(configuration, Configuration):
+        return hasattr(pipeline.named_steps['network'], 'is_fitted_') and pipeline.named_steps['network'].is_fitted_
+    else:
+        return pipeline.is_fitted_
 
 
 def read_queue(queue_: Queue) -> List[RunValue]:

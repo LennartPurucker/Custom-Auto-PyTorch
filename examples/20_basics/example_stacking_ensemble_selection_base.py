@@ -30,7 +30,7 @@ from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 ############################################################################
 # Data Loading
 # ============
-task = openml.tasks.get_task(task_id=146821)
+task = openml.tasks.get_task(task_id=3917)
 dataset = task.get_dataset()
 X, y, categorical_indicator, _ = dataset.get_data(
     dataset_format='dataframe',
@@ -60,8 +60,8 @@ search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_repeat_base_models_tmp_04',
-    output_directory='./tmp/stacking_repeat_base_models_out_04',
+    temporary_directory='./tmp/stacking_repeat_base_models_tmp_07',
+    output_directory='./tmp/stacking_repeat_base_models_out_07',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,
@@ -86,11 +86,13 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=2000,
-    func_eval_time_limit_secs=300,
-    # enable_traditional_pipeline=False,
+    total_walltime_limit=900,
+    func_eval_time_limit_secs=150,
+    enable_traditional_pipeline=True,
     # smbo_class=autoPyTorchSMBO,
-    all_supported_metrics=False 
+    all_supported_metrics=False,
+    min_budget=5,
+    max_budget=10
 )
 
 ############################################################################

@@ -30,7 +30,7 @@ from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 ############################################################################
 # Data Loading
 # ============
-task = openml.tasks.get_task(task_id=146821)
+task = openml.tasks.get_task(task_id=3917)
 dataset = task.get_dataset()
 X, y, categorical_indicator, _ = dataset.get_data(
     dataset_format='dataframe',
@@ -59,8 +59,8 @@ feat_type = ["numerical" if not indicator else "categorical" for indicator in ca
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_autogluon_tmp_07',
-    output_directory='./tmp/stacking_autogluon_out_07',
+    temporary_directory='./tmp/stacking_autogluon_tmp_10',
+    output_directory='./tmp/stacking_autogluon_out_10',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,
@@ -71,7 +71,7 @@ api = TabularClassificationTask(
         'num_repeats': 1
     },
     ensemble_size=6,
-    num_stacking_layers=2,
+    num_stacking_layers=1,
     feat_type=feat_type
 )
 
@@ -85,8 +85,8 @@ api.run_autogluon_stacking(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=1800,
-    func_eval_time_limit_secs=300,
+    total_walltime_limit=600,
+    func_eval_time_limit_secs=130,
     all_supported_metrics=False,
     max_budget=10
 )

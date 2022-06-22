@@ -31,10 +31,10 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
 
     """
 
-    def __init__(self, batch_size: int = 64,
+    def __init__(self, max_batch_size: int = 64,
                  random_state: Optional[np.random.RandomState] = None) -> None:
         super().__init__(random_state=random_state)
-        self.batch_size = batch_size
+        self.max_batch_size = max_batch_size
         self.train_data_loader: Optional[torch.utils.data.DataLoader] = None
         self.val_data_loader: Optional[torch.utils.data.DataLoader] = None
         self.test_data_loader: Optional[torch.utils.data.DataLoader] = None
@@ -107,6 +107,8 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
         datamanager.replace_data(X['X_train'], X['X_test'] if 'X_test' in X else None)
 
         train_dataset = datamanager.get_dataset(split_id=X['split_id'], train=True)
+
+        self.batch_size = min(int(2 ** (3 + np.floor(np.log10(len(train_dataset))))), self.max_batch_size)
 
         self.train_data_loader = torch.utils.data.DataLoader(
             train_dataset,
@@ -258,13 +260,13 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
     @staticmethod
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
-        batch_size: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter="batch_size",
+        max_batch_size: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter="max_batch_size",
                                                                           value_range=(32, 320),
                                                                           default_value=64,
                                                                           log=True)
     ) -> ConfigurationSpace:
         cs = ConfigurationSpace()
-        add_hyperparameter(cs, batch_size, UniformIntegerHyperparameter)
+        add_hyperparameter(cs, max_batch_size, UniformIntegerHyperparameter)
 
         return cs
 

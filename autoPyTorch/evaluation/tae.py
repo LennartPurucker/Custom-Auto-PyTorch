@@ -153,14 +153,24 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         self.resampling_strategy = dm.resampling_strategy
         self.resampling_strategy_args = dm.resampling_strategy_args
 
-        if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes, RepeatedCrossValTypes)):
-            if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
-                eval_function = eval_train_function
-            elif ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble:
+        if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes)):
+            eval_function = eval_train_function
+            if (
+                ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
+                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
+                or ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
+            ):
+                raise ValueError(f"fitting ensemble stacking requires resampling strategy to be of {RepeatedCrossValTypes} but got {self.resampling_strategy}")
+        elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
+            if ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble:
                 eval_function = eval_ensemble_optimise_function
             elif (
                 ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
-                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_base_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
+                or ensemble_method is None
+                or ensemble_method == EnsembleSelectionTypes.ensemble_selection
             ):
                 eval_function = eval_repeated_cv_function
             self.output_y_hat_optimization = output_y_hat_optimization
@@ -521,3 +531,4 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             )
         )
         return status, cost, runtime, additional_run_info
+

@@ -59,6 +59,8 @@ class EnsembleBuilder(object):
         random_state: Optional[Union[int, np.random.RandomState]] = None,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         unit_test: bool = False,
+        initial_num_run: int = 0,
+        num_stacking_layers: Optional[int] = None,
         use_ensemble_opt_loss = False
     ):
         """
@@ -126,6 +128,7 @@ class EnsembleBuilder(object):
         self.ensemble_size = ensemble_size
         self.performance_range_threshold = performance_range_threshold
 
+        self.initial_num_run = initial_num_run
         if isinstance(ensemble_nbest, numbers.Integral) and ensemble_nbest < 1:
             raise ValueError("Integer ensemble_nbest has to be larger 1: %s" %
                              ensemble_nbest)
@@ -594,6 +597,8 @@ class EnsembleBuilder(object):
         # Mypy assumes sorted returns an object because of the lambda. Can't get to recognize the list
         # as a returning list, so as a work-around we skip next line
         for y_ens_fn, match, _seed, _num_run, _budget in sorted(to_read, key=lambda x: x[3]):  # type: ignore
+            if _num_run < self.initial_num_run:
+                continue
             if self.read_at_most and n_read_files >= self.read_at_most:
                 # limit the number of files that will be read
                 # to limit memory consumption
@@ -650,7 +655,6 @@ class EnsembleBuilder(object):
                         os.path.getmtime(y_ens_fn),
                     )
 
-                self.logger.debug(f"keys in losses {losses.keys()}")
                 self.read_losses[y_ens_fn]["ens_loss"] = losses[self.opt_metric]
 
                 # It is not needed to create the object here
@@ -1108,7 +1112,7 @@ class EnsembleBuilder(object):
             # We want small num_run first
             key=lambda x: (x[1], x[2]),
         ))
-        self.logger.debug(f"Selected keys: {sorted_keys}")
+        # self.logger.debug(f"Selected keys: {sorted_keys}")
         return sorted_keys
 
     def _delete_excess_models(self, selected_keys: List[str]) -> None:
@@ -1130,6 +1134,8 @@ class EnsembleBuilder(object):
         if len(sorted_keys) <= self.max_resident_models:
             # Don't waste time if not enough models to delete
             return
+
+        self.logger.debug(f"num sorted_keys before delete: {len(sorted_keys)}, pred files: {len(self.y_ens_files)}")
 
         # The top self.max_resident_models models would be the candidates
         # Any other low performance model will be deleted
@@ -1155,7 +1161,8 @@ class EnsembleBuilder(object):
             _budget = float(match.group(3))
 
             # Do not delete the dummy prediction
-            if _num_run == 1:
+            if _num_run == 1 or _num_run < self.initial_num_run:
+                self.logger.debug(f"skipping for numrun {_num_run}")
                 continue
 
             numrun_dir = self.backend.get_numrun_directory(_seed, _num_run, _budget)

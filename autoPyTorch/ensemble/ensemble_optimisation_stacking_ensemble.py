@@ -103,9 +103,10 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
                 A list of model identifiers, each with the form
                 (seed, number of run, budget)
         """
+        nonnull_predictions = [pred for pred in predictions if pred is not None]
 
         weighted_ensemble_prediction = np.zeros(
-            predictions[0].shape,
+            nonnull_predictions[0].shape,
             dtype=np.float64,
         )
 
@@ -114,7 +115,6 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
             dtype=np.float64,
         )
 
-        nonnull_predictions = [pred for pred in predictions if pred is not None]
         size = len(nonnull_predictions)
         for pred in nonnull_predictions:
             np.add(
@@ -141,8 +141,6 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
 
         self.train_loss_: float = loss
 
-    # TODO: return 1 for models in layer 0, 2 for next and so on
-    # TODO: 0 for models that are not in stack
     def _calculate_weights(self) -> None:
         """
         Calculates the contribution each of the individual models
@@ -179,12 +177,13 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
                                 the weights
         """
 
-        average = np.zeros_like(predictions[0], dtype=np.float64)
-        tmp_predictions = np.empty_like(predictions[0], dtype=np.float64)
+        nonnull_predictions = [pred for pred in predictions if pred is not None]
+        average = np.zeros_like(nonnull_predictions[0], dtype=np.float64)
+        tmp_predictions = np.empty_like(nonnull_predictions[0], dtype=np.float64)
 
         # if prediction model.shape[0] == len(non_null_weights),
         # predictions do not include those of zero-weight models.
-        if len([pred for pred in predictions if pred is not None]) == np.count_nonzero(weights):
+        if len(nonnull_predictions) == np.count_nonzero(weights):
             for pred, weight in zip(predictions, weights):
                 if pred is not None:
                     np.multiply(pred, weight, out=tmp_predictions)
@@ -199,7 +198,7 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         return average
 
     def __str__(self) -> str:
-        return f"Ensemble Selection:\n\tWeights: {self.weights_}\
+        return f"Ensemble Optimisation Stacking Ensemble:\n\tWeights: {self.weights_}\
             \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.identifiers_) if self.weights_[idx] > 0])}"
 
     def get_layer_stacking_ensemble_predictions(
@@ -276,11 +275,15 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
                 problem.
         """
         outputs = []
-        for layer_models in models:
+        for i, layer_models in enumerate(models):
             output = []
             num_models = len(layer_models)
-            for model in layer_models:
-                output.append((1/num_models, model))
+            if i == len(models):
+                weights = self.weights_
+            else:
+                weights = [1/num_models] * len(models)
+            for weight, model in zip(weights, layer_models):
+                output.append((weight, layer_models[model]))
             output.sort(reverse=True, key=lambda t: t[0])
             outputs.append(output)
 

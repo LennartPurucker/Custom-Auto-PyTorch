@@ -24,6 +24,8 @@ from torch.utils.data.dataloader import default_collate
 HyperparameterValueType = Union[int, str, float]
 
 
+ENSEMBLE_ITERATION_MULTIPLIER = 1e8
+
 def ispandas(X: Any) -> bool:
     """ Whether X is pandas.DataFrame or pandas.Series """
     return hasattr(X, "iloc")
@@ -287,10 +289,28 @@ def check_none(p: Any) -> bool:
     return False
 
 
-def validate_config(config, search_space, has_categorical, has_numerical, n_numerical_in_incumbent_on_task_id, num_numerical):
-    modified_config = config.get_dictionary().copy()
+def validate_config(config, search_space: ConfigurationSpace, n_numerical_in_incumbent_on_task_id, num_numerical, assert_autogluon_numerical_hyperparameters: bool=False):
+    modified_config = config.get_dictionary().copy() if isinstance(config, Configuration) else config.copy()
+
+    if num_numerical > 0:
+        imputer_numerical_hyperparameter = "imputer:numerical_strategy" 
+        if imputer_numerical_hyperparameter not in modified_config:
+            modified_config[imputer_numerical_hyperparameter] = search_space.get_hyperparameter(imputer_numerical_hyperparameter).default_value if not assert_autogluon_numerical_hyperparameters else 'median'
+        if assert_autogluon_numerical_hyperparameters:
+            quantile_hp_name = 'QuantileTransformer'
+            skew_transformer_choice = modified_config.get('skew_transformer:__choice__', None)
+            if skew_transformer_choice is not None:
+                if skew_transformer_choice != quantile_hp_name:
+                    to_remove_hps = [hyp.name for hyp in search_space.get_children_of('skew_transformer:__choice__') if skew_transformer_choice in hyp.name]
+                    [modified_config.pop(remove_hp, None) for remove_hp in to_remove_hps]
+
+            to_add_hps = [hyp for hyp in search_space.get_children_of('skew_transformer:__choice__') if quantile_hp_name in hyp.name]
+            modified_config['skew_transformer:__choice__'] = quantile_hp_name
+            for add_hp in to_add_hps:
+                modified_config[add_hp.name] = add_hp.default_value
 
     feature_preprocessing_choice = modified_config['feature_preprocessor:__choice__']
+
     to_adjust_hyperparams = ['n_clusters', 'n_components', 'target_dim']
     children_hyperparameters = [hyp for hyp in search_space.get_children_of('feature_preprocessor:__choice__') if feature_preprocessing_choice in hyp.name]
     for hyp in children_hyperparameters:

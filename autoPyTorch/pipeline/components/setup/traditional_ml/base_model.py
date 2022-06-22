@@ -4,10 +4,13 @@ import sys
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from ConfigSpace.configuration_space import Configuration
+
 import numpy as np
 
 import pandas as pd
 
+from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
 import torch
@@ -84,9 +87,11 @@ class BaseModelComponent(autoPyTorchSetupComponent):
                                       logger_port=X['logger_port'] if 'logger_port' in X else
                                       logging.handlers.DEFAULT_TCP_LOGGING_PORT,
                                       output_shape=output_shape,
+                                      dataset_properties=X['dataset_properties'],
                                       task_type=X['dataset_properties']['task_type'],
                                       output_type=X['dataset_properties']['output_type'],
-                                      optimize_metric=X['optimize_metric'] if 'optimize_metric' in X else None)
+                                      optimize_metric=X['optimize_metric'] if 'optimize_metric' in X else None,
+                                      time_limit=X['func_eval_time_limit_secs'])
 
         # train model
         blockPrint()
@@ -102,6 +107,30 @@ class BaseModelComponent(autoPyTorchSetupComponent):
             self.fit_output["test_preds"] = test_preds
         return self
 
+    def set_hyperparameters(self,
+                            configuration: Configuration,
+                            init_params: Optional[Dict[str, Any]] = None
+                            ) -> BaseEstimator:
+        """
+        Applies a configuration to the given component.
+        This method translate a hierarchical configuration key,
+        to an actual parameter of the autoPyTorch component.
+
+        Args:
+            configuration (Configuration):
+                Which configuration to apply to the chosen component
+            init_params (Optional[Dict[str, any]]):
+                Optional arguments to initialize the chosen component
+
+        Returns:
+            An instance of self
+        """
+        params = configuration.get_dictionary()
+
+        setattr(self, 'config', params)
+
+        return self
+
     @abstractmethod
     def build_model(
         self,
@@ -110,6 +139,7 @@ class BaseModelComponent(autoPyTorchSetupComponent):
         logger_port: int,
         task_type: str,
         output_type: str,
+        time_limit: Optional[int] = None,
         optimize_metric: Optional[str] = None
     ) -> BaseTraditionalLearner:
         """

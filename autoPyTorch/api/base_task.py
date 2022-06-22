@@ -8,7 +8,7 @@ import platform
 import sys
 import tempfile
 import time
-from tkinter import Y
+from turtle import pos
 import typing
 import unittest.mock
 import warnings
@@ -34,6 +34,7 @@ from smac.stats.stats import Stats
 from smac.tae import StatusType
 
 from autoPyTorch import metrics
+from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -51,10 +52,12 @@ from autoPyTorch.datasets.resampling_strategy import (
     ResamplingStrategies,
     RepeatedCrossValTypes
 )
-from autoPyTorch.ensemble.base_models_repeat_ensemble import BaseModelsRepeatStackingEnsemble
+from autoPyTorch.datasets.utils import get_appended_dataset
+from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
+from autoPyTorch.ensemble.repeat_models_stacking_ensemble import RepeatModelsStackingEnsemble
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
-from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.autogluon_stacking_ensemble import AutogluonStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
@@ -66,7 +69,8 @@ from autoPyTorch.pipeline.base_pipeline import BasePipeline
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import get_available_traditional_learners
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
-from autoPyTorch.utils.common import FitRequirement, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.common import FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import (
     PicklableClientLogger,
@@ -181,7 +185,8 @@ class BaseTask(ABC):
         ensemble_size: int = 5,
         ensemble_nbest: int = 50,
         ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
-        num_stacking_layers: int = 2,
+        use_ensemble_opt_loss: bool = False,
+        num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
         output_directory: Optional[str] = None,
@@ -207,6 +212,7 @@ class BaseTask(ABC):
         self.ensemble_nbest = ensemble_nbest
         self.ensemble_method = ensemble_method
         self.num_stacking_layers = num_stacking_layers
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
 
         self.max_models_on_disc = max_models_on_disc
         self.logging_config: Optional[Dict] = logging_config
@@ -240,7 +246,7 @@ class BaseTask(ABC):
         self.precision: Optional[int] = None
         self.opt_metric: Optional[str] = None
         self.dataset: Optional[BaseDataset] = None
-
+        self.ensemble_ = None
         self._results_manager = ResultsManager()
 
         # By default try to use the TCP logging port or get a new port
@@ -259,8 +265,8 @@ class BaseTask(ABC):
         # possibility of a deadlock
         self._dask_client: Optional[dask.distributed.Client] = None
         self._multiprocessing_context = 'forkserver'
-        if self.n_jobs == 1:
-            self._multiprocessing_context = 'fork'
+        # if self.n_jobs == 1:
+        #     self._multiprocessing_context = 'fork'
 
         self.input_validator: Optional[BaseInputValidator] = None
 
@@ -493,17 +499,30 @@ class BaseTask(ABC):
         if self.search_space is not None:
             return self.search_space
         elif dataset is not None:
-            dataset_requirements = get_dataset_requirements(
-                info=dataset.get_required_dataset_info(),
-                include=self.include_components,
-                exclude=self.exclude_components,
+            return self._get_search_space(
+                dataset,
+                include_components=self.include_components,
+                exclude_components=self.exclude_components,
                 search_space_updates=self.search_space_updates)
-            return get_configuration_space(info=dataset.get_dataset_properties(dataset_requirements),
-                                           include=self.include_components,
-                                           exclude=self.exclude_components,
-                                           search_space_updates=self.search_space_updates)
         raise ValueError("No search space initialised and no dataset passed. "
                          "Can't create default search space without the dataset")
+
+    @staticmethod
+    def _get_search_space(
+        dataset: BaseDataset,
+        include_components,
+        exclude_components,
+        search_space_updates,
+    ) -> ConfigurationSpace:
+        dataset_requirements = get_dataset_requirements(
+                info=dataset.get_required_dataset_info(),
+                include=include_components,
+                exclude=exclude_components,
+                search_space_updates=search_space_updates)
+        return get_configuration_space(info=dataset.get_dataset_properties(dataset_requirements),
+                                           include=include_components,
+                                           exclude=exclude_components,
+                                           search_space_updates=search_space_updates)
 
     def _get_logger(self, name: str) -> PicklableClientLogger:
         """
@@ -667,7 +686,7 @@ class BaseTask(ABC):
             # if isinstance(self.resampling_strategy, CrossValTypes):
             #     self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
 
-            self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
+            # self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
             if self.ensemble_method.is_stacking_ensemble():
                 models = []
                 cv_models = []
@@ -675,7 +694,7 @@ class BaseTask(ABC):
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
                     cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
-                self._logger.debug(f"stacked ensemble models are :{models}")
+                # self._logger.debug(f"stacked ensemble models are :{models}")
                 self.models_ = models
                 self.cv_models_ = cv_models
 
@@ -844,113 +863,33 @@ class BaseTask(ABC):
         assert self._dask_client is not None
 
         self._logger.info("Starting to create traditional classifier predictions.")
-        starttime = time.time()
 
-        # Initialise run history for the traditional classifiers
-        run_history = RunHistory()
-        memory_limit = self._memory_limit
-        if memory_limit is not None:
-            memory_limit = int(math.ceil(memory_limit))
-        available_classifiers = get_available_traditional_learners()
-        dask_futures = []
-
-        total_number_classifiers = len(available_classifiers)
-        for n_r, classifier in enumerate(available_classifiers):
-
-            # Only launch a task if there is time
-            start_time = time.time()
-            if time_left >= func_eval_time_limit_secs:
-                self._logger.info(f"{n_r}: Started fitting {classifier} with cutoff={func_eval_time_limit_secs}")
-                scenario_mock = unittest.mock.Mock()
-                scenario_mock.wallclock_limit = time_left
-                # This stats object is a hack - maybe the SMAC stats object should
-                # already be generated here!
-                stats = Stats(scenario_mock)
-                stats.start_timing()
-                ta = ExecuteTaFuncWithQueue(
-                    pynisher_context=self._multiprocessing_context,
-                    backend=self._backend,
-                    seed=self.seed,
-                    multi_objectives=["cost"],
-                    metric=self._metric,
-                    logger_port=self._logger_port,
-                    cost_for_crash=get_cost_of_crash(self._metric),
-                    abort_on_first_run_crash=False,
-                    initial_num_run=self._backend.get_next_num_run(),
-                    stats=stats,
-                    memory_limit=memory_limit,
-                    disable_file_output=self._disable_file_output,
-                    all_supported_metrics=self._all_supported_metrics
-                )
-                dask_futures.append([
-                    classifier,
-                    self._dask_client.submit(
-                        ta.run, config=classifier,
-                        cutoff=func_eval_time_limit_secs,
-                    )
-                ])
-
-            # When managing time, we need to take into account the allocated time resources,
-            # which are dependent on the number of cores. 'dask_futures' is a proxy to the number
-            # of workers /n_jobs that we have, in that if there are 4 cores allocated, we can run at most
-            # 4 task in parallel. Every 'cutoff' seconds, we generate up to 4 tasks.
-            # If we only have 4 workers and there are 4 futures in dask_futures, it means that every
-            # worker has a task. We would not like to launch another job until a worker is available. To this
-            # end, the following if-statement queries the number of active jobs, and forces to wait for a job
-            # completion via future.result(), so that a new worker is available for the next iteration.
-            if len(dask_futures) >= self.n_jobs:
-
-                # How many workers to wait before starting fitting the next iteration
-                workers_to_wait = 1
-                if n_r >= total_number_classifiers - 1 or time_left <= func_eval_time_limit_secs:
-                    # If on the last iteration, flush out all tasks
-                    workers_to_wait = len(dask_futures)
-
-                while workers_to_wait >= 1:
-                    workers_to_wait -= 1
-                    # We launch dask jobs only when there are resources available.
-                    # This allow us to control time allocation properly, and early terminate
-                    # the traditional machine learning pipeline
-                    cls, future = dask_futures.pop(0)
-                    status, cost, runtime, additional_info = future.result()
-                    if status == StatusType.SUCCESS:
-                        self._logger.info(
-                            "Fitting {} took {} [sec] and got performance: {}.\n"
-                            "additional info:\n{}".format(cls, runtime, cost, dict_repr(additional_info))
-                        )
-                        configuration = additional_info['pipeline_configuration']
-                        origin = additional_info['configuration_origin']
-                        additional_info.pop('pipeline_configuration')
-                        run_history.add(config=configuration, cost=cost,
-                                        time=runtime, status=status, seed=self.seed,
-                                        starttime=starttime, endtime=starttime + runtime,
-                                        origin=origin, additional_info=additional_info)
-                    else:
-                        if additional_info.get('exitcode') == -6:
-                            self._logger.error(
-                                "Traditional prediction for {} failed with run state {},\n"
-                                "because the provided memory limits were too tight.\n"
-                                "Please increase the 'ml_memory_limit' and try again.\n"
-                                "If you still get the problem, please open an issue\n"
-                                "and paste the additional info.\n"
-                                "Additional info:\n{}".format(cls, str(status), dict_repr(additional_info))
-                            )
-                        else:
-                            self._logger.error(
-                                "Traditional prediction for {} failed with run state {}.\nAdditional info:\n{}".format(
-                                    cls, str(status), dict_repr(additional_info)
-                                )
-                            )
-
-            # In the case of a serial execution, calling submit halts the run for a resource
-            # dynamically adjust time in this case
-            time_left -= int(time.time() - start_time)
-
-            # Exit if no more time is available for a new classifier
-            if time_left < func_eval_time_limit_secs:
-                self._logger.warning("Not enough time to fit all traditional machine learning models."
-                                     "Please consider increasing the run time to further improve performance.")
-                break
+        available_classifiers = get_available_traditional_learners(dataset_properties=self._get_dataset_properties(self.dataset))
+        model_configs = [(key, self.pipeline_options[self.pipeline_options['budget_type']]) for key in available_classifiers.keys()]
+        
+        run_history, _ = run_models_on_dataset(
+            time_left=time_left,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
+            model_configs=model_configs,
+            logger=self._logger,
+            logger_port=self._logger_port,
+            metric=self._metric,
+            dask_client=self._dask_client,
+            backend=self._backend,
+            memory_limit=self._memory_limit,
+            disable_file_output=self._disable_file_output,
+            all_supported_metrics=self._all_supported_metrics,
+            ensemble_method=self.ensemble_method,
+            include=self.include_components,
+            exclude=self.exclude_components,
+            search_space_updates=self.search_space_updates,
+            pipeline_options=self.pipeline_options,
+            seed=self.seed,
+            multiprocessing_context=self._multiprocessing_context,
+            n_jobs=self.n_jobs,
+            current_search_space=self.search_space,
+            smac_initial_run=self._backend.get_next_num_run()
+        )
 
         self._logger.debug("Run history traditional: {}".format(run_history))
         # add run history of traditional to api run history
@@ -988,126 +927,42 @@ class BaseTask(ABC):
         )
         self._stopwatch.stop_task(traditional_task_name)
 
-    def _fit_models_on_dataset(self, model_description, func_eval_time_limit_secs, stacking_layer, time_left):
-        starttime = time.time()
+    def _fit_models_on_dataset(
+        self,
+        model_configs,
+        func_eval_time_limit_secs,
+        stacking_layer,
+        time_left,
+        current_search_space,
+        smac_initial_run,
+        search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None
+    ) -> List[Tuple]:\
+        
+        search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
 
-        # Initialise run history for the traditional classifiers
-        run_history = RunHistory()
-        memory_limit = self._memory_limit
-        if memory_limit is not None:
-            memory_limit = int(math.ceil(memory_limit))
-
-        dask_futures = []
-
-        total_number_configs = len(model_description)
-        model_identifiers = []
-        initial_num_run = self._backend.get_next_num_run()
-
-        for n_r, (config, budget) in enumerate(model_description):
-
-            # Only launch a task if there is time
-            start_time = time.time()
-            if time_left >= func_eval_time_limit_secs:
-                self._logger.info(f"{n_r}: Started fitting {config} with cutoff={func_eval_time_limit_secs}")
-                scenario_mock = unittest.mock.Mock()
-                scenario_mock.wallclock_limit = time_left
-                # This stats object is a hack - maybe the SMAC stats object should
-                # already be generated here!
-                stats = Stats(scenario_mock)
-                stats.start_timing()
-
-                config.config_id = n_r
-                num_run = config.config_id + initial_num_run
-                model_identifiers.append((self.seed, num_run, budget))
-                ta = ExecuteTaFuncWithQueue(
-                    pynisher_context=self._multiprocessing_context,
-                    backend=self._backend,
-                    seed=self.seed,
-                    metric=self._metric,
-                    multi_objectives=["cost"],
-                    logger_port=self._logger_port,
-                    pipeline_config=self.pipeline_options,
-                    cost_for_crash=get_cost_of_crash(self._metric),
-                    abort_on_first_run_crash=False,
-                    initial_num_run=initial_num_run,
-                    stats=stats,
-                    memory_limit=self._memory_limit,
-                    disable_file_output=self._disable_file_output,
-                    all_supported_metrics=self._all_supported_metrics,
-                    ensemble_method=self.ensemble_method,
-                    include=self.include_components,
-                    exclude=self.exclude_components,
-                    search_space_updates=self.search_space_updates
-                )
-                dask_futures.append([
-                    config,
-                    self._dask_client.submit(
-                        ta.run, config=config,
-                        cutoff=func_eval_time_limit_secs,
-                        budget=budget
-                    )
-                ])
-
-            # When managing time, we need to take into account the allocated time resources,
-            # which are dependent on the number of cores. 'dask_futures' is a proxy to the number
-            # of workers /n_jobs that we have, in that if there are 4 cores allocated, we can run at most
-            # 4 task in parallel. Every 'cutoff' seconds, we generate up to 4 tasks.
-            # If we only have 4 workers and there are 4 futures in dask_futures, it means that every
-            # worker has a task. We would not like to launch another job until a worker is available. To this
-            # end, the following if-statement queries the number of active jobs, and forces to wait for a job
-            # completion via future.result(), so that a new worker is available for the next iteration.
-            if len(dask_futures) >= self.n_jobs:
-
-                # How many workers to wait before starting fitting the next iteration
-                workers_to_wait = 1
-                if n_r >= total_number_configs - 1 or time_left <= func_eval_time_limit_secs:
-                    # If on the last iteration, flush out all tasks
-                    workers_to_wait = len(dask_futures)
-
-                while workers_to_wait >= 1:
-                    workers_to_wait -= 1
-                    # We launch dask jobs only when there are resources available.
-                    # This allow us to control time allocation properly, and early terminate
-                    # the traditional machine learning pipeline
-                    cls, future = dask_futures.pop(0)
-                    status, cost, runtime, additional_info = future.result()
-                    if status == StatusType.SUCCESS:
-                        self._logger.info(
-                            "Fitting {} took {} [sec] and got performance: {}.\n"
-                            "additional info:\n{}".format(cls, runtime, cost, dict_repr(additional_info))
-                        )
-                        origin = additional_info['configuration_origin']
-                        # additional_info.pop('pipeline_configuration')
-                        run_history.add(config=config, cost=cost,
-                                        time=runtime, status=status, seed=self.seed,
-                                        starttime=starttime, endtime=starttime + runtime,
-                                        origin=origin, additional_info=additional_info)
-                    else:
-                        if additional_info.get('exitcode') == -6:
-                            self._logger.error(
-                                "Traditional prediction for {} failed with run state {},\n"
-                                "because the provided memory limits were too tight.\n"
-                                "Please increase the 'ml_memory_limit' and try again.\n"
-                                "If you still get the problem, please open an issue\n"
-                                "and paste the additional info.\n"
-                                "Additional info:\n{}".format(cls, str(status), dict_repr(additional_info))
-                            )
-                        else:
-                            self._logger.error(
-                                "Traditional prediction for {} failed with run state {}.\nAdditional info:\n{}".format(
-                                    cls, str(status), dict_repr(additional_info)
-                                )
-                            )
-
-            # In the case of a serial execution, calling submit halts the run for a resource
-            # dynamically adjust time in this case
-            time_left -= int(time.time() - start_time)
-
-            # Exit if no more time is available for a new classifier
-            if time_left < func_eval_time_limit_secs:
-                self._logger.warning("Not enough time to fit all machine learning models."
-                                     "Please consider increasing the run time to further improve performance.")
-                break
+        run_history, model_identifiers = run_models_on_dataset(
+            time_left=time_left,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
+            model_configs=model_configs,
+            logger=self._logger,
+            logger_port=self._logger_port,
+            metric=self._metric,
+            dask_client=self._dask_client,
+            backend=self._backend,
+            memory_limit=self._memory_limit,
+            disable_file_output=self._disable_file_output,
+            all_supported_metrics=self._all_supported_metrics,
+            ensemble_method=self.ensemble_method,
+            include=self.include_components,
+            exclude=self.exclude_components,
+            search_space_updates=search_space_updates,
+            pipeline_options=self.pipeline_options,
+            seed=self.seed,
+            multiprocessing_context=self._multiprocessing_context,
+            n_jobs=self.n_jobs,
+            current_search_space=current_search_space,
+            smac_initial_run=smac_initial_run
+        )
 
         self._logger.debug("Run history for layer: {}: {}".format(stacking_layer, run_history))
         # add run history of traditional to api run history
@@ -1119,7 +974,147 @@ class BaseTask(ABC):
     def _reset_datamanager_in_backend(self, datamanager)-> None:
         self._backend.save_datamanager(datamanager)
 
-    def _run_stacking(
+    def _run_autogluon_stacking(
+        self,
+        optimize_metric: str,
+        dataset: BaseDataset,
+        max_budget: int = 50,
+        budget_type: str = 'epochs',
+        total_walltime_limit: int = 100,
+        func_eval_time_limit_secs: Optional[int] = None,
+        memory_limit: Optional[int] = 4096,
+        all_supported_metrics: bool = True,
+        precision: int = 32,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
+        dask_client: Optional[dask.distributed.Client] = None,
+    ):
+        """
+        This function can be used to create a stacking ensemble
+        Args:
+            current_task_name (str): name of the current task,
+            runtime_limit (int): time limit for fitting traditional models,
+            func_eval_time_limit_secs (int): Time limit
+                for a single call to the machine learning model.
+                Model fitting will be terminated if the machine
+                learning algorithm runs over the time limit.
+        """
+        experiment_task_name: str = 'runStacking'
+        self._init_required_args(
+            experiment_task_name=experiment_task_name,
+            optimize_metric=optimize_metric,
+            dataset=dataset,
+            budget_type=budget_type,
+            max_budget=max_budget,
+            total_walltime_limit=total_walltime_limit,
+            memory_limit=memory_limit,
+            all_supported_metrics=all_supported_metrics,
+            precision=precision,
+            disable_file_output=disable_file_output,
+            dask_client=dask_client
+        )
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+        self.precision = precision
+        available_classifiers = get_available_traditional_learners(dataset_properties=self._get_dataset_properties(self.dataset))
+        model_configs = [(key, self.pipeline_options[self.pipeline_options['budget_type']]) for key in available_classifiers.keys()]
+
+        if self.feat_type is None:
+            raise ValueError("Cant run autogluon stacking without information about dataset features passed with `feat_type`")
+        autogluon_nn_search_space_updates = get_autogluon_default_nn_config(feat_type=self.feat_type)
+        autogluon_nn_search_space = self._get_search_space(
+                self.dataset,
+                include_components=self.include_components,
+                exclude_components=self.exclude_components,
+                search_space_updates=autogluon_nn_search_space_updates)
+
+        default_nn_config = autogluon_nn_search_space.get_default_configuration()
+        model_configs.append((default_nn_config, self.pipeline_options[self.pipeline_options['budget_type']]))
+        self._logger.info("Starting Autogluon Stacking.")
+
+        model_identifiers = []
+        stacked_weights = []
+        last_successful_smac_initial_num_run = None
+        for stacking_layer in range(self.num_stacking_layers):
+            smac_initial_run=self._backend.get_next_num_run()
+            updated_model_configs, current_search_space = self._update_configs_for_current_config_space(
+                model_configs,
+                dataset,
+                autogluon_nn_search_space_updates,
+                assert_skew_transformer_quantile=True)
+            layer_model_identifiers = self._fit_models_on_dataset(
+                updated_model_configs,
+                func_eval_time_limit_secs,
+                stacking_layer,
+                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers),
+                current_search_space=current_search_space,
+                smac_initial_run=smac_initial_run,
+                search_space_updates=autogluon_nn_search_space_updates)
+            nonnull_identifiers = [identifier for identifier in layer_model_identifiers if identifier is not None]
+            if len(nonnull_identifiers) > 0:
+                model_identifiers.append(
+                    nonnull_identifiers
+                )
+                last_successful_smac_initial_num_run = smac_initial_run
+                ensemble_size = len(nonnull_identifiers)
+                weights = [1/ensemble_size] * ensemble_size
+                stacked_weights.append(weights)
+            _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(smac_initial_run, model_identifiers[-1], weights, ensemble_size)
+            dataset = get_appended_dataset(
+                original_dataset=self.dataset,
+                previous_layer_predictions_train=previous_layer_predictions_train,
+                previous_layer_predictions_test=previous_layer_predictions_test,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
+            )
+            self._reset_datamanager_in_backend(datamanager=dataset)
+
+        ensemble = AutogluonStackingEnsemble()
+        iteration = 0
+        time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
+        final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
+            optimize_metric,
+            time_left_for_ensemble,
+            last_successful_smac_initial_num_run,
+            ensemble_size,
+            iteration)
+        model_identifiers[-1] = final_model_identifiers
+        stacked_weights[-1] = final_weights
+        ensemble = ensemble.fit(model_identifiers, stacked_weights)
+        self._backend.save_ensemble(ensemble, iteration+1, self.seed)
+        self._load_models()
+
+    def _posthoc_fit_ensemble(
+        self,
+        optimize_metric,
+        time_left_for_ensemble,
+        last_successful_smac_initial_num_run,
+        ensemble_size,
+        iteration,
+        enable_traditional_pipeline=False,
+        cleanup=True,
+        func_eval_time_limit_secs: int = 50,
+    ):
+        self.fit_ensemble(
+            optimize_metric=optimize_metric,
+            precision=self.precision,
+            ensemble_size=ensemble_size,
+            ensemble_nbest=self.ensemble_nbest,
+            initial_num_run=last_successful_smac_initial_num_run,
+            time_for_task=time_left_for_ensemble,
+            enable_traditional_pipeline=enable_traditional_pipeline,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
+            iteration=iteration,
+            cleanup=cleanup,
+            load_models=False
+        )
+        final_ensemble: EnsembleSelection = self._backend.load_ensemble(self.seed)
+        final_model_identifiers = final_ensemble.get_selected_model_identifiers()
+        final_model_identifiers_dict = {identifier: identifier for identifier in final_model_identifiers}
+        models_with_weights = final_ensemble.get_models_with_weights(final_model_identifiers_dict)
+        final_model_identifiers = [identifier[1] for identifier in models_with_weights]
+        final_weights = [identifier[0] for identifier in models_with_weights]
+        return final_model_identifiers,final_weights
+
+    def _run_search_stacking(
         self,
         optimize_metric: str,
         min_budget,
@@ -1157,7 +1152,7 @@ class BaseTask(ABC):
                                                         precision=precision,
                                                         optimize_metric=self.opt_metric,
                                                         ensemble_method=self.ensemble_method,
-                                                        num_stacking_layer=1
+                                                        num_stacking_layers=1
                                                         )
 
         smac_initial_run = self._run_smbo(
@@ -1177,79 +1172,109 @@ class BaseTask(ABC):
             self._collect_results_ensemble(proc_ensemble)
         base_ensemble = self._backend.load_ensemble(self.seed)
         model_identifiers = [base_ensemble.get_selected_model_identifiers()]
-        ensemble = BaseModelsRepeatStackingEnsemble(base_ensemble=base_ensemble)
+        ensemble = RepeatModelsStackingEnsemble(base_ensemble=base_ensemble)
 
         weights = [weight for weight in base_ensemble.weights_ if weight > 0]
         ensemble_size = self.ensemble_size
-        model_description = []
-        previous_layer_predictions_train = []
-        previous_layer_predictions_test = []
-        for weight, (seed, num_run, budget) in zip(weights, model_identifiers[0]):
-            model_description.append((self.run_history.ids_config[num_run-smac_initial_run], budget))
-            previous_layer_predictions_train.extend([np.load(os.path.join(self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget), self._backend.get_prediction_filename('ensemble', seed, num_run, budget)), allow_pickle=True)] * int(weight * ensemble_size))
-            previous_layer_predictions_test.extend([np.load(os.path.join(self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget), self._backend.get_prediction_filename('test', seed, num_run, budget)), allow_pickle=True)] * int(weight * ensemble_size))
+        model_configs, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(smac_initial_run, model_identifiers[-1], weights, ensemble_size)
 
-
-        time_left_for_higher_stacking_layers = total_walltime_limit -self._stopwatch.wall_elapsed(stacking_task_name)
-
+        self._logger.debug(f"Finished search for base models, starting fitting next layers")
         for stacking_layer in range(1, self.num_stacking_layers):
-            X_train, y_train = self.dataset.train_tensors
-            X_test, y_test = self.dataset.test_tensors
-            self._logger.debug(f"Before concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-            for i, (model_predictions_train, model_predictions_test) in enumerate(zip(previous_layer_predictions_train, previous_layer_predictions_test)):
-                if model_predictions_train is not None and model_predictions_test is not None:
-                    self._logger.debug(f"model_predictions_train: {model_predictions_train.shape}, model_predictions_test: {model_predictions_test.shape}")
-                    X_train = np.concatenate([X_train, model_predictions_train], axis=1)
-                    X_test = np.concatenate([X_test, model_predictions_test], axis=1)
-                else:
-                    self._logger.debug(f"model_predictions_train: {model_predictions_train}, model_predictions_test: {model_predictions_test }")
-
-            self._logger.debug(f"After concat, X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-            new_feat_types = self.dataset.feat_type
-            new_feat_types.extend(['numerical'] * (i+1))
-            self._logger.debug(f"new feat_types = {new_feat_types}")
-            dataset = self.get_dataset(
-                X_train=X_train,
-                y_train=y_train,
-                X_test=X_test,
-                y_test=y_test,
-                feat_type=new_feat_types,
+            smac_layer_initial_run = self._backend.get_next_num_run()
+            time_left_for_higher_stacking_layers = total_walltime_limit -self._stopwatch.wall_elapsed(stacking_task_name)
+            if time_left_for_higher_stacking_layers < func_eval_time_limit_secs:
+                break
+            self._logger.debug(f"Original feat types len: {len(self.dataset.feat_type)}")
+            nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
+            nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
+            assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
+            self._logger.debug(f"length Non null predictions: {len(nonnull_model_predictions_train)}")
+            dataset = get_appended_dataset(
+                original_dataset=self.dataset,
+                previous_layer_predictions_train=nonnull_model_predictions_train,
+                previous_layer_predictions_test=nonnull_model_predictions_test,
                 resampling_strategy=self.resampling_strategy,
-                resampling_strategy_args=self.resampling_strategy_args)
-            updated_model_descriptions = self._update_configs_for_current_config_space(model_description, dataset)
-            self._reset_datamanager_in_backend(datamanager=dataset)
-            model_identifiers.append(
-                self._fit_models_on_dataset(updated_model_descriptions, func_eval_time_limit_secs, stacking_layer, time_left=time_left_for_higher_stacking_layers/(self.num_stacking_layers - 1))
+                resampling_strategy_args=self.resampling_strategy_args,
             )
+            self._logger.debug(f"new feat_types len: {len(dataset.feat_type)}")
+            updated_model_configs, current_search_space = self._update_configs_for_current_config_space(model_configs, dataset)
+            self._reset_datamanager_in_backend(datamanager=dataset)
+            layer_model_identifiers = self._fit_models_on_dataset(updated_model_configs, func_eval_time_limit_secs, stacking_layer, time_left=time_left_for_higher_stacking_layers/(self.num_stacking_layers - 1), current_search_space=current_search_space, smac_initial_run=smac_layer_initial_run)
+            if any([identifier is not None for identifier in layer_model_identifiers]):
+                model_identifiers.append(
+                    layer_model_identifiers
+                )
+            _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(smac_initial_run, model_identifiers[-1], weights, ensemble_size)
+
         ensemble = ensemble.fit(model_identifiers)
         self._backend.save_ensemble(ensemble, proc_ensemble.iteration+10, self.seed)
-    def _update_configs_for_current_config_space(self, model_description: List[Tuple], dataset: BaseDataset) -> List[Tuple]:
+        self._load_models()
+
+    def _get_previous_predictions(self, smac_initial_run, model_identifiers, weights, ensemble_size):
+        model_configs = []
+        previous_layer_predictions_train = []
+        previous_layer_predictions_test = []
+        self._logger.debug(f'id_config: {self.run_history.ids_config}')
+        for weight, model_identifier in zip(weights, model_identifiers):
+            if model_identifier is None:
+                model_configs.append(None)
+                previous_layer_predictions_train.append(None)
+                previous_layer_predictions_test.append(None)
+                continue
+            seed, num_run, budget = model_identifier
+            
+            self._logger.debug(f'num_run: {num_run}')
+            config = get_config_from_run_history(self.run_history, num_run=num_run) #  self.run_history.ids_config.get(num_run-smac_initial_run, None)
+            self._logger.debug(f'Configuration from previous layer: {config}')
+            model_configs.append((config, budget))
+            previous_layer_predictions_train.extend(
+                [np.load(os.path.join(
+                    self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget),
+                    self._backend.get_prediction_filename('ensemble', seed, num_run, budget)
+                    ), allow_pickle=True)] * int(weight * ensemble_size))
+            previous_layer_predictions_test.extend([np.load(os.path.join(
+                self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget),
+                self._backend.get_prediction_filename('test', seed, num_run, budget)
+                ), allow_pickle=True)] * int(weight * ensemble_size))
+        return model_configs,previous_layer_predictions_train,previous_layer_predictions_test
+
+    def _update_configs_for_current_config_space(
+        self,
+        model_description: List[Tuple],
+        dataset: BaseDataset,
+        search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
+        assert_skew_transformer_quantile: bool = False
+        ) -> List[Tuple]:
         
-        dataset_requirements = get_dataset_requirements(
-                info=dataset.get_required_dataset_info(),
-                include=self.include_components,
-                exclude=self.exclude_components,
-                search_space_updates=self.search_space_updates)
-        current_config_space = get_configuration_space(info=dataset.get_dataset_properties(dataset_requirements),
-                                include=self.include_components,
-                                exclude=self.exclude_components,
-                                search_space_updates=self.search_space_updates)
-        has_numerical = len(dataset.numerical_columns) > 0
-        has_categorical = len(dataset.categorical_columns) > 0
+        search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
+
+        dataset_properties = self._get_dataset_properties(dataset=dataset)
+        current_search_space = self._get_search_space(
+                                                dataset,
+                                                include_components=self.include_components,
+                                                exclude_components=self.exclude_components,
+                                                search_space_updates=search_space_updates)
+        self._logger.debug(f"dataset properties after appending predictions: {dict_repr(dataset_properties)}")
         n_numerical_in_incumbent_on_task_id = len(self.dataset.numerical_columns)
         num_numerical = len(dataset.numerical_columns)
         updated_model_descriptions = []
         for config, budget in model_description:
+            if config is None:
+                continue
+
+            if not isinstance(config, (Configuration, dict)):
+                updated_model_descriptions.append((config, budget))
+                continue
+
             updated_config = validate_config(
                         config=config,
-                        search_space=current_config_space,
-                        has_categorical=has_categorical,
-                        has_numerical=has_numerical,
+                        search_space=current_search_space,
                         num_numerical=num_numerical,
-                        n_numerical_in_incumbent_on_task_id=n_numerical_in_incumbent_on_task_id
+                        n_numerical_in_incumbent_on_task_id=n_numerical_in_incumbent_on_task_id,
+                        assert_autogluon_numerical_hyperparameters=assert_skew_transformer_quantile
                     )
             updated_model_descriptions.append((updated_config, budget))
-        return updated_model_descriptions
+        return updated_model_descriptions, current_search_space
 
     def _run_smbo(
         self,
@@ -1364,7 +1389,8 @@ class BaseTask(ABC):
         portfolio_selection: Optional[str] = None,
         dask_client: Optional[dask.distributed.Client] = None,
         smbo_class: Optional[SMBO] = None,
-        use_ensemble_opt_loss: bool = False
+        use_ensemble_opt_loss: bool = False,
+        posthoc_ensemble_fit_stacking_ensemble_optimization: bool = False
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -1497,6 +1523,184 @@ class BaseTask(ABC):
             self
 
         """
+        experiment_task_name: str = 'runSearch'
+
+        self._init_required_args(
+            experiment_task_name=experiment_task_name,
+            optimize_metric=optimize_metric,
+            dataset=dataset,
+            budget_type=budget_type,
+            max_budget=max_budget,
+            total_walltime_limit=total_walltime_limit,
+            memory_limit=memory_limit,
+            all_supported_metrics=all_supported_metrics,
+            precision=precision,
+            disable_file_output=disable_file_output,
+            dask_client=dask_client
+        )
+
+        # Handle time resource allocation
+        elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
+        time_left_for_modelfit = int(max(0, total_walltime_limit - elapsed_time))
+        if func_eval_time_limit_secs is None or func_eval_time_limit_secs > time_left_for_modelfit:
+            self._logger.warning(
+                'Time limit for a single run is higher than total time '
+                'limit. Capping the limit for a single run to the total '
+                'time given to SMAC (%f)' % time_left_for_modelfit
+            )
+            func_eval_time_limit_secs = time_left_for_modelfit
+
+        # Make sure that at least 2 models are created for the ensemble process
+        num_models = time_left_for_modelfit // func_eval_time_limit_secs
+        if num_models < 2 and self.ensemble_size > 0:
+            func_eval_time_limit_secs = time_left_for_modelfit // 2
+            self._logger.warning(
+                "Capping the func_eval_time_limit_secs to {} to have "
+                "time for a least 2 models to ensemble.".format(
+                    func_eval_time_limit_secs
+                )
+            )
+
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+        # ============> Run dummy predictions
+        # We only want to run dummy predictions in case we want to build an ensemble
+        if self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_optimisation_ensemble:
+            dummy_task_name = 'runDummy'
+            self._stopwatch.start_task(dummy_task_name)
+            self._do_dummy_prediction()
+            self._stopwatch.stop_task(dummy_task_name)
+
+        # ============> Run traditional ml
+        # We only want to run traditional predictions in case we want to build an ensemble
+        # We want time for at least 1 Neural network in SMAC
+        if enable_traditional_pipeline and self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_optimisation_ensemble:
+            traditional_runtime_limit = int(self._time_for_task - func_eval_time_limit_secs)
+            self.run_traditional_ml(current_task_name=self.dataset_name,
+                                    runtime_limit=traditional_runtime_limit,
+                                    func_eval_time_limit_secs=func_eval_time_limit_secs)
+
+        # ============> Starting ensemble
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
+        if self.ensemble_method == EnsembleSelectionTypes.stacking_repeat_models:
+            elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
+            time_left_for_stacking = max(0, total_walltime_limit - elapsed_time)
+            self._run_search_stacking(
+                optimize_metric=optimize_metric,
+                min_budget=min_budget,
+                max_budget=max_budget,
+                smac_scenario_args=smac_scenario_args,
+                total_walltime_limit=time_left_for_stacking,
+                func_eval_time_limit_secs=func_eval_time_limit_secs,
+                budget_type=budget_type,
+                portfolio_selection=portfolio_selection,
+                tae_func=tae_func,
+                precision=precision,
+                experiment_task_name=experiment_task_name
+            )
+        else:
+            self.precision = precision
+            self.opt_metric = optimize_metric
+            elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
+            time_left_for_ensembles = max(0, total_walltime_limit - elapsed_time)
+            posthoc_ensemble_fit_stacking_ensemble_optimization = posthoc_ensemble_fit_stacking_ensemble_optimization \
+                and self.ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
+            TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = 0.95
+            time_left_for_ensembles = int(time_left_for_ensembles * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT) if posthoc_ensemble_fit_stacking_ensemble_optimization else time_left_for_ensembles
+            proc_ensemble = None
+            if time_left_for_ensembles <= 0:
+                # Fit only raises error when ensemble_size is not zero but
+                # time_left_for_ensembles is zero.
+                if self.ensemble_size > 0:
+                    raise ValueError("Not starting ensemble builder because there "
+                                    "is no time left. Try increasing the value "
+                                    "of time_left_for_this_task.")
+            elif self.ensemble_size <= 0:
+                self._logger.info("Not starting ensemble builder as ensemble size is 0")
+            else:
+                self._logger.info("Starting ensemble")
+                proc_ensemble = self._init_ensemble_builder(time_left_for_ensembles=time_left_for_ensembles,
+                                                            ensemble_size=self.ensemble_size,
+                                                            ensemble_nbest=self.ensemble_nbest,
+                                                            precision=precision,
+                                                            optimize_metric=self.opt_metric,
+                                                            ensemble_method=self.ensemble_method,
+                                                            num_stacking_layers=self.num_stacking_layers
+                                                            )
+
+            self._run_smbo(
+                min_budget=min_budget,
+                max_budget=max_budget,
+                total_walltime_limit=total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
+                    if posthoc_ensemble_fit_stacking_ensemble_optimization \
+                        else total_walltime_limit,
+                func_eval_time_limit_secs=func_eval_time_limit_secs,
+                smac_scenario_args=smac_scenario_args,
+                get_smac_object_callback=get_smac_object_callback,
+                tae_func=tae_func,
+                portfolio_selection=portfolio_selection,
+                smbo_class=smbo_class,
+                experiment_task_name=experiment_task_name,
+                proc_ensemble=proc_ensemble,
+                num_stacking_layers=self.num_stacking_layers
+                )
+
+            if proc_ensemble is not None:
+                self._collect_results_ensemble(proc_ensemble)
+            # Wait until the ensemble process is finished to avoid shutting down
+            # while the ensemble builder tries to access the data
+            self._logger.info("Starting Shutdown")
+
+        if posthoc_ensemble_fit_stacking_ensemble_optimization:
+            ensemble = self._backend.load_ensemble(self.seed)
+            initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
+            time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
+            iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
+            final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
+                optimize_metric=self.opt_metric,
+                time_left_for_ensemble=time_for_post_fit_ensemble,
+                last_successful_smac_initial_num_run=initial_num_run + 1,
+                ensemble_size=self.ensemble_size,
+                iteration=iteration,
+                enable_traditional_pipeline=enable_traditional_pipeline,
+                cleanup=False,
+                func_eval_time_limit_secs=0.5*func_eval_time_limit_secs
+            )
+            ensemble.identifiers_ = final_model_identifiers
+            stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers
+            broken = False
+            for i, layer_identifiers in enumerate(stacked_ensemble_identifiers):
+                if all([identifier is None for identifier in layer_identifiers]):
+                    broken = True
+                    break
+            last_nonnull_layer = i-1 if broken else i
+            self._logger.debug(f"broken: {broken}, lastnonnull layer: {last_nonnull_layer}, i: {i}")
+            ensemble.stacked_ensemble_identifiers[last_nonnull_layer] = final_model_identifiers
+            ensemble.weights_ = final_weights
+            self._backend.save_ensemble(ensemble, iteration+1, self.seed)
+
+        if load_models:
+            self._logger.info("Loading models...")
+            self._load_models()
+            self._logger.info("Finished loading models...")
+
+        self._cleanup()
+
+        return self
+
+    def _init_required_args(
+        self,
+        experiment_task_name: str,
+        optimize_metric: str,
+        dataset: BaseDataset,
+        budget_type: str,
+        max_budget: int,
+        total_walltime_limit: int,
+        memory_limit: int,
+        all_supported_metrics: bool,
+        precision: int,
+        dask_client: Optional[dask.distributed.Client] = None,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None
+    ) -> None:
         if self.task_type != dataset.task_type:
             raise ValueError("Incompatible dataset entered for current task,"
                              "expected dataset to have task type :{} but got "
@@ -1505,14 +1709,7 @@ class BaseTask(ABC):
             raise ValueError("precision must be one of 16, 32, 64 but got {}".format(precision))
 
         # Initialise information needed for the experiment
-        experiment_task_name: str = 'runSearch'
-        dataset_requirements = get_dataset_requirements(
-            info=dataset.get_required_dataset_info(),
-            include=self.include_components,
-            exclude=self.exclude_components,
-            search_space_updates=self.search_space_updates)
-        self._dataset_requirements = dataset_requirements
-        dataset_properties = dataset.get_dataset_properties(dataset_requirements)
+        dataset_properties = self._get_dataset_properties(dataset)
         self._stopwatch.start_task(experiment_task_name)
         self.dataset_name = dataset.dataset_name
         assert self.dataset_name is not None
@@ -1580,120 +1777,16 @@ class BaseTask(ABC):
         else:
             self._dask_client = dask_client
             self._is_dask_client_internally_created = False
+        return
 
-        # Handle time resource allocation
-        elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
-        time_left_for_modelfit = int(max(0, total_walltime_limit - elapsed_time))
-        if func_eval_time_limit_secs is None or func_eval_time_limit_secs > time_left_for_modelfit:
-            self._logger.warning(
-                'Time limit for a single run is higher than total time '
-                'limit. Capping the limit for a single run to the total '
-                'time given to SMAC (%f)' % time_left_for_modelfit
-            )
-            func_eval_time_limit_secs = time_left_for_modelfit
-
-        # Make sure that at least 2 models are created for the ensemble process
-        num_models = time_left_for_modelfit // func_eval_time_limit_secs
-        if num_models < 2 and self.ensemble_size > 0:
-            func_eval_time_limit_secs = time_left_for_modelfit // 2
-            self._logger.warning(
-                "Capping the func_eval_time_limit_secs to {} to have "
-                "time for a least 2 models to ensemble.".format(
-                    func_eval_time_limit_secs
-                )
-            )
-
-        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
-        # ============> Run dummy predictions
-        # We only want to run dummy predictions in case we want to build an ensemble
-        if self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_optimisation_ensemble:
-            dummy_task_name = 'runDummy'
-            self._stopwatch.start_task(dummy_task_name)
-            self._do_dummy_prediction()
-            self._stopwatch.stop_task(dummy_task_name)
-
-        # ============> Run traditional ml
-        # We only want to run traditional predictions in case we want to build an ensemble
-        # We want time for at least 1 Neural network in SMAC
-        if enable_traditional_pipeline and self.ensemble_size > 0:
-            traditional_runtime_limit = int(self._time_for_task - func_eval_time_limit_secs)
-            self.run_traditional_ml(current_task_name=self.dataset_name,
-                                    runtime_limit=traditional_runtime_limit,
-                                    func_eval_time_limit_secs=func_eval_time_limit_secs)
-
-        # ============> Starting ensemble
-        self.use_ensemble_opt_loss = use_ensemble_opt_loss
-        if self.ensemble_method == EnsembleSelectionTypes.stacking_repeat_base_models:
-            elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
-            time_left_for_stacking = max(0, total_walltime_limit - elapsed_time)
-            self._run_stacking(
-                optimize_metric=optimize_metric,
-                min_budget=min_budget,
-                max_budget=max_budget,
-                smac_scenario_args=smac_scenario_args,
-                total_walltime_limit=time_left_for_stacking,
-                func_eval_time_limit_secs=func_eval_time_limit_secs,
-                budget_type=budget_type,
-                portfolio_selection=portfolio_selection,
-                tae_func=tae_func,
-                precision=precision,
-                experiment_task_name=experiment_task_name
-            )
-        else:
-            self.precision = precision
-            self.opt_metric = optimize_metric
-            elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
-            time_left_for_ensembles = max(0, total_walltime_limit - elapsed_time)
-            proc_ensemble = None
-            if time_left_for_ensembles <= 0:
-                # Fit only raises error when ensemble_size is not zero but
-                # time_left_for_ensembles is zero.
-                if self.ensemble_size > 0:
-                    raise ValueError("Not starting ensemble builder because there "
-                                    "is no time left. Try increasing the value "
-                                    "of time_left_for_this_task.")
-            elif self.ensemble_size <= 0:
-                self._logger.info("Not starting ensemble builder as ensemble size is 0")
-            else:
-                self._logger.info("Starting ensemble")
-                proc_ensemble = self._init_ensemble_builder(time_left_for_ensembles=time_left_for_ensembles,
-                                                            ensemble_size=self.ensemble_size,
-                                                            ensemble_nbest=self.ensemble_nbest,
-                                                            precision=precision,
-                                                            optimize_metric=self.opt_metric,
-                                                            ensemble_method=self.ensemble_method,
-                                                            num_stacking_layer=self.num_stacking_layers
-                                                            )
-
-            self._run_smbo(
-                min_budget=min_budget,
-                max_budget=max_budget,
-                total_walltime_limit=total_walltime_limit,
-                func_eval_time_limit_secs=func_eval_time_limit_secs,
-                smac_scenario_args=smac_scenario_args,
-                get_smac_object_callback=get_smac_object_callback,
-                tae_func=tae_func,
-                portfolio_selection=portfolio_selection,
-                smbo_class=smbo_class,
-                experiment_task_name=experiment_task_name,
-                proc_ensemble=proc_ensemble,
-                num_stacking_layers=self.num_stacking_layers
-                )
-
-            if proc_ensemble is not None:
-                self._collect_results_ensemble(proc_ensemble)
-            # Wait until the ensemble process is finished to avoid shutting down
-            # while the ensemble builder tries to access the data
-            self._logger.info("Starting Shutdown")
-
-        if load_models:
-            self._logger.info("Loading models...")
-            self._load_models()
-            self._logger.info("Finished loading models...")
-
-        self._cleanup()
-
-        return self
+    def _get_dataset_properties(self, dataset):
+        dataset_requirements = get_dataset_requirements(
+            info=dataset.get_required_dataset_info(),
+            include=self.include_components,
+            exclude=self.exclude_components,
+            search_space_updates=self.search_space_updates)
+        dataset_properties = dataset.get_dataset_properties(dataset_requirements)
+        return dataset_properties
 
     def _get_fit_dictionary(
         self,
@@ -2071,10 +2164,14 @@ class BaseTask(ABC):
             ensemble_nbest: int = 50,
             ensemble_size: int = 50,
             ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+            num_stacking_layers: int = 1,
+            initial_num_run: int = 0,
             load_models: bool = True,
             time_for_task: int = 100,
             func_eval_time_limit_secs: int = 50,
             enable_traditional_pipeline: bool = True,
+            iteration: int = 0,
+            cleanup: bool = True
     ) -> 'BaseTask':
         """
         Enables post-hoc fitting of the ensemble after the `search()`
@@ -2122,7 +2219,7 @@ class BaseTask(ABC):
             self
         """
         # Make sure that input is valid
-        if self.dataset is None or self.opt_metric is None:
+        if self.dataset is None:
             raise ValueError("fit_ensemble() can only be called after `search()`. "
                              "Please call the `search()` method of {} prior to "
                              "fit_ensemble().".format(self.__class__.__name__))
@@ -2181,6 +2278,10 @@ class BaseTask(ABC):
             precision=precision,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
+            ensemble_method=ensemble_method,
+            num_stacking_layers=num_stacking_layers,
+            initial_num_run=initial_num_run,
+            iteration=iteration
         )
 
         manager.build_ensemble(self._dask_client)
@@ -2192,7 +2293,8 @@ class BaseTask(ABC):
 
         self._stopwatch.stop_task(ensemble_fit_task_name)
 
-        self._cleanup()
+        if cleanup:
+            self._cleanup()
 
         return self
 
@@ -2203,8 +2305,10 @@ class BaseTask(ABC):
             ensemble_method: int,
             ensemble_nbest: int,
             ensemble_size: int,
-            num_stacking_layer: Optional[int] = None,
+            num_stacking_layers: Optional[int] = None,
             precision: int = 32,
+            initial_num_run: int = 0,
+            iteration: int = 0,
     ) -> EnsembleBuilderManager:
         """
         Initializes an `EnsembleBuilderManager`.
@@ -2265,7 +2369,9 @@ class BaseTask(ABC):
             precision=precision,
             logger_port=self._logger_port,
             use_ensemble_loss=self.use_ensemble_opt_loss,
-            num_stacking_layers=num_stacking_layer
+            num_stacking_layers=num_stacking_layers,
+            initial_num_run=initial_num_run,
+            iteration=iteration
         )
         self._stopwatch.stop_task(ensemble_task_name)
 
@@ -2375,7 +2481,7 @@ class BaseTask(ABC):
                     )
                     for identifier in layer_identifiers if identifier is not None
                 )
-                if self.ensemble_method in (EnsembleSelectionTypes.stacking_ensemble_selection_per_layer, EnsembleSelectionTypes.stacking_repeat_base_models):
+                if self.ensemble_method in (EnsembleSelectionTypes.stacking_ensemble_selection_per_layer, EnsembleSelectionTypes.stacking_repeat_models, EnsembleSelectionTypes.stacking_autogluon):
                     concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
                         stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
                 else:
@@ -2497,16 +2603,14 @@ class BaseTask(ABC):
                 Markdown table of models.
         """
         if self.ensemble_method.is_stacking_ensemble():
-            markdowns = []
+            df = []
             for layer, model_weight in enumerate(self.get_models_with_weights()):
-                df = []
                 for weight, model in model_weight:
                     representation = model.get_pipeline_representation()
-                    representation.update({'Weight': weight})
+                    representation.update({'Weight': weight, "Stacking Layer": layer})
                     df.append(representation)
-                models_markdown: str = pd.DataFrame(df).to_markdown()
-            markdowns.append(models_markdown)
-            return '\n'.join(markdowns)
+            models_markdown: str = pd.DataFrame(df).to_markdown()
+            return models_markdown
         else:
             df = []
             for weight, model in self.get_models_with_weights():

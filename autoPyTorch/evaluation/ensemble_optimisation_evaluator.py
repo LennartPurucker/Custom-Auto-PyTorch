@@ -25,7 +25,8 @@ from autoPyTorch.evaluation.abstract_evaluator import (
     fit_and_suppress_warnings
 )
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
-from autoPyTorch.evaluation.utils import VotingRegressorWrapper
+from autoPyTorch.evaluation.utils import VotingRegressorWrapper, check_pipeline_is_fitted
+from autoPyTorch.pipeline.tabular_classification import TabularClassificationPipeline
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, subsampler
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
@@ -207,6 +208,8 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
             additional_run_info['validation_loss'] = validation_loss
         if test_loss is not None:
             additional_run_info['test_loss'] = test_loss
+        additional_run_info['configuration'] = self.configuration if not isinstance(self.configuration, Configuration) else self.configuration.get_dictionary()
+        additional_run_info['budget'] = self.budget
 
         additional_run_info['opt_loss'] = loss
         rval_dict = {'loss': cost,
@@ -312,7 +315,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
                         pipelines = VotingClassifier(estimators=None, voting='soft', )
                     else:
                         pipelines = VotingRegressorWrapper(estimators=None)
-                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines]
+                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
                 else:
                     pipelines = None
             else:
@@ -414,6 +417,8 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
                         self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
                                           f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
                         total_repeats = expected_total_repeats
+                        if total_repeats <= repeat_id:
+                            raise ValueError("Not expected to complete first repeat, terminating configuration")
 
             Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)
@@ -458,6 +463,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
         train_loss = self._loss(self.Y_actual_train, Y_train_pred)
         opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
 
+        opt_loss ['ensemble_opt_loss'] = calculate_nomalised_margin_loss(Y_ensemble_preds, self.Y_optimization)
         status = StatusType.SUCCESS
         self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
             self.num_run,

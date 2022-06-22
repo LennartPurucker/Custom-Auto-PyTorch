@@ -83,15 +83,19 @@ class MyTraditionalTabularClassificationPipeline(BaseEstimator):
         self.init_params = init_params
         self.pipeline = autoPyTorch.pipeline.traditional_tabular_classification. \
             TraditionalTabularClassificationPipeline(dataset_properties=dataset_properties,
-                                                     random_state=self.random_state)
-        configuration_space = self.pipeline.get_hyperparameter_search_space()
-        default_configuration = configuration_space.get_default_configuration().get_dictionary()
-        default_configuration['model_trainer:tabular_traditional_model:traditional_learner'] = config
-        self.configuration = Configuration(configuration_space, default_configuration)
-        self.pipeline.set_hyperparameters(self.configuration)
+                                                     random_state=self.random_state,
+                                                     search_space_updates=self._get_search_space_updates())
+        # configuration_space = self.pipeline.get_hyperparameter_search_space()
+        # default_configuration = configuration_space.get_default_configuration().get_dictionary()
+        # default_configuration['model_trainer:tabular_traditional_model:traditional_learner'] = config
+        # self.configuration = Configuration(configuration_space, default_configuration)
+        # self.pipeline.set_hyperparameters(self.configuration)
+        self.configuration = self.pipeline.config
+        self.is_fitted_ = False
 
     def fit(self, X: Dict[str, Any], y: Any,
             sample_weight: Optional[np.ndarray] = None) -> object:
+        self.is_fitted_ = True
         return self.pipeline.fit(X, y)
 
     def predict_proba(self, X: Union[np.ndarray, pd.DataFrame],
@@ -113,11 +117,17 @@ class MyTraditionalTabularClassificationPipeline(BaseEstimator):
                     Can be found in autoPyTorch/pipeline/components/setup/traditional_ml/estimator_configs
         """
         return {'pipeline_configuration': self.configuration,
-                'trainer_configuration': self.pipeline.named_steps['model_trainer'].choice.model.get_config(),
+                # 'trainer_configuration': self.pipeline.named_steps['model_trainer'].choice.model.get_config(),
                 'configuration_origin': 'traditional'}
 
     def get_pipeline_representation(self) -> Dict[str, str]:
         return self.pipeline.get_pipeline_representation()
+
+    def _get_search_space_updates(self):
+        from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
+        updates = HyperparameterSearchSpaceUpdates()
+        updates.append(node_name='model_trainer', hyperparameter='traditional_learner', value_range=(self.config,), default_value=self.config)
+        return updates
 
     @staticmethod
     def get_default_pipeline_options() -> Dict[str, Any]:
@@ -153,15 +163,19 @@ class MyTraditionalTabularRegressionPipeline(BaseEstimator):
         self.init_params = init_params
         self.pipeline = autoPyTorch.pipeline.traditional_tabular_regression. \
             TraditionalTabularRegressionPipeline(dataset_properties=dataset_properties,
-                                                 random_state=self.random_state)
-        configuration_space = self.pipeline.get_hyperparameter_search_space()
-        default_configuration = configuration_space.get_default_configuration().get_dictionary()
-        default_configuration['model_trainer:tabular_traditional_model:traditional_learner'] = config
-        self.configuration = Configuration(configuration_space, default_configuration)
-        self.pipeline.set_hyperparameters(self.configuration)
+                                                     random_state=self.random_state,
+                                                     search_space_updates=self._get_search_space_updates())
+        # configuration_space = self.pipeline.get_hyperparameter_search_space()
+        # default_configuration = configuration_space.get_default_configuration().get_dictionary()
+        # default_configuration['model_trainer:tabular_traditional_model:traditional_learner'] = config
+        # self.configuration = Configuration(configuration_space, default_configuration)
+        # self.pipeline.set_hyperparameters(self.configuration)
+        self.configuration = self.pipeline.config
+        self.is_fitted_ = False
 
     def fit(self, X: Dict[str, Any], y: Any,
             sample_weight: Optional[np.ndarray] = None) -> object:
+        self.is_fitted_ = True
         return self.pipeline.fit(X, y)
 
     def predict(self, X: Union[np.ndarray, pd.DataFrame],
@@ -179,15 +193,22 @@ class MyTraditionalTabularRegressionPipeline(BaseEstimator):
                     Can be found in autoPyTorch/pipeline/components/setup/traditional_ml/estimator_configs
         """
         return {'pipeline_configuration': self.configuration,
-                'trainer_configuration': self.pipeline.named_steps['model_trainer'].choice.model.get_config()}
+                # 'trainer_configuration': self.pipeline.named_steps['model_trainer'].choice.model.get_config(),
+                'configuration_origin': 'traditional'}
 
     def get_pipeline_representation(self) -> Dict[str, str]:
         return self.pipeline.get_pipeline_representation()
 
+    def _get_search_space_updates(self):
+        from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
+        updates = HyperparameterSearchSpaceUpdates()
+        updates.append(node_name='model_trainer', hyperparameter='traditional_learner', value_range=(self.config,), default_value=self.config)
+        return updates
+
     @staticmethod
     def get_default_pipeline_options() -> Dict[str, Any]:
-        return autoPyTorch.pipeline.traditional_tabular_regression.\
-            TraditionalTabularRegressionPipeline.get_default_pipeline_options()
+        return autoPyTorch.pipeline.traditional_tabular_classification. \
+            TraditionalTabularClassificationPipeline.get_default_pipeline_options()
 
 
 class DummyClassificationPipeline(DummyClassifier):
@@ -216,9 +237,11 @@ class DummyClassificationPipeline(DummyClassifier):
             super(DummyClassificationPipeline, self).__init__(strategy="uniform")
         else:
             super(DummyClassificationPipeline, self).__init__(strategy="most_frequent")
+        self.is_fitted_ = False
 
     def fit(self, X: Dict[str, Any], y: Any,
             sample_weight: Optional[np.ndarray] = None) -> object:
+        self.is_fitted_ = True
         X_train = subsampler(X['X_train'], X['train_indices'])
         y_train = subsampler(X['y_train'], X['train_indices'])
         return super(DummyClassificationPipeline, self).fit(np.ones((X_train.shape[0], 1)), y_train,
@@ -278,9 +301,11 @@ class DummyRegressionPipeline(DummyRegressor):
             super(DummyRegressionPipeline, self).__init__(strategy='mean')
         else:
             super(DummyRegressionPipeline, self).__init__(strategy='median')
+        self.is_fitted_ = False
 
     def fit(self, X: Dict[str, Any], y: Any,
             sample_weight: Optional[np.ndarray] = None) -> object:
+        self.is_fitted_ = True
         X_train = subsampler(X['X_train'], X['train_indices'])
         y_train = subsampler(X['y_train'], X['train_indices'])
         return super(DummyRegressionPipeline, self).fit(np.ones((X_train.shape[0], 1)), y_train,
@@ -768,6 +793,9 @@ class AbstractEvaluator(object):
             additional_run_info['validation_loss'] = validation_loss
         if test_loss is not None:
             additional_run_info['test_loss'] = test_loss
+
+        additional_run_info['configuration'] = self.configuration if not isinstance(self.configuration, Configuration) else self.configuration.get_dictionary()
+        additional_run_info['budget'] = self.budget
 
         rval_dict = {'loss': cost,
                      'additional_run_info': additional_run_info,

@@ -10,17 +10,17 @@ from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMet
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
 
 
-class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
+class AutogluonStackingEnsemble(AbstractEnsemble):
     def __init__(
         self,
-        base_ensemble: EnsembleSelection
     ) -> None:
         self.ensemble_identifiers: Optional[List[List[Tuple[int, int, float]]]] = None
-        self.base_ensemble = base_ensemble
+        self.ensemble_weights: Optional[List[List]] = None
 
     def fit(
         self,
-        identifiers: List[Tuple[int, int, float]],
+        identifiers: List[List[Tuple[int, int, float]]],
+        weights: List[List]
     ) -> AbstractEnsemble:
         """
         Builds a ensemble given the individual models out of fold predictions.
@@ -41,6 +41,7 @@ class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
             A copy of self
         """
         self.ensemble_identifiers = identifiers
+        self.ensemble_weights = weights
         return self
 
     def predict(self, predictions: Union[np.ndarray, List[np.ndarray]]) -> np.ndarray:
@@ -58,17 +59,40 @@ class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
                                 the weights found during ensemble selection (self._weights)
         """
 
-        return self.base_ensemble.predict(predictions=predictions)
+        average = np.zeros_like(predictions[0], dtype=np.float64)
+        tmp_predictions = np.empty_like(predictions[0], dtype=np.float64)
+
+        # if predictions.shape[0] == len(self.weights_),
+        # predictions include those of zero-weight models.
+        if len(predictions) == len(self.ensemble_weights[-1]):
+            for pred, weight in zip(predictions, self.ensemble_weights[-1]):
+                np.multiply(pred, weight, out=tmp_predictions)
+                np.add(average, tmp_predictions, out=average)
+
+        # if prediction model.shape[0] == len(non_null_weights),
+        # predictions do not include those of zero-weight models.
+        elif len(predictions) == np.count_nonzero(self.ensemble_weights[-1]):
+            non_null_weights = [w for w in self.ensemble_weights[-1] if w > 0]
+            for pred, weight in zip(predictions, non_null_weights):
+                np.multiply(pred, weight, out=tmp_predictions)
+                np.add(average, tmp_predictions, out=average)
+
+        # If none of the above applies, then something must have gone wrong.
+        else:
+            raise ValueError("The dimensions of ensemble predictions"
+                             " and ensemble weights do not match!")
+        del tmp_predictions
+        return average
 
     def __str__(self) -> str:
         return 'Ensemble Selection:\n\tTrajectory: %s\n\tMembers: %s' \
                '\n\tWeights: %s\n\tIdentifiers: %s' % \
                (' '.join(['%d: %5f' % (idx, performance)
                          for idx, performance in enumerate(self.trajectory_)]),
-                self.indices_, self.weights_,
+                self.indices_, self.ensemble_weights[-1],
                 ' '.join([str(identifier) for idx, identifier in
                           enumerate(self.identifiers_)
-                          if self.weights_[idx] > 0]))
+                          if self.ensemble_weights[-1][idx] > 0]))
 
     def get_models_with_weights(
         self,
@@ -88,9 +112,13 @@ class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
                 problem.
         """
         outputs = []
-        first_layer_models = models[0]
-        for _ in models:
-            outputs.append(self.base_ensemble.get_models_with_weights(first_layer_models))
+        for layer_models, identifiers, layer_weights in zip(models, self.ensemble_identifiers, self.ensemble_weights):
+            output = []
+            for identifier, weight in zip(identifiers, layer_weights):
+                model = layer_models[identifier]
+                output.append((weight, model))
+            output.sort(reverse=True, key=lambda t: t[0])
+            outputs.append(output)
 
         return outputs
 
@@ -99,8 +127,8 @@ class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
         stacking_layer,
         raw_stacking_layer_ensemble_predictions
     ) -> List[np.ndarray]:
-        layer_weights = [weight for weight in self.base_ensemble.weights_ if weight > 0]
-        layer_size = self.base_ensemble.ensemble_size
+        layer_weights = self.ensemble_weights[stacking_layer]
+        layer_size = len(self.ensemble_weights[stacking_layer])
         ensemble_predictions = []
         for weight, pred in zip(layer_weights, raw_stacking_layer_ensemble_predictions):
             ensemble_predictions.extend([pred] * int(weight * layer_size))
@@ -126,4 +154,5 @@ class BaseModelsRepeatStackingEnsemble(AbstractEnsemble):
             (float):
                 best ensemble training performance
         """
-        return self.base_ensemble.trajectory_[-1]
+        return 0
+

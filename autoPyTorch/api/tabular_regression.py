@@ -89,6 +89,7 @@ class TabularRegressionTask(BaseTask):
         ensemble_size: int = 50,
         ensemble_nbest: int = 50,
         ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+        num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
         output_directory: Optional[str] = None,
@@ -98,6 +99,7 @@ class TabularRegressionTask(BaseTask):
         exclude_components: Optional[Dict[str, Any]] = None,
         resampling_strategy: ResamplingStrategies = HoldoutValTypes.holdout_validation,
         resampling_strategy_args: Optional[Dict[str, Any]] = None,
+        feat_type: Optional[List[str]] = None,
         backend: Optional[Backend] = None,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None
     ):
@@ -109,6 +111,7 @@ class TabularRegressionTask(BaseTask):
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
             ensemble_method=ensemble_method,
+            num_stacking_layers=num_stacking_layers,
             max_models_on_disc=max_models_on_disc,
             temporary_directory=temporary_directory,
             output_directory=output_directory,
@@ -119,6 +122,7 @@ class TabularRegressionTask(BaseTask):
             backend=backend,
             resampling_strategy=resampling_strategy,
             resampling_strategy_args=resampling_strategy_args,
+            feat_type=feat_type,
             search_space_updates=search_space_updates,
             task_type=TASK_TYPES_TO_STRING[TABULAR_REGRESSION],
         )
@@ -167,6 +171,7 @@ class TabularRegressionTask(BaseTask):
         y_train: Union[List, pd.DataFrame, np.ndarray],
         X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        feat_type: Optional[List[str]] = None,
         resampling_strategy: Optional[ResamplingStrategies] = None,
         resampling_strategy_args: Optional[Dict[str, Any]] = None,
         dataset_name: Optional[str] = None,
@@ -207,13 +212,14 @@ class TabularRegressionTask(BaseTask):
         resampling_strategy = resampling_strategy if resampling_strategy is not None else self.resampling_strategy
         resampling_strategy_args = resampling_strategy_args if resampling_strategy_args is not None else \
             self.resampling_strategy_args
-
+        feat_type = feat_type if feat_type is not None else self.feat_type
         # Create a validator object to make sure that the data provided by
         # the user matches the autopytorch requirements
         input_validator = TabularInputValidator(
             is_classification=False,
             logger_port=self._logger_port,
-            dataset_compression=dataset_compression
+            dataset_compression=dataset_compression,
+            feat_type=feat_type
         )
 
         # Fit a input validator to check the provided data

@@ -2,34 +2,44 @@ import copy
 import json
 import logging.handlers
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import os
 
 import ConfigSpace
 from ConfigSpace.configuration_space import Configuration
 
 import dask.distributed
 
+import numpy as np
+
 from smac.facade.smac_ac_facade import SMAC4AC
 from smac.intensification.hyperband import Hyperband
 from smac.optimizer.smbo import SMBO
-from smac.runhistory.runhistory import RunHistory
+from smac.runhistory.runhistory import RunHistory, DataOrigin
 from smac.runhistory.runhistory2epm import RunHistory2EPM4LogCost
 from smac.scenario.scenario import Scenario
 from smac.tae.dask_runner import DaskParallelRunner
 from smac.tae.serial_runner import SerialRunner
 from smac.utils.io.traj_logging import TrajEntry
 
+from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.automl_common.common.utils.backend import Backend
+from autoPyTorch.datasets.base_dataset import BaseDataset
+from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.datasets.resampling_strategy import (
-    CrossValTypes,
+    ResamplingStrategies,
     DEFAULT_RESAMPLING_PARAMETERS,
     HoldoutValTypes,
-    NoResamplingStrategyTypes
+    CrossValTypes
 )
+from autoPyTorch.datasets.utils import get_appended_dataset
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
-from autoPyTorch.optimizer.utils import read_return_initial_configurations
+from autoPyTorch.optimizer.utils import delete_other_runs, read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
+from autoPyTorch.utils.pipeline import get_configuration_space, get_dataset_requirements
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import get_named_client_logger
 from autoPyTorch.utils.stopwatch import StopWatch
@@ -102,9 +112,7 @@ class AutoMLSMBO(object):
                  pipeline_config: Dict[str, Any],
                  start_num_run: int = 1,
                  seed: int = 1,
-                 resampling_strategy: Union[HoldoutValTypes,
-                                            CrossValTypes,
-                                            NoResamplingStrategyTypes] = HoldoutValTypes.holdout_validation,
+                 resampling_strategy: ResamplingStrategies = HoldoutValTypes.holdout_validation,
                  resampling_strategy_args: Optional[Dict[str, Any]] = None,
                  include: Optional[Dict[str, Any]] = None,
                  exclude: Optional[Dict[str, Any]] = None,
@@ -113,13 +121,14 @@ class AutoMLSMBO(object):
                  get_smac_object_callback: Optional[Callable] = None,
                  all_supported_metrics: bool = True,
                  ensemble_callback: Optional[EnsembleBuilderManager] = None,
+                 num_stacking_layers: Optional[int] = None,
                  logger_port: Optional[int] = None,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  portfolio_selection: Optional[str] = None,
                  pynisher_context: str = 'spawn',
                  min_budget: int = 5,
                  max_budget: int = 50,
-                 ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+                 ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
                  other_callbacks: Optional[List] = None,
                  smbo_class: Optional[SMBO] = None,
                  use_ensemble_opt_loss: bool = False
@@ -200,6 +209,7 @@ class AutoMLSMBO(object):
         """
         super(AutoMLSMBO, self).__init__()
         # data related
+        self.datamanager: Optional[BaseDataset] = None
         self.dataset_name = dataset_name
         self.metric = metric
 
@@ -239,6 +249,13 @@ class AutoMLSMBO(object):
         self.ensemble_method = ensemble_method
 
         self.ensemble_callback = ensemble_callback
+        if self.ensemble_method.is_stacking_ensemble()  and num_stacking_layers is None:
+            raise ValueError("'num_stacking_layers' can't be none for stacked ensembles")
+
+        self.num_stacking_layers = num_stacking_layers
+
+        self.run_history = RunHistory()
+        self.trajectory: List[TrajEntry] = []
 
         self.other_callbacks = other_callbacks
         self.smbo_class = smbo_class
@@ -265,18 +282,46 @@ class AutoMLSMBO(object):
                 self.logger.warning("None of the portfolio configurations are compatible"
                                     " with the current search space. Skipping initial configuration...")
 
-    def run_smbo(self, func: Optional[Callable] = None
-                 ) -> Tuple[RunHistory, List[TrajEntry], str]:
+    def reset_data_manager(self) -> None:
+        if self.datamanager is not None:
+            del self.datamanager
+        self.datamanager = self.backend.load_datamanager()
+        if self.datamanager is not None and self.datamanager.task_type is not None:
+            self.task = self.datamanager.task_type
 
-        self.watcher.start_task('SMBO')
-        self.logger.info("Started run of SMBO")
+    def reset_attributes(self, datamanager: BaseDataset) -> None:
+        self.backend.save_datamanager(datamanager=datamanager)
+
+        dataset_requirements = get_dataset_requirements(
+            info=datamanager.get_required_dataset_info(),
+            include=self.include,
+            exclude=self.exclude,
+            search_space_updates=self.search_space_updates)
+        self._dataset_requirements = dataset_requirements
+        dataset_properties = datamanager.get_dataset_properties(dataset_requirements)
+        self.config_space = get_configuration_space(dataset_properties, include=self.include, exclude=self.exclude, search_space_updates=self.search_space_updates)
+
+    def _run_smbo(
+        self,
+        cur_stacking_layer: int,
+        walltime_limit: int,
+        initial_num_run: int,
+        func: Optional[Callable] = None,
+        ) -> Tuple[RunHistory, List[TrajEntry], str]:
+
+        current_task_name = f'SMBO_{cur_stacking_layer}'
+
+        self.watcher.start_task(current_task_name)
+        self.logger.info(f"Started {cur_stacking_layer} run of SMBO")
+
+        # # == first things first: load the datamanager
+        # self.reset_data_manager()
 
         # == Initialize non-SMBO stuff
         # first create a scenario
         seed = self.seed
         self.config_space.seed(seed)
         # allocate a run history
-        num_run = self.start_num_run
 
         # Initialize some SMAC dependencies
 
@@ -295,7 +340,7 @@ class AutoMLSMBO(object):
         ta_kwargs = dict(
             backend=copy.deepcopy(self.backend),
             seed=seed,
-            initial_num_run=num_run,
+            initial_num_run=initial_num_run,
             include=self.include if self.include is not None else dict(),
             exclude=self.exclude if self.exclude is not None else dict(),
             metric=self.metric,
@@ -308,13 +353,14 @@ class AutoMLSMBO(object):
             search_space_updates=self.search_space_updates,
             pynisher_context=self.pynisher_context,
             ensemble_method=self.ensemble_method,
-            use_ensemble_opt_loss=self.use_ensemble_opt_loss
+            use_ensemble_opt_loss=self.use_ensemble_opt_loss,
+            cur_stacking_layer=cur_stacking_layer
         )
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")
 
-        startup_time = self.watcher.wall_elapsed(self.dataset_name)
-        total_walltime_limit = self.total_walltime_limit - startup_time - 5
+        startup_time = self.watcher.wall_elapsed(current_task_name)
+        walltime_limit = walltime_limit - startup_time - 5
         scenario_dict = {
             'abort_on_first_run_crash': False,
             'cs': self.config_space,
@@ -324,7 +370,7 @@ class AutoMLSMBO(object):
             'memory_limit': self.memory_limit,
             'output-dir': self.backend.get_smac_output_directory(),
             'run_obj': 'quality',
-            'wallclock_limit': total_walltime_limit,
+            'wallclock_limit': walltime_limit,
             'cost_for_crash': self.worst_possible_result,
         }
         if self.smac_scenario_args is not None:
@@ -365,7 +411,8 @@ class AutoMLSMBO(object):
                                                  initial_budget=self.min_budget,
                                                  max_budget=self.max_budget,
                                                  dask_client=self.dask_client,
-                                                 initial_configurations=self.initial_configurations)
+                                                 initial_configurations=self.initial_configurations,
+                                                 smbo_class=self.smbo_class)
         else:
             smac = get_smac_object(scenario_dict=scenario_dict,
                                    seed=seed,
@@ -378,20 +425,22 @@ class AutoMLSMBO(object):
                                    initial_configurations=self.initial_configurations,
                                    smbo_class=self.smbo_class)
 
+        if self.ensemble_method.is_stacking_ensemble():
+            self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer, initial_num_run)
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)
-
         if self.other_callbacks is not None:
             for callback in self.other_callbacks:
                 smac.register_callback(callback)
+
         self.logger.info("initialised SMBO, running SMBO.optimize()")
 
         smac.optimize()
 
         self.logger.info("finished SMBO.optimize()")
 
-        self.runhistory = smac.solver.runhistory
-        self.trajectory = smac.solver.intensifier.traj_logger.trajectory
+        runhistory = smac.solver.runhistory
+        trajectory = smac.solver.intensifier.traj_logger.trajectory
         if isinstance(smac.solver.tae_runner, DaskParallelRunner):
             self._budget_type = smac.solver.tae_runner.single_worker.budget_type
         elif isinstance(smac.solver.tae_runner, SerialRunner):
@@ -399,4 +448,55 @@ class AutoMLSMBO(object):
         else:
             raise NotImplementedError(type(smac.solver.tae_runner))
 
-        return self.runhistory, self.trajectory, self._budget_type
+        return runhistory, trajectory, self._budget_type
+
+    def run_smbo(self, func: Optional[Callable] = None
+                 ) -> Tuple[RunHistory, List[TrajEntry], str]:
+        individual_wall_times = self.total_walltime_limit / self.num_stacking_layers
+        initial_num_run = self.start_num_run
+        self.reset_data_manager()
+        for cur_stacking_layer in range(self.num_stacking_layers):
+            if cur_stacking_layer == 0:
+                self.logger.debug(f"Initial feat_types = {self.datamanager.feat_type}")
+            run_history, trajectory, _ = self._run_smbo(
+                walltime_limit=individual_wall_times,
+                cur_stacking_layer=cur_stacking_layer,
+                initial_num_run=initial_num_run,
+                func=func
+                )
+            self.run_history.update(run_history, origin=DataOrigin.INTERNAL)
+            self.trajectory.extend(trajectory)
+            if self.num_stacking_layers <= 1:
+                break 
+            old_ensemble: Optional[Union[EnsembleSelectionPerLayerStackingEnsemble, EnsembleOptimisationStackingEnsemble]] = None
+            ensemble_dir = self.backend.get_ensemble_dir()
+            if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
+                old_ensemble = self.backend.load_ensemble(self.seed)
+                assert isinstance(old_ensemble, (EnsembleOptimisationStackingEnsemble, EnsembleSelectionPerLayerStackingEnsemble))
+            if cur_stacking_layer != self.num_stacking_layers -1:
+                selected_identifiers = old_ensemble.get_selected_model_identifiers()[old_ensemble.cur_stacking_layer]
+                nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
+                ensemble_runs = [self.backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
+                self.logger.debug(f"deleting runs other than {ensemble_runs}")
+                delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=self.backend.get_runs_directory())
+            previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
+            previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')
+            self.logger.debug(f"Original feat types len: {len(self.datamanager.feat_type)}")
+            nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
+            nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
+            assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
+            self.logger.debug(f"length Non nulll predictions: {len(nonnull_model_predictions_train)}")
+            datamanager = get_appended_dataset(
+                original_dataset=self.datamanager,
+                previous_layer_predictions_train=nonnull_model_predictions_train,
+                previous_layer_predictions_test=nonnull_model_predictions_test,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
+            )
+            self.logger.debug(f"new feat_types len: {len(datamanager.feat_type)}")
+            self.reset_attributes(datamanager=datamanager)
+
+            initial_num_run = self.backend.get_next_num_run()
+            self.logger.debug(f"cutoff num_run: {initial_num_run}")
+
+        return self.run_history, self.trajectory, self._budget_type

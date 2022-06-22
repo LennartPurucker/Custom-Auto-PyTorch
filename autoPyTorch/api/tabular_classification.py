@@ -1,5 +1,7 @@
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
+import dask.distributed
+
 import numpy as np
 
 import pandas as pd
@@ -91,6 +93,7 @@ class TabularClassificationTask(BaseTask):
         ensemble_size: int = 50,
         ensemble_nbest: int = 50,
         ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+        num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
         output_directory: Optional[str] = None,
@@ -100,6 +103,7 @@ class TabularClassificationTask(BaseTask):
         exclude_components: Optional[Dict[str, Any]] = None,
         resampling_strategy: ResamplingStrategies = HoldoutValTypes.holdout_validation,
         resampling_strategy_args: Optional[Dict[str, Any]] = None,
+        feat_type: Optional[List[str]] = None,
         backend: Optional[Backend] = None,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None
     ):
@@ -121,8 +125,10 @@ class TabularClassificationTask(BaseTask):
             backend=backend,
             resampling_strategy=resampling_strategy,
             resampling_strategy_args=resampling_strategy_args,
+            feat_type=feat_type,
             search_space_updates=search_space_updates,
             task_type=TASK_TYPES_TO_STRING[TABULAR_CLASSIFICATION],
+            num_stacking_layers=num_stacking_layers
         )
 
     def build_pipeline(
@@ -169,6 +175,7 @@ class TabularClassificationTask(BaseTask):
         y_train: Union[List, pd.DataFrame, np.ndarray],
         X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        feat_type: Optional[List] = None,
         resampling_strategy: Optional[ResamplingStrategies] = None,
         resampling_strategy_args: Optional[Dict[str, Any]] = None,
         dataset_name: Optional[str] = None,
@@ -210,13 +217,14 @@ class TabularClassificationTask(BaseTask):
         resampling_strategy = resampling_strategy if resampling_strategy is not None else self.resampling_strategy
         resampling_strategy_args = resampling_strategy_args if resampling_strategy_args is not None else \
             self.resampling_strategy_args
-
+        feat_type = feat_type if feat_type is not None else self.feat_type
         # Create a validator object to make sure that the data provided by
         # the user matches the autopytorch requirements
         input_validator = TabularInputValidator(
             is_classification=True,
             logger_port=self._logger_port,
-            dataset_compression=dataset_compression
+            dataset_compression=dataset_compression,
+            feat_type=feat_type
         )
 
         # Fit a input validator to check the provided data
@@ -234,6 +242,51 @@ class TabularClassificationTask(BaseTask):
         )
 
         return dataset, input_validator
+
+    def run_autogluon_stacking(
+        self,
+        optimize_metric: str,
+        X_train: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        y_train: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        dataset_name: Optional[str] = None,
+        max_budget: int = 50,
+        budget_type: str = 'epochs',
+        total_walltime_limit: int = 100,
+        func_eval_time_limit_secs: Optional[int] = None,
+        memory_limit: Optional[int] = 4096,
+        dataset_compression: Union[Mapping[str, Any], bool] = False,
+        all_supported_metrics: bool = True,
+        precision: int = 32,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
+        dask_client: Optional[dask.distributed.Client] = None
+    ):
+        self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
+
+        self.dataset, self.input_validator = self._get_dataset_input_validator(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            resampling_strategy=self.resampling_strategy,
+            resampling_strategy_args=self.resampling_strategy_args,
+            dataset_name=dataset_name,
+            dataset_compression=self._dataset_compression)
+
+        return self._run_autogluon_stacking(
+            optimize_metric=optimize_metric,
+            dataset=self.dataset,
+            max_budget=max_budget,
+            budget_type=budget_type,
+            total_walltime_limit=total_walltime_limit,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
+            memory_limit=memory_limit,
+            all_supported_metrics=all_supported_metrics,
+            precision=precision,
+            disable_file_output=disable_file_output,
+            dask_client=dask_client,
+        )
 
     def search(
         self,
@@ -259,7 +312,8 @@ class TabularClassificationTask(BaseTask):
         portfolio_selection: Optional[str] = None,
         dataset_compression: Union[Mapping[str, Any], bool] = False,
         smbo_class: Optional[SMBO] = None,
-        use_ensemble_opt_loss=False
+        use_ensemble_opt_loss=False,
+        posthoc_ensemble_fit_stacking_ensemble_optimization: bool = False
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -460,7 +514,8 @@ class TabularClassificationTask(BaseTask):
             load_models=load_models,
             portfolio_selection=portfolio_selection,
             smbo_class=smbo_class,
-            use_ensemble_opt_loss=use_ensemble_opt_loss      
+            use_ensemble_opt_loss=use_ensemble_opt_loss,
+            posthoc_ensemble_fit_stacking_ensemble_optimization=posthoc_ensemble_fit_stacking_ensemble_optimization  
         )
 
     def predict(
@@ -504,3 +559,4 @@ class TabularClassificationTask(BaseTask):
                              "the estimator search() method.")
         X_test = self.input_validator.feature_validator.transform(X_test)
         return super().predict(X_test, batch_size=batch_size, n_jobs=n_jobs)
+

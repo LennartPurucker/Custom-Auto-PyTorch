@@ -55,7 +55,8 @@ class MLPBackbone(NetworkBackboneComponent):
 
         """
         layers.append(nn.Linear(in_features, out_features))
-        layers.append(nn.BatchNorm1d(out_features))
+        if self.config['use_batch_norm']:
+            layers.append(nn.BatchNorm1d(out_features))
         layers.append(_activations[self.config["activation"]]())
         if self.config['use_dropout']:
             layers.append(nn.Dropout(self.config["dropout_%d" % layer_id]))
@@ -86,6 +87,10 @@ class MLPBackbone(NetworkBackboneComponent):
                                                                            value_range=(True, False),
                                                                            default_value=False,
                                                                            ),
+        use_batch_norm: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter="use_batch_norm",
+                                                                           value_range=(True, False),
+                                                                           default_value=False,
+                                                                           ),
         num_units: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter="num_units",
                                                                          value_range=(10, 1024),
                                                                          default_value=200,
@@ -104,6 +109,9 @@ class MLPBackbone(NetworkBackboneComponent):
         min_mlp_layers, max_mlp_layers = num_groups.value_range
         num_groups = get_hyperparameter(num_groups, UniformIntegerHyperparameter)
         add_hyperparameter(cs, activation, CategoricalHyperparameter)
+
+        # whether to use batch normalization
+        add_hyperparameter(cs, use_batch_norm, CategoricalHyperparameter)
 
         # We can have dropout in the network for
         # better generalization

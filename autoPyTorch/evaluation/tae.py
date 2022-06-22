@@ -28,9 +28,11 @@ from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.resampling_strategy import (
     CrossValTypes,
     HoldoutValTypes,
-    NoResamplingStrategyTypes
+    NoResamplingStrategyTypes,
+    RepeatedCrossValTypes
 )
-import autoPyTorch.evaluation.stacking_evaluator
+from autoPyTorch.evaluation.ensemble_optimisation_evaluator import eval_ensemble_optimise_function
+from autoPyTorch.evaluation.repeated_crossval_evaluator import eval_repeated_cv_function
 from autoPyTorch.evaluation.test_evaluator import eval_test_function
 from autoPyTorch.evaluation.train_evaluator import eval_train_function
 from autoPyTorch.evaluation.utils import (
@@ -131,8 +133,9 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         logger_port: int = None,
         all_supported_metrics: bool = True,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-        ensemble_method = None,
-        use_ensemble_opt_loss=False
+        ensemble_method: EnsembleSelectionTypes = None,
+        use_ensemble_opt_loss=False,
+        cur_stacking_layer: int = 0
     ):
 
         self.backend = backend
@@ -151,10 +154,25 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         self.resampling_strategy_args = dm.resampling_strategy_args
 
         if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes)):
-            if ensemble_method is None or ensemble_method == EnsembleSelectionTypes.ensemble_selection:
-                eval_function = eval_train_function
-            elif ensemble_method == EnsembleSelectionTypes.stacking_ensemble:
-                eval_function = autoPyTorch.evaluation.stacking_evaluator.eval_function
+            eval_function = eval_train_function
+            if (
+                ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
+                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
+                or ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
+            ):
+                raise ValueError(f"fitting ensemble stacking requires resampling strategy to be of {RepeatedCrossValTypes} but got {self.resampling_strategy}")
+        elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
+            if ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble:
+                eval_function = eval_ensemble_optimise_function
+            elif (
+                ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
+                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
+                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
+                or ensemble_method is None
+                or ensemble_method == EnsembleSelectionTypes.ensemble_selection
+            ):
+                eval_function = eval_repeated_cv_function
             self.output_y_hat_optimization = output_y_hat_optimization
         elif isinstance(self.resampling_strategy, NoResamplingStrategyTypes):
             eval_function = eval_test_function
@@ -209,6 +227,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         self.memory_limit = memory_limit
 
         self.search_space_updates = search_space_updates
+        self.cur_stacking_layer = cur_stacking_layer
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
 
     def _check_and_get_default_budget(self) -> float:
@@ -349,7 +368,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             logger_port=self.logger_port,
             all_supported_metrics=self.all_supported_metrics,
             search_space_updates=self.search_space_updates,
-            use_ensemble_opt_loss=self.use_ensemble_opt_loss
+            use_ensemble_opt_loss=self.use_ensemble_opt_loss,
+            cur_stacking_layer=self.cur_stacking_layer
         )
 
         info: Optional[List[RunValue]]
@@ -511,3 +531,4 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             )
         )
         return status, cost, runtime, additional_run_info
+

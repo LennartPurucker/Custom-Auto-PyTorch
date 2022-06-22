@@ -11,9 +11,8 @@ from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.base_pipeline import BasePipeline, PipelineStepType
 from autoPyTorch.pipeline.components.base_choice import autoPyTorchChoice
 from autoPyTorch.pipeline.components.base_component import autoPyTorchComponent
-from autoPyTorch.pipeline.components.setup.traditional_ml import ModelChoice
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
-
+from autoPyTorch.pipeline.components.setup.traditional_ml.tabular_traditional_model import TabularTraditionalModel
 
 class TraditionalTabularClassificationPipeline(ClassifierMixin, BasePipeline):
     """
@@ -229,7 +228,8 @@ class TraditionalTabularClassificationPipeline(ClassifierMixin, BasePipeline):
             default_dataset_properties.update(dataset_properties)
 
         steps.extend([
-            ("model_trainer", ModelChoice(default_dataset_properties,
+            ("model_trainer", TabularTraditionalModel(
+            # ModelChoice(default_dataset_properties,
                                           random_state=self.random_state)),
         ])
         return steps
@@ -257,14 +257,14 @@ class TraditionalTabularClassificationPipeline(ClassifierMixin, BasePipeline):
                 Contains the pipeline representation in a short format
         """
         estimator_name = 'TraditionalTabularClassification'
-        if self.steps[0][1].choice is not None:
-            if self.steps[0][1].choice.model is None:
-                estimator_name = self.steps[0][1].choice.__class__.__name__
-            else:
-                estimator_name = cast(
-                    str,
-                    self.steps[0][1].choice.model.get_properties()['shortname']
-                )
+        # if self.steps[0][1].choice is not None:
+        if self.steps[0][1].model is None:
+            estimator_name = self.steps[0][1].model.__class__.__name__
+        else:
+            estimator_name = cast(
+                str,
+                self.steps[0][1].model.get_properties()['shortname']
+            )
         return {
             'Preprocessing': 'None',
             'Estimator': estimator_name,

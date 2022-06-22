@@ -12,20 +12,26 @@ from autoPyTorch.pipeline.components.training.metrics.utils import calculate_los
 
 
 # TODO: Think of functionality of the functions in this class adjusted for stacking.
-class StackingEnsemble(AbstractEnsemble):
+class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
     def __init__(
         self,
         ensemble_size: int,
         metric: autoPyTorchMetric,
         task_type: int,
         random_state: np.random.RandomState,
-        ensemble_slot_j: int
+        ensemble_slot_j: int,
+        cur_stacking_layer: int,
+        stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]],
+        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]]
     ) -> None:
         self.ensemble_size = ensemble_size
         self.metric = metric
         self.random_state = random_state
         self.task_type = task_type
         self.ensemble_slot_j = ensemble_slot_j
+        self.cur_stacking_layer = cur_stacking_layer
+        self.stacked_ensemble_identifiers = stacked_ensemble_identifiers
+        self.predictions_stacking_ensemble = predictions_stacking_ensemble
 
     def __getstate__(self) -> Dict[str, Any]:
         # Cannot serialize a metric if
@@ -41,7 +47,8 @@ class StackingEnsemble(AbstractEnsemble):
     def fit(
         self,
         predictions_ensemble: List[np.ndarray],
-        best_model_predictions: np.ndarray,
+        best_model_predictions_ensemble: np.ndarray,
+        best_model_predictions_test: np.ndarray,
         labels: np.ndarray,
         ensemble_identifiers: List[Tuple[int, int, float]],
         best_model_identifier: Tuple[int, int, float],
@@ -64,10 +71,15 @@ class StackingEnsemble(AbstractEnsemble):
         Returns:
             A copy of self
         """
-        predictions_ensemble[self.ensemble_slot_j] = best_model_predictions
+        predictions_ensemble[self.ensemble_slot_j] = best_model_predictions_ensemble
         ensemble_identifiers[self.ensemble_slot_j] = best_model_identifier
         self._fit(predictions_ensemble, labels)
         self.identifiers_ = ensemble_identifiers
+        self.stacked_ensemble_identifiers[self.cur_stacking_layer] = ensemble_identifiers
+        self.predictions_stacking_ensemble[self.cur_stacking_layer][self.ensemble_slot_j] =  {
+            'ensemble': best_model_predictions_ensemble,
+            'test': best_model_predictions_test
+        }
         self._calculate_weights()
         return self
 
@@ -91,9 +103,10 @@ class StackingEnsemble(AbstractEnsemble):
                 A list of model identifiers, each with the form
                 (seed, number of run, budget)
         """
+        nonnull_predictions = [pred for pred in predictions if pred is not None]
 
         weighted_ensemble_prediction = np.zeros(
-            predictions[0].shape,
+            nonnull_predictions[0].shape,
             dtype=np.float64,
         )
 
@@ -102,7 +115,6 @@ class StackingEnsemble(AbstractEnsemble):
             dtype=np.float64,
         )
 
-        nonnull_predictions = [pred for pred in predictions if pred is not None]
         size = len(nonnull_predictions)
         for pred in nonnull_predictions:
             np.add(
@@ -129,8 +141,6 @@ class StackingEnsemble(AbstractEnsemble):
 
         self.train_loss_: float = loss
 
-    # TODO: return 1 for models in layer 0, 2 for next and so on
-    # TODO: 0 for models that are not in stack
     def _calculate_weights(self) -> None:
         """
         Calculates the contribution each of the individual models
@@ -167,12 +177,13 @@ class StackingEnsemble(AbstractEnsemble):
                                 the weights
         """
 
-        average = np.zeros_like(predictions[0], dtype=np.float64)
-        tmp_predictions = np.empty_like(predictions[0], dtype=np.float64)
+        nonnull_predictions = [pred for pred in predictions if pred is not None]
+        average = np.zeros_like(nonnull_predictions[0], dtype=np.float64)
+        tmp_predictions = np.empty_like(nonnull_predictions[0], dtype=np.float64)
 
         # if prediction model.shape[0] == len(non_null_weights),
         # predictions do not include those of zero-weight models.
-        if len([pred for pred in predictions if pred is not None]) == np.count_nonzero(weights):
+        if len(nonnull_predictions) == np.count_nonzero(weights):
             for pred, weight in zip(predictions, weights):
                 if pred is not None:
                     np.multiply(pred, weight, out=tmp_predictions)
@@ -187,8 +198,16 @@ class StackingEnsemble(AbstractEnsemble):
         return average
 
     def __str__(self) -> str:
-        return f"Ensemble Selection:\n\tWeights: {self.weights_}\
+        return f"Ensemble Optimisation Stacking Ensemble:\n\tWeights: {self.weights_}\
             \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.identifiers_) if self.weights_[idx] > 0])}"
+
+    def get_layer_stacking_ensemble_predictions(
+        self,
+        stacking_layer: int,
+        dataset: str = 'ensemble'
+    ) -> List[Optional[np.ndarray]]:
+
+        return [predictions[dataset] if predictions is not None else None for predictions in self.predictions_stacking_ensemble[stacking_layer]]
 
     def get_selected_model_identifiers(self) -> List[Tuple[int, int, float]]:
         """
@@ -200,7 +219,7 @@ class StackingEnsemble(AbstractEnsemble):
             output (List[Tuple[int, int, float]]):
                 The models actually used by ensemble selection
         """
-        return self.identifiers_
+        return self.stacked_ensemble_identifiers
 
     def get_validation_performance(self) -> float:
         """
@@ -255,13 +274,17 @@ class StackingEnsemble(AbstractEnsemble):
                 performance. Notice that ensemble selection solves a minimization
                 problem.
         """
-        output = []
-        for i, weight in enumerate(self.weights_):
-            if weight > 0.0:
-                identifier = self.identifiers_[i]
-                model = models[identifier]
-                output.append((weight, model))
+        outputs = []
+        for i, layer_models in enumerate(models):
+            output = []
+            num_models = len(layer_models)
+            if i == len(models):
+                weights = self.weights_
+            else:
+                weights = [1/num_models] * len(models)
+            for weight, model in zip(weights, layer_models):
+                output.append((weight, layer_models[model]))
+            output.sort(reverse=True, key=lambda t: t[0])
+            outputs.append(output)
 
-        output.sort(reverse=True, key=lambda t: t[0])
-
-        return output
+        return outputs

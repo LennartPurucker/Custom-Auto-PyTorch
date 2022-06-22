@@ -1,3 +1,4 @@
+from math import floor
 from multiprocessing.queues import Queue
 import os
 import time
@@ -8,6 +9,7 @@ from ConfigSpace.configuration_space import Configuration
 import numpy as np
 
 from sklearn.base import BaseEstimator
+from sklearn.ensemble import VotingClassifier
 
 from smac.tae import StatusType
 
@@ -16,17 +18,20 @@ from autoPyTorch.constants import (
     CLASSIFICATION_TASKS,
     MULTICLASSMULTIOUTPUT,
 )
-from autoPyTorch.ensemble.stacking_ensemble_builder import calculate_nomalised_margin_loss
+from autoPyTorch.datasets.resampling_strategy import HoldoutValTypes, RepeatedCrossValTypes
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble_builder import calculate_nomalised_margin_loss
 from autoPyTorch.evaluation.abstract_evaluator import (
     AbstractEvaluator,
     fit_and_suppress_warnings
 )
-from autoPyTorch.ensemble.stacking_ensemble import StackingEnsemble
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
+from autoPyTorch.evaluation.utils import VotingRegressorWrapper, check_pipeline_is_fitted
+from autoPyTorch.pipeline.tabular_classification import TabularClassificationPipeline
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, subsampler
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 
-__all__ = ['StackingEvaluator', 'eval_function']
+__all__ = ['EnsembleOptimisationEvaluator', 'eval_ensemble_optimise_function']
 
 
 def _get_y_array(y: np.ndarray, task_type: int) -> np.ndarray:
@@ -37,7 +42,7 @@ def _get_y_array(y: np.ndarray, task_type: int) -> np.ndarray:
         return y
 
 
-class StackingEvaluator(AbstractEvaluator):
+class EnsembleOptimisationEvaluator(AbstractEvaluator):
     """
     This class builds a pipeline using the provided configuration.
     A pipeline implementing the provided configuration is fitted
@@ -116,7 +121,8 @@ class StackingEvaluator(AbstractEvaluator):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False) -> None:
+                 use_ensemble_opt_loss=False,
+                 cur_stacking_layer: int = 0) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -138,7 +144,17 @@ class StackingEvaluator(AbstractEvaluator):
             use_ensemble_opt_loss=use_ensemble_opt_loss
         )
 
+        self.cur_stacking_layer = cur_stacking_layer
+        self.num_repeats = len(self.splits)
+        self.num_folds = len(self.splits[0])
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
+        self.old_ensemble: Optional[EnsembleOptimisationStackingEnsemble] = None
+        ensemble_dir = self.backend.get_ensemble_dir()
+        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
+            self.old_ensemble = self.backend.load_ensemble(self.seed)
+            assert isinstance(self.old_ensemble, EnsembleOptimisationStackingEnsemble)
+
+        self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],
@@ -192,6 +208,8 @@ class StackingEvaluator(AbstractEvaluator):
             additional_run_info['validation_loss'] = validation_loss
         if test_loss is not None:
             additional_run_info['test_loss'] = test_loss
+        additional_run_info['configuration'] = self.configuration if not isinstance(self.configuration, Configuration) else self.configuration.get_dictionary()
+        additional_run_info['budget'] = self.budget
 
         additional_run_info['opt_loss'] = loss
         rval_dict = {'loss': cost,
@@ -200,6 +218,48 @@ class StackingEvaluator(AbstractEvaluator):
 
         self.queue.put(rval_dict)
         return None
+
+    def get_sorted_preds(self, preds: List[List[np.ndarray]], repeat_id: int) -> np.ndarray:
+        predictions = np.concatenate([pred for pred in preds if pred is not None])
+        indices = np.concatenate([test_indices for _, test_indices in self.splits[repeat_id]])
+        zipped_lists = zip(indices, predictions)
+
+        sorted_zipped_lists = sorted(zipped_lists)
+        predictions = [pred for _, pred in sorted_zipped_lists]
+        return predictions
+
+    def get_sorted_train_preds(self, preds: List[List[np.ndarray]], repeat_id: int):
+        predictions = np.concatenate([pred for pred in preds if pred is not None])
+        indices = np.concatenate([train_indices for train_indices, _ in self.splits[repeat_id]])
+
+        unique_indices = set(indices)
+        sorted_predictions = np.zeros((len(unique_indices), self.num_classes))
+
+        for i in unique_indices:
+            positions = np.where(indices == i)
+            tmp = list()
+            for position in positions:
+                tmp.append(predictions[position])
+            mean_tmp = np.squeeze(np.mean(tmp, axis=1))
+            for j, mean in enumerate(mean_tmp):
+                sorted_predictions[i][j] = mean
+        return sorted_predictions
+
+    def get_sorted_train_targets(self, preds: List[List[np.ndarray]], repeat_id: int):
+        predictions = np.concatenate([pred for pred in preds if pred is not None])
+        indices = np.concatenate([train_indices for train_indices, _ in self.splits[repeat_id]])
+
+        unique_indices = set(indices)
+        sorted_predictions = np.zeros(len(unique_indices))
+
+        for i in unique_indices:
+            positions = np.where(indices == i)
+            tmp = list()
+            for position in positions:
+                tmp.append(predictions[position])
+            mean_tmp = np.squeeze(np.mean(tmp, axis=1))
+            sorted_predictions[i] = mean_tmp
+        return sorted_predictions
 
     def file_output(
         self,
@@ -248,13 +308,30 @@ class StackingEvaluator(AbstractEvaluator):
             if self.output_y_hat_optimization:
                 self.backend.save_targets_ensemble(self.Y_optimization)
 
-        if hasattr(self, 'pipeline') and self.pipeline is not None:
+        if hasattr(self, 'pipelines') and self.pipelines is not None and isinstance(self.resampling_strategy, RepeatedCrossValTypes):
+            if self.pipelines[0] is not None and len(self.pipelines) > 0:
+                if 'pipelines' not in self.disabled_file_outputs:
+                    if self.task_type in CLASSIFICATION_TASKS:
+                        pipelines = VotingClassifier(estimators=None, voting='soft', )
+                    else:
+                        pipelines = VotingRegressorWrapper(estimators=None)
+                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
+                else:
+                    pipelines = None
+            else:
+                pipelines = None
+        else:
+            pipelines = None
+
+        if hasattr(self, 'pipeline') and self.pipeline is not None and isinstance(self.resampling_strategy, HoldoutValTypes):
             if 'pipeline' not in self.disabled_file_outputs:
                 pipeline = self.pipeline
             else:
                 pipeline = None
         else:
-            pipeline = None
+            # need a pipeline to get representation of the model.
+            # see https://github.com/automl/Auto-PyTorch/blob/master/autoPyTorch/api/base_task.py#L467
+            pipeline = self.pipelines[-1][-1]
 
         self.logger.debug("Saving model {}_{}_{} to disk".format(self.seed, self.num_run, self.budget))
         self.backend.save_numrun_to_dir(
@@ -262,7 +339,7 @@ class StackingEvaluator(AbstractEvaluator):
             idx=int(self.num_run),
             budget=float(self.budget),
             model=pipeline,
-            cv_model=None,
+            cv_model=pipelines,
             ensemble_predictions=(
                 Y_optimization_pred if 'y_optimization' not in
                                        self.disabled_file_outputs else None
@@ -284,57 +361,131 @@ class StackingEvaluator(AbstractEvaluator):
         holdout"""
         assert self.splits is not None, "Can't fit pipeline in {} is datamanager.splits is None" \
             .format(self.__class__.__name__)
-        additional_run_info: Optional[Dict] = None
-        split_id = 0
-        self.logger.info("Starting fit {}".format(split_id))
 
-        pipeline = self._get_pipeline()
+        Y_train_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
+        Y_pipeline_optimization_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
+        Y_valid_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
+        Y_test_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
+        # Y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
+        # Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
-        train_split, test_split = self.splits[split_id]
-        self.Y_optimization = self.y_train[test_split]
-        self.Y_actual_train = self.y_train[train_split]
-        (
-            y_train_pred,
-            y_pipeline_opt_pred,
-            y_ensemble_opt_pred,
-            y_valid_pred,
-            y_test_pred,
-            y_ensemble_preds
-        ) = self._fit_and_predict(pipeline, split_id,
-                                  train_indices=train_split,
-                                  test_indices=test_split)
+        self.pipelines = [[self._get_pipeline() for _ in range(self.num_folds)] for _ in range(self.num_repeats)]
 
-        train_loss = self._loss(self.y_train[train_split], y_train_pred)
-        loss = self._loss(self.y_train[test_split], y_ensemble_opt_pred)
+        additional_run_info = {}
 
-        loss['ensemble_opt_loss'] = calculate_nomalised_margin_loss(y_ensemble_preds, self.y_train[test_split], self.task_type)
-        additional_run_info = pipeline.get_additional_run_info() if hasattr(
-            pipeline, 'get_additional_run_info') else {}
+        total_repeats = self.num_repeats
+        for repeat_id, folds in enumerate(self.splits):
+            if repeat_id >= total_repeats:
+                break
+            y_train_pred_folds = [None] * self.num_folds
+            y_pipeline_optimization_pred_folds = [None] * self.num_folds
+            y_valid_pred_folds = [None] * self.num_folds
+            y_test_pred_folds = [None] * self.num_folds
+            # y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
+            # y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
+            for i, (train_split, test_split) in enumerate(folds):
+                starttime = time.time()
+                self.logger.info(f"Starting fit for repeat: {repeat_id} and fold: {i}")
+                pipeline = self.pipelines[repeat_id][i]
+                (
+                    y_train_pred,
+                    y_pipeline_opt_pred,
+                    y_valid_pred,
+                    y_test_pred,
+                ) = self._fit_and_predict(pipeline, i, repeat_id,
+                                        train_indices=train_split,
+                                        test_indices=test_split)
+                y_train_pred_folds[i] = y_train_pred
+                y_pipeline_optimization_pred_folds[i] = y_pipeline_opt_pred
+                if y_valid_pred is not None:
+                    y_valid_pred_folds[i] = y_valid_pred
+                if y_test_pred is not None:
+                    y_test_pred_folds[i] = y_test_pred
+
+                # y_train_targets[i] = self.y_train[train_split]
+                # y_targets[i] = self.y_train[test_split]
+                
+                additional_run_info.update(pipeline.get_additional_run_info() if hasattr(
+                    pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
+                duration_fit_single = time.time() - starttime
+                if repeat_id == 0 and i == 0:
+                    expected_num_folds = floor(self.cutoff/(1.15*duration_fit_single))
+                    self.logger.debug(f"cutoff :{self.cutoff}, expected num folds: {expected_num_folds}, duration_fit_single: {duration_fit_single}")
+                    expected_total_repeats = floor(expected_num_folds/self.num_folds)
+                    if expected_total_repeats < total_repeats:
+                        self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
+                                          f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
+                        total_repeats = expected_total_repeats
+                        if total_repeats <= repeat_id:
+                            raise ValueError("Not expected to complete first repeat, terminating configuration")
+
+            Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
+            Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)
+            if self.X_valid is not None:
+                Y_valid_pred[repeat_id] = np.array([y_valid_pred_folds[i] for i in range(self.num_folds) if y_valid_pred_folds[i] is not None])
+                # Average the predictions of several pipelines
+                if len(Y_valid_pred[repeat_id].shape) == 3:
+                    Y_valid_pred[repeat_id] = np.nanmean(Y_valid_pred[repeat_id], axis=0)
+            else:
+                Y_valid_pred = None
+
+            if self.X_test is not None:
+                Y_test_pred[repeat_id] = np.array([y_test_pred_folds[i] for i in range(self.num_folds) if y_test_pred_folds[i] is not None])
+                # Average the predictions of several pipelines of the folds
+                if len(Y_test_pred[repeat_id].shape) == 3:
+                    Y_test_pred[repeat_id] = np.nanmean(Y_test_pred[repeat_id], axis=0)
+            else:
+                Y_test_pred = None
+
+        # # as targets do change within repeats
+        # Y_targets = self.y_train.copy() # self.get_sorted_preds(y_targets, -1)
+        # Y_train_targets = self.y_train.copy() # self.get_sorted_train_targets(y_train_targets, -1)
+
+        # Average prediction values accross repeats
+        Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
+        Y_pipeline_optimization_pred = np.nanmean(Y_pipeline_optimization_pred[:total_repeats], axis=0)
+        Y_valid_pred = np.nanmean(Y_valid_pred[:total_repeats], axis=0) if Y_valid_pred is not None else None
+        Y_test_pred = np.nanmean(Y_test_pred[:total_repeats], axis=0) if Y_test_pred is not None else None
+
+        if self.old_ensemble is not None:
+            Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
+            Y_ensemble_preds = self.old_ensemble.get_ensemble_predictions_with_current_pipeline(Y_pipeline_optimization_pred)
+        else:
+            Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
+            Y_ensemble_preds = [Y_pipeline_optimization_pred]
+
+        self.Y_optimization = self.y_train # np.array(Y_targets)
+        self.Y_actual_train = self.y_train # np.array(Y_train_targets)
+
+        self.pipeline = self._get_pipeline()
+
+        train_loss = self._loss(self.Y_actual_train, Y_train_pred)
+        opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
+
+        opt_loss ['ensemble_opt_loss'] = calculate_nomalised_margin_loss(Y_ensemble_preds, self.Y_optimization)
         status = StatusType.SUCCESS
-
-        self.logger.debug("In train evaluator.fit_predict_and_loss, num_run: {} loss:{},"
-                            " status: {},\nadditional run info:\n{}".format(self.num_run,
-                                                                            loss,
-                                                                            dict_repr(additional_run_info),
-                                                                            status))
+        self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
+            self.num_run,
+            opt_loss
+        ))
         self.finish_up(
-            loss=loss,
+            loss=opt_loss,
             train_loss=train_loss,
-            ensemble_opt_pred=y_ensemble_opt_pred,
-            valid_pred=y_valid_pred,
-            test_pred=y_test_pred,
+            ensemble_opt_pred=Y_ensemble_optimization_pred,
+            valid_pred=Y_valid_pred,
+            test_pred=Y_test_pred,
             additional_run_info=additional_run_info,
             file_output=True,
             status=status,
-            pipeline_opt_pred=y_pipeline_opt_pred
+            pipeline_opt_pred=Y_pipeline_optimization_pred
         )
-
 
     def _fit_and_predict(
         self,
         pipeline: BaseEstimator,
         fold: int,
+        repeat_id: int,
         train_indices: Union[np.ndarray, List],
         test_indices: Union[np.ndarray, List],
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
@@ -344,12 +495,13 @@ class StackingEvaluator(AbstractEvaluator):
         X = {'train_indices': train_indices,
              'val_indices': test_indices,
              'split_id': fold,
+             'repeat_id': repeat_id,
              'num_run': self.num_run,
              **self.fit_dictionary}  # fit dictionary
         y = None
         fit_and_suppress_warnings(self.logger, pipeline, X, y)
         self.logger.info("Model fitted, now predicting")
-        Y_train_pred, Y_pipeline_opt_pred, Y_ensemble_opt_pred, Y_valid_pred, Y_test_pred, Y_ensemble_preds = self._predict(
+        Y_train_pred, Y_pipeline_opt_pred, Y_valid_pred, Y_test_pred = self._predict(
             pipeline,
             train_indices=train_indices,
             test_indices=test_indices,
@@ -357,7 +509,7 @@ class StackingEvaluator(AbstractEvaluator):
 
         self.pipeline = pipeline
 
-        return Y_train_pred, Y_pipeline_opt_pred, Y_ensemble_opt_pred, Y_valid_pred, Y_test_pred, Y_ensemble_preds
+        return Y_train_pred, Y_pipeline_opt_pred, Y_valid_pred, Y_test_pred
 
     def _predict(
         self,
@@ -370,16 +522,6 @@ class StackingEvaluator(AbstractEvaluator):
 
         pipeline_opt_pred = self.predict_function(subsampler(self.X_train, test_indices), pipeline,
                                          self.y_train[train_indices])
-
-        ensemble_dir = self.backend.get_ensemble_dir()
-        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
-            old_ensemble = self.backend.load_ensemble(self.seed)
-            assert isinstance(old_ensemble, StackingEnsemble)
-            ensemble_opt_pred = old_ensemble.predict_with_current_pipeline(pipeline_opt_pred)
-            ensemble_preds = old_ensemble.get_ensemble_predictions_with_current_pipeline(pipeline_opt_pred)
-        else:
-            ensemble_opt_pred = pipeline_opt_pred.copy()
-            ensemble_preds = [pipeline_opt_pred]
 
         # self.logger.debug(f"for model {self.seed}_{self.num_run}_{self.budget} ensemble_predictions are {ensemble_opt_pred}")
         if self.X_valid is not None:
@@ -394,11 +536,11 @@ class StackingEvaluator(AbstractEvaluator):
         else:
             test_pred = None
 
-        return train_pred, pipeline_opt_pred, ensemble_opt_pred, valid_pred, test_pred, ensemble_preds
+        return train_pred, pipeline_opt_pred, valid_pred, test_pred
 
 
 # create closure for evaluating an algorithm
-def eval_function(
+def eval_ensemble_optimise_function(
     backend: Backend,
     queue: Queue,
     metric: autoPyTorchMetric,
@@ -417,6 +559,7 @@ def eval_function(
     all_supported_metrics: bool = True,
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
+    cur_stacking_layer: int = 0,
     instance: str = None,
 ) -> None:
     """
@@ -481,7 +624,7 @@ def eval_function(
             This instance is a compatibility argument for SMAC, that is capable of working
             with multiple datasets at the same time.
     """
-    evaluator = StackingEvaluator(
+    evaluator = EnsembleOptimisationEvaluator(
         backend=backend,
         queue=queue,
         metric=metric,
@@ -499,6 +642,7 @@ def eval_function(
         all_supported_metrics=all_supported_metrics,
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
-        use_ensemble_opt_loss=use_ensemble_opt_loss
+        use_ensemble_opt_loss=use_ensemble_opt_loss,
+        cur_stacking_layer=cur_stacking_layer
     )
     evaluator.fit_predict_and_loss()

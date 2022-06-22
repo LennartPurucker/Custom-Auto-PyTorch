@@ -132,7 +132,8 @@ class TrainEvaluator(AbstractEvaluator):
                  keep_models: Optional[bool] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False) -> None:
+                 use_ensemble_opt_loss=False,
+                 cur_stacking_layer: int = 0) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -160,7 +161,7 @@ class TrainEvaluator(AbstractEvaluator):
                 f'(CrossValTypes, HoldoutValTypes), but got {self.resampling_strategy}'
             )
 
-        self.num_folds: int = len(self.splits)
+        self.num_folds: int = len(self.splits[0])
         self.Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
         self.Y_train_targets: np.ndarray = np.ones(self.y_train.shape) * np.NaN
         self.pipelines: List[Optional[BaseEstimator]] = [None] * self.num_folds
@@ -177,14 +178,15 @@ class TrainEvaluator(AbstractEvaluator):
         additional_run_info: Optional[Dict] = None
         if self.num_folds == 1:
             split_id = 0
+            repeat_id = 0
             self.logger.info("Starting fit {}".format(split_id))
 
             pipeline = self._get_pipeline()
 
-            train_split, test_split = self.splits[split_id]
+            train_split, test_split = self.splits[repeat_id][split_id]
             self.Y_optimization = self.y_train[test_split]
             self.Y_actual_train = self.y_train[train_split]
-            y_train_pred, y_opt_pred, y_valid_pred, y_test_pred = self._fit_and_predict(pipeline, split_id,
+            y_train_pred, y_opt_pred, y_valid_pred, y_test_pred = self._fit_and_predict(pipeline, split_id, repeat_id,
                                                                                         train_indices=train_split,
                                                                                         test_indices=test_split,
                                                                                         add_pipeline_to_self=True)
@@ -231,11 +233,12 @@ class TrainEvaluator(AbstractEvaluator):
             opt_fold_weights = [np.NaN] * self.num_folds
 
             additional_run_info = {}
+            repeat_id = 0
 
-            for i, (train_split, test_split) in enumerate(self.splits):
+            for i, (train_split, test_split) in enumerate(self.splits[repeat_id]):
 
                 pipeline = self.pipelines[i]
-                train_pred, opt_pred, valid_pred, test_pred = self._fit_and_predict(pipeline, i,
+                train_pred, opt_pred, valid_pred, test_pred = self._fit_and_predict(pipeline, i, repeat_id,
                                                                                     train_indices=train_split,
                                                                                     test_indices=test_split,
                                                                                     add_pipeline_to_self=False)
@@ -350,7 +353,9 @@ class TrainEvaluator(AbstractEvaluator):
                 status=status,
             )
 
-    def _fit_and_predict(self, pipeline: BaseEstimator, fold: int, train_indices: Union[np.ndarray, List],
+    def _fit_and_predict(self, pipeline: BaseEstimator, fold: int,
+                         repeat_id: int,
+                         train_indices: Union[np.ndarray, List],
                          test_indices: Union[np.ndarray, List],
                          add_pipeline_to_self: bool
                          ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
@@ -362,6 +367,7 @@ class TrainEvaluator(AbstractEvaluator):
         X = {'train_indices': train_indices,
              'val_indices': test_indices,
              'split_id': fold,
+             'repeat_id': repeat_id,
              'num_run': self.num_run,
              **self.fit_dictionary}  # fit dictionary
         y = None
@@ -431,6 +437,7 @@ def eval_train_function(
     all_supported_metrics: bool = True,
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
+    cur_stacking_layer: int = 0,
     instance: str = None,
 ) -> None:
     """
@@ -513,6 +520,7 @@ def eval_train_function(
         all_supported_metrics=all_supported_metrics,
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
-        use_ensemble_opt_loss=use_ensemble_opt_loss
+        use_ensemble_opt_loss=use_ensemble_opt_loss,
+        cur_stacking_layer=cur_stacking_layer
     )
     evaluator.fit_predict_and_loss()

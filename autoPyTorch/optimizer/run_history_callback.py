@@ -244,6 +244,7 @@ class RunHistoryUpdater:
             try:
                 with (open(self.ensemble_loss_file, "rb")) as memory:
                     read_losses = pickle.load(memory)
+                    self.logger.debug(f"read losses at iteration: {iteration}: {read_losses.keys()}")
             except Exception as e:
                 self.logger.debug(f"Could not read losses at iteration: {iteration} with exception {e}")
                 return None

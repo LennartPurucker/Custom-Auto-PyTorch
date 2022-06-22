@@ -16,7 +16,7 @@ from autoPyTorch.constants import (
     TABULAR_REGRESSION,
     TASK_TYPES_TO_STRING,
 )
-from autoPyTorch.data.base_validator import BaseInputValidator
+from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.datasets.base_dataset import BaseDataset, BaseDatasetPropertiesType
 from autoPyTorch.datasets.resampling_strategy import (
     CrossValTypes,
@@ -65,7 +65,7 @@ class TabularDataset(BaseDataset):
                  train_transforms: Optional[torchvision.transforms.Compose] = None,
                  val_transforms: Optional[torchvision.transforms.Compose] = None,
                  dataset_name: Optional[str] = None,
-                 validator: Optional[BaseInputValidator] = None,
+                 validator: Optional[TabularInputValidator] = None,
                  ):
 
         # Take information from the validator, which guarantees clean data for the
@@ -81,7 +81,8 @@ class TabularDataset(BaseDataset):
         self.categorical_columns = validator.feature_validator.categorical_columns
         self.numerical_columns = validator.feature_validator.numerical_columns
         self.num_features = validator.feature_validator.num_features
-        self.categories = validator.feature_validator.categories
+        self.num_categories_per_col = validator.feature_validator.num_categories_per_col
+        self.feat_type = validator.feature_validator.feat_type
 
         super().__init__(train_tensors=(X, Y), test_tensors=(X_test, Y_test), shuffle=shuffle,
                          resampling_strategy=resampling_strategy,

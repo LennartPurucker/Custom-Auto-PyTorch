@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import warnings
 from typing import Any, Dict, List, Union
 
@@ -48,12 +49,21 @@ def read_return_initial_configurations(
                           f"configuration as it does not match the current config space. ")
     return initial_configurations
 
+
+def delete_other_runs(ensemble_runs, runs_directory):
+    all_runs = os.listdir(runs_directory)
+    for run in all_runs:
+        if run not in ensemble_runs:
+            shutil.rmtree(os.path.join(runs_directory, run))
+
+
 class AdjustRunHistoryCallback:
     """
     Allows manipulating run history for custom needs
     """
     def __call__(self, smbo: 'SMBO') -> RunHistory:
         pass
+
 
 class autoPyTorchSMBO(SMBO):
     def __init__(self,
@@ -135,7 +145,6 @@ class autoPyTorchSMBO(SMBO):
                     "configuration does not crashes. (To deactivate this exception, use the SMAC scenario option "
                     "'abort_on_first_run_crash'). Additional run info: %s" % result.additional_info
                 )
-        self.logger.debug(f"\nbefore ensemble, result: {result}, \nrunhistory: {self.runhistory.data}")
         for callback in self._callbacks['_incorporate_run_results']:
             response = callback(smbo=self, run_info=run_info, result=result, time_left=time_left)
             # If a callback returns False, the optimization loop should be interrupted

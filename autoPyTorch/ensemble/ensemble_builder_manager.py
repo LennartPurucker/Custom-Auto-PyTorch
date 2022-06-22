@@ -19,10 +19,10 @@ from smac.runhistory.runhistory import RunInfo, RunValue
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
-from autoPyTorch.ensemble.utils import get_ensemble_builder_class
+from autoPyTorch.ensemble.utils import EnsembleSelectionTypes, get_ensemble_builder_class
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.logging_ import get_named_client_logger
-
+from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
 
 class EnsembleBuilderManager(IncorporateRunResultCallback):
     def __init__(
@@ -37,7 +37,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         opt_metric: str,
         ensemble_size: int,
         ensemble_nbest: int,
-        ensemble_method: int,
+        ensemble_method: EnsembleSelectionTypes,
         max_models_on_disc: Union[float, int],
         seed: int,
         precision: int,
@@ -47,7 +47,10 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         random_state: int,
         logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         pynisher_context: str = 'fork',
-        use_ensemble_loss=False
+        initial_num_run: int = 0,
+        use_ensemble_loss=False,
+        num_stacking_layers: Optional[int] = None,
+        iteration=0
     ):
         """ SMAC callback to handle ensemble building
         Args:
@@ -114,6 +117,11 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
         self.ensemble_method = ensemble_method
+        self.cur_stacking_layer = 0 if self.ensemble_method.is_stacking_ensemble() else None
+        if self.ensemble_method.is_stacking_ensemble() and num_stacking_layers is None:
+            raise ValueError("Cant be none for stacked ensembles")
+
+        self.num_stacking_layers = num_stacking_layers
         self.max_models_on_disc: Union[float, int] = max_models_on_disc
         self.seed = seed
         self.precision = precision
@@ -124,6 +132,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.logger_port = logger_port
         self.pynisher_context = pynisher_context
 
+        self.is_new_layer = False
         # Store something similar to SMAC's runhistory
         self.history: List[Dict[str, float]] = []
 
@@ -131,12 +140,13 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.futures: List[dask.Future] = []
 
         # The last criteria is the number of iterations
-        self.iteration = 0
+        self.iteration = iteration
 
         # Keep track of when we started to know when we need to finish!
         self.start_time = time.time()
 
         self.use_ensemble_loss = use_ensemble_loss
+        self.initial_num_run = initial_num_run
 
     def __call__(
         self,
@@ -229,7 +239,11 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     pynisher_context=self.pynisher_context,
                     logger_port=self.logger_port,
                     unit_test=unit_test,
-                    use_ensemble_opt_loss=self.use_ensemble_loss
+                    use_ensemble_opt_loss=self.use_ensemble_loss,
+                    cur_stacking_layer=self.cur_stacking_layer,
+                    is_new_layer=self.is_new_layer,
+                    num_stacking_layers=self.num_stacking_layers,
+                    initial_num_run=self.initial_num_run
                 ))
 
                 logger.info(
@@ -243,11 +257,22 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     ),
                 )
                 self.iteration += 1
+                # reset to False so only signal from smbo sets is_new_layer = True
+                self.is_new_layer = False
             except Exception as e:
                 exception_traceback = traceback.format_exc()
                 error_message = repr(e)
                 logger.critical(exception_traceback)
                 logger.critical(error_message)
+
+    def update_for_new_stacking_layer(self, cur_stacking_layer: int, initial_num_run: int) -> None:
+        if cur_stacking_layer >= self.num_stacking_layers:
+            raise ValueError(f"Unexpected value '{cur_stacking_layer}' for cur_stacking_layer. "
+                             f"Max stacking layers are : {self.num_stacking_layers}.")
+        self.cur_stacking_layer = cur_stacking_layer
+        self.iteration = 0
+        self.initial_num_run = initial_num_run
+        self.is_new_layer = True
 
 
 def fit_and_return_ensemble(
@@ -259,7 +284,7 @@ def fit_and_return_ensemble(
     opt_metric: str,
     ensemble_size: int,
     ensemble_nbest: int,
-    ensemble_method: int,
+    ensemble_method: EnsembleSelectionTypes,
     max_models_on_disc: Union[float, int],
     seed: int,
     precision: int,
@@ -272,7 +297,11 @@ def fit_and_return_ensemble(
     pynisher_context: str,
     logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
     unit_test: bool = False,
-    use_ensemble_opt_loss=False
+    use_ensemble_opt_loss=False,
+    cur_stacking_layer: Optional[int] = None,
+    is_new_layer: bool = False,
+    num_stacking_layers: Optional[int] = None,
+    initial_num_run: int = 0,
 ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -340,6 +369,18 @@ def fit_and_return_ensemble(
             [[pandas_timestamp, train_performance, val_performance, test_performance], ...]
     """
     ensemble_builder = get_ensemble_builder_class(ensemble_method)
+    ensemble_builder_run_kwargs = {
+        'end_at': end_at,
+        'iteration': iteration,
+        'return_predictions': return_predictions,
+        'pynisher_context': pynisher_context,
+    }
+    if ensemble_method.is_stacking_ensemble() and ensemble_method != EnsembleSelectionTypes.stacking_repeat_models:
+        ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
+
+    if ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+        ensemble_builder_run_kwargs.update({'is_new_layer': is_new_layer})
+
     result = ensemble_builder(
         backend=backend,
         dataset_name=dataset_name,
@@ -357,11 +398,10 @@ def fit_and_return_ensemble(
         random_state=random_state,
         logger_port=logger_port,
         unit_test=unit_test,
-        use_ensemble_opt_loss=use_ensemble_opt_loss
+        use_ensemble_opt_loss=use_ensemble_opt_loss,
+        num_stacking_layers=num_stacking_layers,
+        initial_num_run=initial_num_run
     ).run(
-        end_at=end_at,
-        iteration=iteration,
-        return_predictions=return_predictions,
-        pynisher_context=pynisher_context,
+        **ensemble_builder_run_kwargs
     )
     return result

@@ -35,7 +35,7 @@ from autoPyTorch.datasets.utils import get_appended_dataset
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
-from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.optimizer.utils import delete_other_runs, read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
@@ -128,7 +128,7 @@ class AutoMLSMBO(object):
                  pynisher_context: str = 'spawn',
                  min_budget: int = 5,
                  max_budget: int = 50,
-                 ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
+                 base_ensemble_method: BaseLayerEnsembleSelectionTypes = BaseLayerEnsembleSelectionTypes.ensemble_selection,
                  other_callbacks: Optional[List] = None,
                  smbo_class: Optional[SMBO] = None,
                  use_ensemble_opt_loss: bool = False
@@ -246,10 +246,10 @@ class AutoMLSMBO(object):
         self.pynisher_context = pynisher_context
         self.min_budget = min_budget
         self.max_budget = max_budget
-        self.ensemble_method = ensemble_method
+        self.base_ensemble_method = base_ensemble_method
 
         self.ensemble_callback = ensemble_callback
-        if self.ensemble_method.is_stacking_ensemble()  and num_stacking_layers is None:
+        if self.base_ensemble_method.is_stacking_ensemble()  and num_stacking_layers is None:
             raise ValueError("'num_stacking_layers' can't be none for stacked ensembles")
 
         self.num_stacking_layers = num_stacking_layers
@@ -352,7 +352,7 @@ class AutoMLSMBO(object):
             pipeline_config=self.pipeline_config,
             search_space_updates=self.search_space_updates,
             pynisher_context=self.pynisher_context,
-            ensemble_method=self.ensemble_method,
+            ensemble_method=self.base_ensemble_method,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
             cur_stacking_layer=cur_stacking_layer
         )
@@ -425,7 +425,7 @@ class AutoMLSMBO(object):
                                    initial_configurations=self.initial_configurations,
                                    smbo_class=self.smbo_class)
 
-        if self.ensemble_method.is_stacking_ensemble():
+        if self.base_ensemble_method.is_stacking_ensemble():
             self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer, initial_num_run)
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)

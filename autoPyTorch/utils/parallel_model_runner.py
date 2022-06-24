@@ -28,7 +28,7 @@ def run_models_on_dataset(
     memory_limit: int,
     disable_file_output,
     all_supported_metrics: bool,
-    ensemble_method,
+    base_ensemble_method,
     include,
     exclude,
     search_space_updates,
@@ -81,7 +81,7 @@ def run_models_on_dataset(
                 memory_limit=memory_limit,
                 disable_file_output=disable_file_output,
                 all_supported_metrics=all_supported_metrics,
-                ensemble_method=ensemble_method,
+                base_ensemble_method=base_ensemble_method,
                 include=include,
                 exclude=exclude,
                 search_space_updates=search_space_updates

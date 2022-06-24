@@ -1,4 +1,3 @@
-from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -6,8 +5,7 @@ import numpy as np
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
-from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
-from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
+
 
 
 class RepeatModelsStackingEnsemble(AbstractEnsemble):

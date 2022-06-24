@@ -59,7 +59,7 @@ from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
 from autoPyTorch.ensemble.autogluon_stacking_ensemble import AutogluonStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
-from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
@@ -184,7 +184,7 @@ class BaseTask(ABC):
         logging_config: Optional[Dict] = None,
         ensemble_size: int = 5,
         ensemble_nbest: int = 50,
-        ensemble_method: EnsembleSelectionTypes = EnsembleSelectionTypes.ensemble_selection,
+        base_ensemble_method: BaseLayerEnsembleSelectionTypes = BaseLayerEnsembleSelectionTypes.ensemble_selection,
         use_ensemble_opt_loss: bool = False,
         num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
@@ -210,7 +210,7 @@ class BaseTask(ABC):
         self.n_threads = n_threads
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
-        self.ensemble_method = ensemble_method
+        self.base_ensemble_method = base_ensemble_method
         self.num_stacking_layers = num_stacking_layers
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
 
@@ -687,7 +687,7 @@ class BaseTask(ABC):
             #     self.cv_models_ = self._backend.load_cv_models_by_identifiers(nonnull_identifiers)
 
             # self._logger.debug(f"stacked ensemble identifiers are :{identifiers}")
-            if self.ensemble_method.is_stacking_ensemble():
+            if self.base_ensemble_method.is_stacking_ensemble():
                 models = []
                 cv_models = []
                 for identifier in identifiers:
@@ -813,7 +813,7 @@ class BaseTask(ABC):
             memory_limit=memory_limit,
             disable_file_output=self._disable_file_output,
             all_supported_metrics=self._all_supported_metrics,
-            ensemble_method=self.ensemble_method,
+            base_ensemble_method=self.base_ensemble_method,
             pipeline_config=self.pipeline_options
         )
 
@@ -879,7 +879,7 @@ class BaseTask(ABC):
             memory_limit=self._memory_limit,
             disable_file_output=self._disable_file_output,
             all_supported_metrics=self._all_supported_metrics,
-            ensemble_method=self.ensemble_method,
+            base_ensemble_method=self.base_ensemble_method,
             include=self.include_components,
             exclude=self.exclude_components,
             search_space_updates=self.search_space_updates,
@@ -929,7 +929,7 @@ class BaseTask(ABC):
 
     def _fit_models_on_dataset(
         self,
-        model_configs,
+        model_configs: List[Tuple[Union[Configuration, str], Union[int, float]]],
         func_eval_time_limit_secs,
         stacking_layer,
         time_left,
@@ -952,7 +952,7 @@ class BaseTask(ABC):
             memory_limit=self._memory_limit,
             disable_file_output=self._disable_file_output,
             all_supported_metrics=self._all_supported_metrics,
-            ensemble_method=self.ensemble_method,
+            base_ensemble_method=self.base_ensemble_method,
             include=self.include_components,
             exclude=self.exclude_components,
             search_space_updates=search_space_updates,
@@ -1151,7 +1151,7 @@ class BaseTask(ABC):
                                                         ensemble_nbest=self.ensemble_nbest,
                                                         precision=precision,
                                                         optimize_metric=self.opt_metric,
-                                                        ensemble_method=self.ensemble_method,
+                                                        base_ensemble_method=self.base_ensemble_method, # TODO: enter base ensemble method as currently it defaults to ensemble selection for the base layer. 
                                                         num_stacking_layers=1
                                                         )
 
@@ -1294,7 +1294,7 @@ class BaseTask(ABC):
         smac_initial_num_run = self._backend.get_next_num_run(peek=True)
         proc_runhistory_updater = None
         if (
-            self.ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
+            self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
             and smbo_class is not None
         ):
             proc_runhistory_updater = self._init_result_history_updater(initial_num_run=smac_initial_num_run)
@@ -1331,7 +1331,7 @@ class BaseTask(ABC):
                 min_budget=min_budget,
                 max_budget=max_budget,
                 ensemble_callback=proc_ensemble,
-                ensemble_method=self.ensemble_method,
+                base_ensemble_method=self.base_ensemble_method,
                 logger_port=self._logger_port,
                 resampling_strategy=self.resampling_strategy,
                 resampling_strategy_args=self.resampling_strategy_args,
@@ -1564,7 +1564,7 @@ class BaseTask(ABC):
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
         # ============> Run dummy predictions
         # We only want to run dummy predictions in case we want to build an ensemble
-        if self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_optimisation_ensemble:
+        if self.ensemble_size > 0 and self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
             dummy_task_name = 'runDummy'
             self._stopwatch.start_task(dummy_task_name)
             self._do_dummy_prediction()
@@ -1573,7 +1573,7 @@ class BaseTask(ABC):
         # ============> Run traditional ml
         # We only want to run traditional predictions in case we want to build an ensemble
         # We want time for at least 1 Neural network in SMAC
-        if enable_traditional_pipeline and self.ensemble_size > 0 and self.ensemble_method != EnsembleSelectionTypes.stacking_optimisation_ensemble:
+        if enable_traditional_pipeline and self.ensemble_size > 0 and self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
             traditional_runtime_limit = int(self._time_for_task - func_eval_time_limit_secs)
             self.run_traditional_ml(current_task_name=self.dataset_name,
                                     runtime_limit=traditional_runtime_limit,
@@ -1581,7 +1581,7 @@ class BaseTask(ABC):
 
         # ============> Starting ensemble
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
-        if self.ensemble_method == EnsembleSelectionTypes.stacking_repeat_models:
+        if self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_repeat_models:
             elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
             time_left_for_stacking = max(0, total_walltime_limit - elapsed_time)
             self._run_search_stacking(
@@ -1603,7 +1603,7 @@ class BaseTask(ABC):
             elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
             time_left_for_ensembles = max(0, total_walltime_limit - elapsed_time)
             posthoc_ensemble_fit_stacking_ensemble_optimization = posthoc_ensemble_fit_stacking_ensemble_optimization \
-                and self.ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
+                and self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
             TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = 0.95
             time_left_for_ensembles = int(time_left_for_ensembles * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT) if posthoc_ensemble_fit_stacking_ensemble_optimization else time_left_for_ensembles
             proc_ensemble = None
@@ -1623,7 +1623,7 @@ class BaseTask(ABC):
                                                             ensemble_nbest=self.ensemble_nbest,
                                                             precision=precision,
                                                             optimize_metric=self.opt_metric,
-                                                            ensemble_method=self.ensemble_method,
+                                                            base_ensemble_method=self.base_ensemble_method,
                                                             num_stacking_layers=self.num_stacking_layers
                                                             )
 
@@ -2163,7 +2163,7 @@ class BaseTask(ABC):
             precision: Optional[int] = None,
             ensemble_nbest: int = 50,
             ensemble_size: int = 50,
-            ensemble_method: int = EnsembleSelectionTypes.ensemble_selection,
+            ensemble_method: int = BaseLayerEnsembleSelectionTypes.ensemble_selection,
             num_stacking_layers: int = 1,
             initial_num_run: int = 0,
             load_models: bool = True,
@@ -2278,7 +2278,7 @@ class BaseTask(ABC):
             precision=precision,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
-            ensemble_method=ensemble_method,
+            base_ensemble_method=ensemble_method,
             num_stacking_layers=num_stacking_layers,
             initial_num_run=initial_num_run,
             iteration=iteration
@@ -2302,7 +2302,7 @@ class BaseTask(ABC):
             self,
             time_left_for_ensembles: float,
             optimize_metric: str,
-            ensemble_method: int,
+            base_ensemble_method: int,
             ensemble_nbest: int,
             ensemble_size: int,
             num_stacking_layers: Optional[int] = None,
@@ -2359,7 +2359,7 @@ class BaseTask(ABC):
             opt_metric=optimize_metric,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,
-            ensemble_method=ensemble_method,
+            base_ensemble_method=base_ensemble_method,
             max_models_on_disc=self.max_models_on_disc,
             seed=self.seed,
             max_iterations=None,
@@ -2468,7 +2468,7 @@ class BaseTask(ABC):
             models = self.cv_models_
 
         X_test_copy = X_test.copy()
-        if self.ensemble_method.is_stacking_ensemble():
+        if self.base_ensemble_method.is_stacking_ensemble():
             ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
             self._logger.debug(f"ensemble identifiers: {ensemble_identifiers}")
             for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
@@ -2481,7 +2481,7 @@ class BaseTask(ABC):
                     )
                     for identifier in layer_identifiers if identifier is not None
                 )
-                if self.ensemble_method in (EnsembleSelectionTypes.stacking_ensemble_selection_per_layer, EnsembleSelectionTypes.stacking_repeat_models, EnsembleSelectionTypes.stacking_autogluon):
+                if self.base_ensemble_method in (BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer, BaseLayerEnsembleSelectionTypes.stacking_repeat_models, BaseLayerEnsembleSelectionTypes.stacking_autogluon):
                     concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
                         stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
                 else:
@@ -2602,7 +2602,7 @@ class BaseTask(ABC):
             str:
                 Markdown table of models.
         """
-        if self.ensemble_method.is_stacking_ensemble():
+        if self.base_ensemble_method.is_stacking_ensemble():
             df = []
             for layer, model_weight in enumerate(self.get_models_with_weights()):
                 for weight, model in model_weight:

@@ -22,7 +22,7 @@ from smac.stats.stats import Stats
 from smac.tae import StatusType, TAEAbortException
 from smac.tae.execute_func import AbstractTAFunc
 from autoPyTorch.ensemble import ensemble_selection
-from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.resampling_strategy import (
@@ -133,7 +133,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         logger_port: int = None,
         all_supported_metrics: bool = True,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-        ensemble_method: EnsembleSelectionTypes = None,
+        base_ensemble_method: BaseLayerEnsembleSelectionTypes = None,
         use_ensemble_opt_loss=False,
         cur_stacking_layer: int = 0
     ):
@@ -156,21 +156,21 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         if isinstance(self.resampling_strategy, (HoldoutValTypes, CrossValTypes)):
             eval_function = eval_train_function
             if (
-                ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble
-                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
-                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
-                or ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
+                base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                or base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_repeat_models
+                or base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_autogluon
+                or base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer
             ):
                 raise ValueError(f"fitting ensemble stacking requires resampling strategy to be of {RepeatedCrossValTypes} but got {self.resampling_strategy}")
         elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
-            if ensemble_method == EnsembleSelectionTypes.stacking_optimisation_ensemble:
+            if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
                 eval_function = eval_ensemble_optimise_function
             elif (
-                ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer
-                or ensemble_method == EnsembleSelectionTypes.stacking_repeat_models
-                or ensemble_method == EnsembleSelectionTypes.stacking_autogluon
-                or ensemble_method is None
-                or ensemble_method == EnsembleSelectionTypes.ensemble_selection
+                base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer
+                or base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_repeat_models
+                or base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_autogluon
+                or base_ensemble_method is None
+                or base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_selection
             ):
                 eval_function = eval_repeated_cv_function
             self.output_y_hat_optimization = output_y_hat_optimization

@@ -25,7 +25,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
 
 ############################################################################
 # Data Loading
@@ -65,7 +65,7 @@ api = TabularClassificationTask(
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,
-    ensemble_method=EnsembleSelectionTypes.stacking_repeat_models,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.stacking_repeat_models,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
         'num_splits': 2,

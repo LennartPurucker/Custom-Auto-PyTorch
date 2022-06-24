@@ -23,7 +23,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import EnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
 from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 ############################################################################
@@ -65,7 +65,7 @@ if __name__ == '__main__':
         delete_tmp_folder_after_terminate=False,
         delete_output_folder_after_terminate=False,
         seed=4,
-        ensemble_method=EnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
+        base_ensemble_method=BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
         resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
         ensemble_size=5,
         num_stacking_layers=2,

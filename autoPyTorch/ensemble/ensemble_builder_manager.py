@@ -19,7 +19,7 @@ from smac.runhistory.runhistory import RunInfo, RunValue
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
-from autoPyTorch.ensemble.utils import EnsembleSelectionTypes, get_ensemble_builder_class
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, get_ensemble_builder_class
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.logging_ import get_named_client_logger
 from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
@@ -37,7 +37,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         opt_metric: str,
         ensemble_size: int,
         ensemble_nbest: int,
-        ensemble_method: EnsembleSelectionTypes,
+        base_ensemble_method: BaseLayerEnsembleSelectionTypes,
         max_models_on_disc: Union[float, int],
         seed: int,
         precision: int,
@@ -116,9 +116,9 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.opt_metric = opt_metric
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
-        self.ensemble_method = ensemble_method
-        self.cur_stacking_layer = 0 if self.ensemble_method.is_stacking_ensemble() else None
-        if self.ensemble_method.is_stacking_ensemble() and num_stacking_layers is None:
+        self.base_ensemble_method = base_ensemble_method
+        self.cur_stacking_layer = 0 if self.base_ensemble_method.is_stacking_ensemble() else None
+        if self.base_ensemble_method.is_stacking_ensemble() and num_stacking_layers is None:
             raise ValueError("Cant be none for stacked ensembles")
 
         self.num_stacking_layers = num_stacking_layers
@@ -225,7 +225,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     opt_metric=self.opt_metric,
                     ensemble_size=self.ensemble_size,
                     ensemble_nbest=self.ensemble_nbest,
-                    ensemble_method=self.ensemble_method,
+                    ensemble_method=self.base_ensemble_method,
                     max_models_on_disc=self.max_models_on_disc,
                     seed=self.seed,
                     precision=self.precision,
@@ -284,7 +284,7 @@ def fit_and_return_ensemble(
     opt_metric: str,
     ensemble_size: int,
     ensemble_nbest: int,
-    ensemble_method: EnsembleSelectionTypes,
+    base_ensemble_method: BaseLayerEnsembleSelectionTypes,
     max_models_on_disc: Union[float, int],
     seed: int,
     precision: int,
@@ -368,17 +368,17 @@ def fit_and_return_ensemble(
             A list with the performance history of this ensemble, of the form
             [[pandas_timestamp, train_performance, val_performance, test_performance], ...]
     """
-    ensemble_builder = get_ensemble_builder_class(ensemble_method)
+    ensemble_builder = get_ensemble_builder_class(base_ensemble_method)
     ensemble_builder_run_kwargs = {
         'end_at': end_at,
         'iteration': iteration,
         'return_predictions': return_predictions,
         'pynisher_context': pynisher_context,
     }
-    if ensemble_method.is_stacking_ensemble() and ensemble_method != EnsembleSelectionTypes.stacking_repeat_models:
+    if base_ensemble_method.is_stacking_ensemble() and base_ensemble_method != BaseLayerEnsembleSelectionTypes.stacking_repeat_models:
         ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
 
-    if ensemble_method == EnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+    if base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
         ensemble_builder_run_kwargs.update({'is_new_layer': is_new_layer})
 
     result = ensemble_builder(

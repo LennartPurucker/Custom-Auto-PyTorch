@@ -369,12 +369,12 @@ def test_column_transformer_created(input_data_featuretest):
     cat_columns, feature_types = validator._get_columns_info(input_data_featuretest)
 
     # At least one categorical
-    assert 'categorical' in validator.feat_type
+    assert 'categorical' in validator.feat_types
 
     # Numerical if the original data has numerical only columns
     if np.any([pd.api.types.is_numeric_dtype(input_data_featuretest[col]
                                              ) for col in input_data_featuretest.columns]):
-        assert 'numerical' in validator.feat_type
+        assert 'numerical' in validator.feat_types
     for i, feat_type in enumerate(feature_types):
         if 'numerical' in feat_type:
             np.testing.assert_array_equal(
@@ -542,7 +542,7 @@ def test_feature_validator_imbalanced_data():
     validator = TabularFeatureValidator()
     validator.fit(X_train)
 
-    train_feature_types = copy.deepcopy(validator.feat_type)
+    train_feature_types = copy.deepcopy(validator.feat_types)
     assert train_feature_types == ['numerical', 'numerical', 'numerical', 'numerical']
     # validator will throw an error if the column types are not the same
     transformed_X_test = validator.transform(X_test)
@@ -571,7 +571,7 @@ def test_feature_validator_imbalanced_data():
     X_test = pd.DataFrame.from_dict(test_features)
     validator = TabularFeatureValidator()
     validator.fit(X_train)
-    train_feature_types = copy.deepcopy(validator.feat_type)
+    train_feature_types = copy.deepcopy(validator.feat_types)
     assert train_feature_types == ['categorical', 'numerical', 'numerical']
 
     transformed_X_test = validator.transform(X_test)

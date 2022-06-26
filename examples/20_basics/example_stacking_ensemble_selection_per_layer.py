@@ -23,7 +23,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 ############################################################################
@@ -52,7 +52,7 @@ y_test = y.iloc[test_indices]
 
 feat_type = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
 
-search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
+search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 ############################################################################
 # Build and fit a classifier
 # ==========================
@@ -60,12 +60,13 @@ if __name__ == '__main__':
     api = TabularClassificationTask(
         # To maintain logs of the run, you can uncomment the
         # Following lines
-        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_09',
-        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_09',
+        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_10',
+        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_10',
         delete_tmp_folder_after_terminate=False,
         delete_output_folder_after_terminate=False,
         seed=4,
-        base_ensemble_method=BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
+        base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_selection,
+        stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
         resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
         ensemble_size=5,
         num_stacking_layers=2,
@@ -86,9 +87,9 @@ if __name__ == '__main__':
         y_test=y_test.copy(),
         dataset_name='Australian',
         optimize_metric='balanced_accuracy',
-        total_walltime_limit=900,
+        total_walltime_limit=1200,
         func_eval_time_limit_secs=150,
-        enable_traditional_pipeline=False,
+        enable_traditional_pipeline=True,
         all_supported_metrics=False,
         min_budget=5,
         max_budget=15

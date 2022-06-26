@@ -263,6 +263,7 @@ class EnsembleBuilder(object):
         end_at: Optional[float] = None,
         time_buffer: int = 5,
         return_predictions: bool = False,
+        cur_stacking_layer: int = 0,
     ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -308,6 +309,7 @@ class EnsembleBuilder(object):
             name='EnsembleBuilder',
             port=self.logger_port,
         )
+        self.logger.debug(f"Starting ensemble building main job with {time_left}, {end_at}")
 
         process_start_time = time.time()
         while True:
@@ -436,7 +438,7 @@ class EnsembleBuilder(object):
         self.start_time = time.time()
         train_pred, test_pred = None, None
 
-        used_time = time.time() - self.start_time
+        used_time = time.time()  - self.start_time
         self.logger.debug(
             'Starting iteration %d, time left: %f',
             iteration,

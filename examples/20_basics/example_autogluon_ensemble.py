@@ -25,7 +25,7 @@ import openml
 import sklearn.model_selection
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 
 ############################################################################
 # Data Loading
@@ -51,7 +51,7 @@ y_train = y.iloc[train_indices]
 X_test = X.iloc[test_indices]
 y_test = y.iloc[test_indices]
 
-feat_type = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
+feat_types = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
 
 ############################################################################
 # Build and fit a classifier
@@ -59,12 +59,13 @@ feat_type = ["numerical" if not indicator else "categorical" for indicator in ca
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_autogluon_tmp_10',
-    output_directory='./tmp/stacking_autogluon_out_10',
+    temporary_directory='./tmp/stacking_autogluon_tmp_11',
+    output_directory='./tmp/stacking_autogluon_out_11',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=1,
-    base_ensemble_method=BaseLayerEnsembleSelectionTypes.stacking_autogluon,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_autogluon,
+    stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_autogluon,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
         'num_splits': 2,
@@ -72,7 +73,6 @@ api = TabularClassificationTask(
     },
     ensemble_size=6,
     num_stacking_layers=1,
-    feat_type=feat_type
 )
 
 ############################################################################
@@ -84,6 +84,7 @@ api.run_autogluon_stacking(
     X_test=X_test.copy(),
     y_test=y_test.copy(),
     dataset_name='Australian',
+    feat_types=feat_types,
     optimize_metric='accuracy',
     total_walltime_limit=600,
     func_eval_time_limit_secs=130,

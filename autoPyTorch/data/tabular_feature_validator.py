@@ -98,10 +98,10 @@ class TabularFeatureValidator(BaseFeatureValidator):
     def __init__(
         self,
         logger: Optional[Union[PicklableClientLogger, Logger]] = None,
-        feat_type: Optional[List[str]] = None
+        feat_types: Optional[List[str]] = None
     ):
         super().__init__(logger)
-        self.feat_type = feat_type
+        self.feat_types = feat_types
 
     @staticmethod
     def _comparator(cmp1: str, cmp2: str) -> int:
@@ -170,10 +170,10 @@ class TabularFeatureValidator(BaseFeatureValidator):
             self.dtypes = [dt.name for dt in X.dtypes]  # Also note this change in self.dtypes
             self.all_nan_columns = set(all_nan_columns)
 
-            if self.feat_type is not None:
-                self.enc_columns = [X.columns[i] for i, col in enumerate(self.feat_type) if col.lower() == 'categorical']
+            if self.feat_types is not None:
+                self.enc_columns = [X.columns[i] for i, col in enumerate(self.feat_types) if col.lower() == 'categorical']
             else:
-                self.enc_columns, self.feat_type = self._get_columns_info(X)
+                self.enc_columns, self.feat_types = self._get_columns_info(X)
 
             if len(self.enc_columns) > 0:
 
@@ -190,8 +190,8 @@ class TabularFeatureValidator(BaseFeatureValidator):
                 # The column transformer moves categorical columns before all numerical columns
                 # therefore, we need to sort categorical columns so that it complies this change
 
-                self.feat_type = sorted(
-                    self.feat_type,
+                self.feat_types = sorted(
+                    self.feat_types,
                     key=functools.cmp_to_key(self._comparator)
                 )
 
@@ -202,7 +202,7 @@ class TabularFeatureValidator(BaseFeatureValidator):
 
             # differently to categorical_columns and numerical_columns,
             # this saves the index of the column.
-            for i, type_ in enumerate(self.feat_type):
+            for i, type_ in enumerate(self.feat_types):
                 if 'numerical' in type_:
                     self.numerical_columns.append(i)
                 else:

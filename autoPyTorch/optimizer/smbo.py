@@ -35,7 +35,7 @@ from autoPyTorch.datasets.utils import get_appended_dataset
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, is_stacking
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.optimizer.utils import delete_other_runs, read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
@@ -129,6 +129,7 @@ class AutoMLSMBO(object):
                  min_budget: int = 5,
                  max_budget: int = 50,
                  base_ensemble_method: BaseLayerEnsembleSelectionTypes = BaseLayerEnsembleSelectionTypes.ensemble_selection,
+                 stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
                  other_callbacks: Optional[List] = None,
                  smbo_class: Optional[SMBO] = None,
                  use_ensemble_opt_loss: bool = False
@@ -249,7 +250,8 @@ class AutoMLSMBO(object):
         self.base_ensemble_method = base_ensemble_method
 
         self.ensemble_callback = ensemble_callback
-        if self.base_ensemble_method.is_stacking_ensemble()  and num_stacking_layers is None:
+        self.stacking_ensemble_method = stacking_ensemble_method
+        if is_stacking(base_ensemble_method, stacking_ensemble_method) and num_stacking_layers is None:
             raise ValueError("'num_stacking_layers' can't be none for stacked ensembles")
 
         self.num_stacking_layers = num_stacking_layers
@@ -352,7 +354,8 @@ class AutoMLSMBO(object):
             pipeline_config=self.pipeline_config,
             search_space_updates=self.search_space_updates,
             pynisher_context=self.pynisher_context,
-            ensemble_method=self.base_ensemble_method,
+            base_ensemble_method=self.base_ensemble_method,
+            stacking_ensemble_method=self.stacking_ensemble_method,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
             cur_stacking_layer=cur_stacking_layer
         )
@@ -425,7 +428,7 @@ class AutoMLSMBO(object):
                                    initial_configurations=self.initial_configurations,
                                    smbo_class=self.smbo_class)
 
-        if self.base_ensemble_method.is_stacking_ensemble():
+        if self.stacking_ensemble_method is not None:
             self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer, initial_num_run)
         if self.ensemble_callback is not None:
             smac.register_callback(self.ensemble_callback)
@@ -457,7 +460,7 @@ class AutoMLSMBO(object):
         self.reset_data_manager()
         for cur_stacking_layer in range(self.num_stacking_layers):
             if cur_stacking_layer == 0:
-                self.logger.debug(f"Initial feat_types = {self.datamanager.feat_type}")
+                self.logger.debug(f"Initial feat_types = {self.datamanager.feat_types}")
             run_history, trajectory, _ = self._run_smbo(
                 walltime_limit=individual_wall_times,
                 cur_stacking_layer=cur_stacking_layer,
@@ -481,7 +484,7 @@ class AutoMLSMBO(object):
                 delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=self.backend.get_runs_directory())
             previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
             previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')
-            self.logger.debug(f"Original feat types len: {len(self.datamanager.feat_type)}")
+            self.logger.debug(f"Original feat types len: {len(self.datamanager.feat_types)}")
             nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
             nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
             assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
@@ -493,7 +496,7 @@ class AutoMLSMBO(object):
                 resampling_strategy=self.resampling_strategy,
                 resampling_strategy_args=self.resampling_strategy_args,
             )
-            self.logger.debug(f"new feat_types len: {len(datamanager.feat_type)}")
+            self.logger.debug(f"new feat_types len: {len(datamanager.feat_types)}")
             self.reset_attributes(datamanager=datamanager)
 
             initial_num_run = self.backend.get_next_num_run()

@@ -1,9 +1,9 @@
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from smac.runhistory.runhistory import RunHistory
 
-def get_autogluon_default_nn_config(feat_type):
-    has_numerical_features = "numerical" in feat_type
-    has_cat_features = "categorical" in feat_type
+def get_autogluon_default_nn_config(feat_types):
+    has_numerical_features = "numerical" in feat_types
+    has_cat_features = "categorical" in feat_types
     search_space_updates = HyperparameterSearchSpaceUpdates()
 
 

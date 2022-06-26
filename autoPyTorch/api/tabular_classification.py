@@ -26,7 +26,7 @@ from autoPyTorch.datasets.resampling_strategy import (
 )
 from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 from autoPyTorch.pipeline.tabular_classification import TabularClassificationPipeline
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 
@@ -93,6 +93,7 @@ class TabularClassificationTask(BaseTask):
         ensemble_size: int = 50,
         ensemble_nbest: int = 50,
         base_ensemble_method: int = BaseLayerEnsembleSelectionTypes.ensemble_selection,
+        stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
         num_stacking_layers: int = 1,
         max_models_on_disc: int = 50,
         temporary_directory: Optional[str] = None,
@@ -103,7 +104,6 @@ class TabularClassificationTask(BaseTask):
         exclude_components: Optional[Dict[str, Any]] = None,
         resampling_strategy: ResamplingStrategies = HoldoutValTypes.holdout_validation,
         resampling_strategy_args: Optional[Dict[str, Any]] = None,
-        feat_type: Optional[List[str]] = None,
         backend: Optional[Backend] = None,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None
     ):
@@ -125,10 +125,10 @@ class TabularClassificationTask(BaseTask):
             backend=backend,
             resampling_strategy=resampling_strategy,
             resampling_strategy_args=resampling_strategy_args,
-            feat_type=feat_type,
             search_space_updates=search_space_updates,
             task_type=TASK_TYPES_TO_STRING[TABULAR_CLASSIFICATION],
-            num_stacking_layers=num_stacking_layers
+            num_stacking_layers=num_stacking_layers,
+            stacking_ensemble_method=stacking_ensemble_method
         )
 
     def build_pipeline(
@@ -175,11 +175,11 @@ class TabularClassificationTask(BaseTask):
         y_train: Union[List, pd.DataFrame, np.ndarray],
         X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
-        feat_type: Optional[List] = None,
         resampling_strategy: Optional[ResamplingStrategies] = None,
         resampling_strategy_args: Optional[Dict[str, Any]] = None,
         dataset_name: Optional[str] = None,
         dataset_compression: Optional[DatasetCompressionSpec] = None,
+        **kwargs: Any,
     ) -> Tuple[TabularDataset, TabularInputValidator]:
         """
         Returns an object of `TabularDataset` and an object of
@@ -217,14 +217,14 @@ class TabularClassificationTask(BaseTask):
         resampling_strategy = resampling_strategy if resampling_strategy is not None else self.resampling_strategy
         resampling_strategy_args = resampling_strategy_args if resampling_strategy_args is not None else \
             self.resampling_strategy_args
-        feat_type = feat_type if feat_type is not None else self.feat_type
+        feat_types = kwargs.pop('feat_types', None)
         # Create a validator object to make sure that the data provided by
         # the user matches the autopytorch requirements
         input_validator = TabularInputValidator(
             is_classification=True,
             logger_port=self._logger_port,
             dataset_compression=dataset_compression,
-            feat_type=feat_type
+            feat_types=feat_types
         )
 
         # Fit a input validator to check the provided data
@@ -251,6 +251,7 @@ class TabularClassificationTask(BaseTask):
         X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         dataset_name: Optional[str] = None,
+        feat_types: Optional[List[str]] = None,
         max_budget: int = 50,
         budget_type: str = 'epochs',
         total_walltime_limit: int = 100,
@@ -264,6 +265,7 @@ class TabularClassificationTask(BaseTask):
     ):
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
 
+        self.feat_types = feat_types
         self.dataset, self.input_validator = self._get_dataset_input_validator(
             X_train=X_train,
             y_train=y_train,
@@ -272,7 +274,8 @@ class TabularClassificationTask(BaseTask):
             resampling_strategy=self.resampling_strategy,
             resampling_strategy_args=self.resampling_strategy_args,
             dataset_name=dataset_name,
-            dataset_compression=self._dataset_compression)
+            dataset_compression=self._dataset_compression,
+            feat_types=feat_types)
 
         return self._run_autogluon_stacking(
             optimize_metric=optimize_metric,
@@ -296,6 +299,7 @@ class TabularClassificationTask(BaseTask):
         X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
         dataset_name: Optional[str] = None,
+        feat_types: Optional[List[str]] = None,
         budget_type: str = 'epochs',
         min_budget: int = 5,
         max_budget: int = 50,
@@ -313,7 +317,7 @@ class TabularClassificationTask(BaseTask):
         dataset_compression: Union[Mapping[str, Any], bool] = False,
         smbo_class: Optional[SMBO] = None,
         use_ensemble_opt_loss=False,
-        posthoc_ensemble_fit_stacking_ensemble_optimization: bool = False
+        posthoc_ensemble_fit: bool = False
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -485,6 +489,7 @@ class TabularClassificationTask(BaseTask):
 
         """
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
+        self.feat_types = feat_types
 
         self.dataset, self.input_validator = self._get_dataset_input_validator(
             X_train=X_train,
@@ -494,7 +499,8 @@ class TabularClassificationTask(BaseTask):
             resampling_strategy=self.resampling_strategy,
             resampling_strategy_args=self.resampling_strategy_args,
             dataset_name=dataset_name,
-            dataset_compression=self._dataset_compression)
+            dataset_compression=self._dataset_compression,
+            feat_types=feat_types)
 
         return self._search(
             dataset=self.dataset,
@@ -515,7 +521,7 @@ class TabularClassificationTask(BaseTask):
             portfolio_selection=portfolio_selection,
             smbo_class=smbo_class,
             use_ensemble_opt_loss=use_ensemble_opt_loss,
-            posthoc_ensemble_fit_stacking_ensemble_optimization=posthoc_ensemble_fit_stacking_ensemble_optimization  
+            posthoc_ensemble_fit=posthoc_ensemble_fit  
         )
 
     def predict(

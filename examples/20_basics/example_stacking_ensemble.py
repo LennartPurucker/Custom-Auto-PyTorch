@@ -52,7 +52,7 @@ y_test = y.iloc[test_indices]
 
 feat_type = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
 
-search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
+search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 ############################################################################
 # Build and fit a classifier
 # ==========================

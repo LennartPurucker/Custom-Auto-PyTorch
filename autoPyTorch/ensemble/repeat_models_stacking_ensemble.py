@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
+from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
 
@@ -11,7 +12,7 @@ from autoPyTorch.pipeline.base_pipeline import BasePipeline
 class RepeatModelsStackingEnsemble(AbstractEnsemble):
     def __init__(
         self,
-        base_ensemble: EnsembleSelection
+        base_ensemble: Union[EnsembleSelection, EnsembleOptimisationStackingEnsemble]
     ) -> None:
         self.ensemble_identifiers: Optional[List[List[Tuple[int, int, float]]]] = None
         self.base_ensemble = base_ensemble
@@ -46,7 +47,7 @@ class RepeatModelsStackingEnsemble(AbstractEnsemble):
             layer_weights = []
             for i, identifier in enumerate(layer_identifiers):
                 if identifier is not None:
-                    layer_weights.append(self.base_weights[i])
+                     layer_weights.append(self.base_weights[i])
             self.ensemble_weights.append(layer_weights)
         return self
 
@@ -135,7 +136,7 @@ class RepeatModelsStackingEnsemble(AbstractEnsemble):
                 problem.
         """
         outputs = []
-        first_layer_models = models[0]
+        first_layer_models = models[0] if isinstance(self.base_ensemble, EnsembleSelection) else [models[0]] 
         for _ in models:
             outputs.append(self.base_ensemble.get_models_with_weights(first_layer_models))
 

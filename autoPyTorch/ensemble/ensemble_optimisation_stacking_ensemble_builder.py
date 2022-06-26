@@ -263,7 +263,7 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
 
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
-            self.backend.save_ensemble(ensemble, (self.cur_stacking_layer)*ENSEMBLE_ITERATION_MULTIPLIER + iteration, self.seed)
+            self.backend.save_ensemble(ensemble, int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration), self.seed)
             ensemble_identifiers=self._get_identifiers_from_num_runs(ensemble.identifiers_)
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
             self._save_current_ensemble_identifiers(

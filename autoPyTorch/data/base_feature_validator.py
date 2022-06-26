@@ -20,7 +20,7 @@ class BaseFeatureValidator(BaseEstimator):
     A class to pre-process features. In this regards, the format of the data is checked,
     and if applicable, features are encoded.
     Attributes:
-        feat_type (List[str]):
+        feat_types (List[str]):
             List of the column types found by this estimator during fit.
         data_type (str):
             Class name of the data type provided during fit.
@@ -33,7 +33,7 @@ class BaseFeatureValidator(BaseEstimator):
         logger: Optional[Union[PicklableClientLogger, logging.Logger]] = None,
     ) -> None:
         # Register types to detect unsupported data format changes
-        self.feat_type: Optional[List[str]] = None
+        self.feat_types: Optional[List[str]] = None
         self.data_type: Optional[type] = None
         self.dtypes: List[str] = []
         self.column_order: List[str] = []

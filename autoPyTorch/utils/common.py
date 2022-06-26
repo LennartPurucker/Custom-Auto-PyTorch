@@ -24,7 +24,9 @@ from torch.utils.data.dataloader import default_collate
 HyperparameterValueType = Union[int, str, float]
 
 
-ENSEMBLE_ITERATION_MULTIPLIER = 1e8
+ENSEMBLE_ITERATION_MULTIPLIER = 1e10
+TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = 0.75
+
 
 def ispandas(X: Any) -> bool:
     """ Whether X is pandas.DataFrame or pandas.Series """

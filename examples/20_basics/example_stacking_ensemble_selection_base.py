@@ -25,12 +25,12 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 
 ############################################################################
 # Data Loading
 # ============
-task = openml.tasks.get_task(task_id=3917)
+task = openml.tasks.get_task(task_id=146821)
 dataset = task.get_dataset()
 X, y, categorical_indicator, _ = dataset.get_data(
     dataset_format='dataframe',
@@ -53,19 +53,20 @@ y_test = y.iloc[test_indices]
 
 feat_type = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
 
-search_space_updates = get_autogluon_default_nn_config(feat_type=feat_type)
+search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 ############################################################################
 # Build and fit a classifier
 # ==========================
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_repeat_base_models_tmp_07',
-    output_directory='./tmp/stacking_repeat_base_models_out_07',
+    temporary_directory='./tmp/stacking_repeat_base_models_tmp_10',
+    output_directory='./tmp/stacking_repeat_base_models_out_10',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=1,
-    base_ensemble_method=BaseLayerEnsembleSelectionTypes.stacking_repeat_models,
+    seed=4,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation,
+    stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_repeat_models,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
         'num_splits': 2,
@@ -86,13 +87,14 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='accuracy',
-    total_walltime_limit=900,
+    total_walltime_limit=1800,
     func_eval_time_limit_secs=150,
     enable_traditional_pipeline=True,
-    # smbo_class=autoPyTorchSMBO,
+    smbo_class=autoPyTorchSMBO,
     all_supported_metrics=False,
     min_budget=5,
-    max_budget=10
+    max_budget=10,
+    posthoc_ensemble_fit=True,
 )
 
 ############################################################################

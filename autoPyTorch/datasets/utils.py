@@ -28,11 +28,11 @@ def get_appended_dataset(
     X_train = pd.DataFrame(np.concatenate([X_train, *previous_layer_predictions_train], axis=1))
     X_test = pd.DataFrame(np.concatenate([X_test, *previous_layer_predictions_test], axis=1))
 
-    new_feat_types: List[str] = original_dataset.feat_type.copy()
+    new_feat_types: List[str] = original_dataset.feat_types.copy()
     new_feat_types.extend(['numerical'] * (original_dataset.num_classes * len(previous_layer_predictions_train)))
     validator: BaseInputValidator = get_data_validator_class(original_dataset.task_type)(
         is_classification=STRING_TO_TASK_TYPES[original_dataset.task_type] in CLASSIFICATION_TASKS,
-        feat_type=new_feat_types)
+        feat_types=new_feat_types)
     validator.fit(X_train, y_train, X_test=X_test, y_test=y_test)
 
     dataset = get_dataset_class(original_dataset.task_type)(

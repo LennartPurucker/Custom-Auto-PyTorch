@@ -18,11 +18,16 @@ from smac.optimizer.smbo import SMBO
 from smac.runhistory.runhistory import RunInfo, RunValue
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
-from autoPyTorch.constants import BINARY
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, get_ensemble_builder_class
+from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
+from autoPyTorch.ensemble.utils import (
+    BaseLayerEnsembleSelectionTypes,
+    StackingEnsembleSelectionTypes,
+    get_ensemble_builder_class,
+    is_stacking
+)
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.logging_ import get_named_client_logger
-from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
+
 
 class EnsembleBuilderManager(IncorporateRunResultCallback):
     def __init__(
@@ -49,6 +54,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         pynisher_context: str = 'fork',
         initial_num_run: int = 0,
         use_ensemble_loss=False,
+        stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
         num_stacking_layers: Optional[int] = None,
         iteration=0
     ):
@@ -117,8 +123,12 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.ensemble_size = ensemble_size
         self.ensemble_nbest = ensemble_nbest
         self.base_ensemble_method = base_ensemble_method
-        self.cur_stacking_layer = 0 if self.base_ensemble_method.is_stacking_ensemble() else None
-        if self.base_ensemble_method.is_stacking_ensemble() and num_stacking_layers is None:
+        self.stacking_ensemble_method = stacking_ensemble_method
+        self.cur_stacking_layer = 0 if self.stacking_ensemble_method is not None else None
+        if (
+            is_stacking(base_ensemble_method, stacking_ensemble_method)
+            and num_stacking_layers is None
+        ):
             raise ValueError("Cant be none for stacked ensembles")
 
         self.num_stacking_layers = num_stacking_layers
@@ -225,7 +235,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     opt_metric=self.opt_metric,
                     ensemble_size=self.ensemble_size,
                     ensemble_nbest=self.ensemble_nbest,
-                    ensemble_method=self.base_ensemble_method,
+                    base_ensemble_method=self.base_ensemble_method,
+                    stacking_ensemble_method=self.stacking_ensemble_method,
                     max_models_on_disc=self.max_models_on_disc,
                     seed=self.seed,
                     precision=self.precision,
@@ -247,14 +258,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 ))
 
                 logger.info(
-                    "{}/{} Started Ensemble builder job at {} for iteration {}.".format(
-                        # Log the client to make sure we
-                        # remain connected to the scheduler
-                        self.futures[0],
-                        dask_client,
-                        time.strftime("%Y.%m.%d-%H.%M.%S"),
-                        self.iteration,
-                    ),
+                    f'{self.futures[0]}/{dask_client} Started Ensemble builder job at {time.strftime("%Y.%m.%d-%H.%M.%S")} for iteration {self.iteration} with time_left: {self.time_left_for_ensembles}.'
                 )
                 self.iteration += 1
                 # reset to False so only signal from smbo sets is_new_layer = True
@@ -298,6 +302,7 @@ def fit_and_return_ensemble(
     logger_port: int = logging.handlers.DEFAULT_TCP_LOGGING_PORT,
     unit_test: bool = False,
     use_ensemble_opt_loss=False,
+    stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
     cur_stacking_layer: Optional[int] = None,
     is_new_layer: bool = False,
     num_stacking_layers: Optional[int] = None,
@@ -368,17 +373,15 @@ def fit_and_return_ensemble(
             A list with the performance history of this ensemble, of the form
             [[pandas_timestamp, train_performance, val_performance, test_performance], ...]
     """
-    ensemble_builder = get_ensemble_builder_class(base_ensemble_method)
+    ensemble_builder = get_ensemble_builder_class(base_ensemble_method, stacking_ensemble_method=stacking_ensemble_method)
     ensemble_builder_run_kwargs = {
         'end_at': end_at,
         'iteration': iteration,
         'return_predictions': return_predictions,
         'pynisher_context': pynisher_context,
-    }
-    if base_ensemble_method.is_stacking_ensemble() and base_ensemble_method != BaseLayerEnsembleSelectionTypes.stacking_repeat_models:
-        ensemble_builder_run_kwargs.update({'cur_stacking_layer': cur_stacking_layer})
+        'cur_stacking_layer': cur_stacking_layer} 
 
-    if base_ensemble_method == BaseLayerEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+    if stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
         ensemble_builder_run_kwargs.update({'is_new_layer': is_new_layer})
 
     result = ensemble_builder(

@@ -81,12 +81,12 @@ class RunHistoryUpdaterManager(AdjustRunHistoryCallback):
         elapsed_time = time.time() - self.start_time
 
         logger = get_named_client_logger(
-            name='EnsembleBuilder',
+            name='RunHistoryUpdaterManager',
             port=self.logger_port,
         )
 
         logger.info(
-            "Started Ensemble builder job at {} for iteration {}.".format(
+            "Started RunHistoryUpdaterManager at {} for iteration {}.".format(
                 # Log the client to make sure we
                 # remain connected to the scheduler
                 time.strftime("%Y.%m.%d-%H.%M.%S"),

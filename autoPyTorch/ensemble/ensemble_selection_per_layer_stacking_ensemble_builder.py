@@ -20,6 +20,7 @@ from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss, calculate_score
+from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER
 from autoPyTorch.utils.logging_ import get_named_client_logger
 
 Y_ENSEMBLE = 0
@@ -259,7 +260,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
  
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
-            self.backend.save_ensemble(ensemble, iteration + (pow(10, 9))* self.cur_stacking_layer, self.seed)
+            self.backend.save_ensemble(ensemble, int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration), self.seed)
             # self._save_ensemble_cutoff_num_run(cutoff_num_run=self.cutoff_num_run)
         # Delete files of non-candidate models - can only be done after fitting the ensemble and
         # saving it to disc so we do not accidentally delete models in the previous ensemble

@@ -32,6 +32,7 @@ from smac.optimizer.smbo import SMBO
 from smac.runhistory.runhistory import DataOrigin, RunHistory, RunInfo, RunValue
 from smac.stats.stats import Stats
 from smac.tae import StatusType
+from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
 from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history
@@ -679,7 +680,7 @@ class BaseTask(ABC):
 
         # If no ensemble is loaded, try to get the best performing model
         if not self.ensemble_:
-            self.ensemble_ = self._load_best_individual_model()
+            self.ensemble_ = self.load_best_individual_model()
 
         if self.ensemble_:
             identifiers = self.ensemble_.get_selected_model_identifiers()
@@ -738,7 +739,10 @@ class BaseTask(ABC):
         else:
             self._close_dask_client()
 
-    def _load_best_individual_model(self) -> SingleBest:
+    def _load_best_individual_model(
+        self,
+        run_history,
+    ) -> SingleBest:
         """
         In case of failure during ensemble building,
         this method returns the single best model found
@@ -761,7 +765,7 @@ class BaseTask(ABC):
         ensemble = SingleBest(
             metric=self._metric,
             seed=self.seed,
-            run_history=self.run_history,
+            run_history=run_history,
             backend=self._backend,
         )
         if self._logger is None:
@@ -780,6 +784,21 @@ class BaseTask(ABC):
             )
 
         return ensemble
+
+    def load_best_individual_model(self) -> SingleBest:
+        """
+        In case of failure during ensemble building,
+        this method returns the single best model found
+        by AutoML.
+        This is a robust mechanism to be able to predict,
+        even though no ensemble was found by ensemble builder.
+
+        Returns:
+            SingleBest:
+                Ensemble made with incumbent pipeline
+        """
+
+        return self._load_best_individual_model(self.run_history)
 
     def _do_dummy_prediction(self) -> None:
 
@@ -1171,7 +1190,7 @@ class BaseTask(ABC):
                                                         num_stacking_layers=1,
                                                         )
 
-        smac_initial_run = self._run_smbo(
+        smac_initial_run = self.run_smbo(
             min_budget=min_budget,
             max_budget=max_budget,
             total_walltime_limit=time_left_for_search_base_models,
@@ -1293,7 +1312,7 @@ class BaseTask(ABC):
                                                 include_components=self.include_components,
                                                 exclude_components=self.exclude_components,
                                                 search_space_updates=search_space_updates)
-        self._logger.debug(f"dataset properties after appending predictions: {dict_repr(dataset_properties)}")
+
         n_numerical_in_incumbent_on_task_id = len(self.dataset.numerical_columns)
         num_numerical = len(dataset.numerical_columns)
         updated_model_descriptions = []
@@ -1318,7 +1337,7 @@ class BaseTask(ABC):
             updated_model_descriptions.append((updated_config, budget))
         return updated_model_descriptions, current_search_space
 
-    def _run_smbo(
+    def run_smbo(
         self,
         min_budget,
         max_budget,
@@ -1333,6 +1352,58 @@ class BaseTask(ABC):
         tae_func=None,
         smbo_class=None,
     ) -> int:
+
+        smac_initial_num_run, run_history, trajectory = self._run_smbo(
+            min_budget,
+            max_budget,
+            total_walltime_limit,
+            func_eval_time_limit_secs,
+            smac_scenario_args,
+            portfolio_selection,
+            experiment_task_name,
+            proc_ensemble,
+            num_stacking_layers,
+            get_smac_object_callback,
+            tae_func,
+            smbo_class)
+
+        if run_history is not None and trajectory is not None:
+            self._results_manager.trajectory = trajectory
+            self.run_history.update(run_history, DataOrigin.INTERNAL)
+            trajectory_filename = os.path.join(
+                self._backend.get_smac_output_directory_for_run(self.seed),
+                'trajectory.json')
+
+            assert self.trajectory is not None  # mypy check
+            saveable_trajectory = \
+                [list(entry[:2]) + [entry[2].get_dictionary()] + list(entry[3:])
+                    for entry in self.trajectory]
+            try:
+                with open(trajectory_filename, 'w') as fh:
+                    json.dump(saveable_trajectory, fh)
+            except Exception as e:
+                self._logger.warning(f"Cannot save {trajectory_filename} due to {e}...")
+        else:
+            raise RuntimeError("Something went wrong when running smac, please the check the log file")
+            
+        return smac_initial_num_run
+
+    def _run_smbo(
+        self,
+        min_budget,
+        max_budget,
+        total_walltime_limit,
+        func_eval_time_limit_secs,
+        smac_scenario_args,
+        portfolio_selection,
+        experiment_task_name,
+        proc_ensemble,
+        num_stacking_layers,
+        get_smac_object_callback,
+        tae_func,
+        smbo_class
+    ) -> Tuple[int, RunHistory, List[TrajEntry]]:
+
         smac_initial_num_run = self._backend.get_next_num_run(peek=True)
         proc_runhistory_updater = None
         if (
@@ -1346,6 +1417,9 @@ class BaseTask(ABC):
         self._stopwatch.start_task(smac_task_name)
         elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
         time_left_for_smac = max(0, total_walltime_limit - elapsed_time)
+
+        run_history: Optional[RunHistory] = None
+        trajectory: Optional[List[TrajEntry]] = None
 
         self._logger.info("Starting SMAC with %5.2f sec time left" % time_left_for_smac)
         if time_left_for_smac <= 0:
@@ -1390,26 +1464,13 @@ class BaseTask(ABC):
                 num_stacking_layers=num_stacking_layers
             )
             try:
-                run_history, self._results_manager.trajectory, budget_type = \
+                run_history, trajectory, budget_type = \
                     _proc_smac.run_smbo(func=tae_func)
-                self.run_history.update(run_history, DataOrigin.INTERNAL)
-                trajectory_filename = os.path.join(
-                    self._backend.get_smac_output_directory_for_run(self.seed),
-                    'trajectory.json')
-
-                assert self.trajectory is not None  # mypy check
-                saveable_trajectory = \
-                    [list(entry[:2]) + [entry[2].get_dictionary()] + list(entry[3:])
-                     for entry in self.trajectory]
-                try:
-                    with open(trajectory_filename, 'w') as fh:
-                        json.dump(saveable_trajectory, fh)
-                except Exception as e:
-                    self._logger.warning(f"Cannot save {trajectory_filename} due to {e}...")
             except Exception as e:
                 self._logger.exception(str(e))
                 raise
-        return smac_initial_num_run
+
+        return smac_initial_num_run,run_history,trajectory
 
     def _search(
         self,
@@ -1690,7 +1751,7 @@ class BaseTask(ABC):
                                                             num_stacking_layers=self.num_stacking_layers
                                                             )
 
-            self._run_smbo(
+            self.run_smbo(
                 min_budget=min_budget,
                 max_budget=max_budget,
                 total_walltime_limit=total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
@@ -1748,6 +1809,175 @@ class BaseTask(ABC):
 
         self._cleanup()
 
+        return self
+
+    def _run_iterative_hpo_ensemble_optimisation(
+        self,
+        optimize_metric: str,
+        dataset: BaseDataset,
+        budget_type: str = 'epochs',
+        min_budget: int = 5,
+        max_budget: int = 50,
+        total_walltime_limit: int = 100,
+        func_eval_time_limit_secs: Optional[int] = None,
+        enable_traditional_pipeline: bool = True,
+        memory_limit: Optional[int] = 4096,
+        smac_scenario_args: Optional[Dict[str, Any]] = None,
+        get_smac_object_callback: Optional[Callable] = None,
+        tae_func: Optional[Callable] = None,
+        all_supported_metrics: bool = True,
+        precision: int = 32,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
+        load_models: bool = True,
+        portfolio_selection: Optional[str] = None,
+        dask_client: Optional[dask.distributed.Client] = None,
+        smbo_class: Optional[SMBO] = None,
+        use_ensemble_opt_loss: bool = False,
+        posthoc_ensemble_fit: bool = False
+    ) -> 'BaseTask':
+        experiment_task_name: str = 'runIterativeHPOEnsembleOptimisation'
+
+        self._init_required_args(
+            experiment_task_name=experiment_task_name,
+            optimize_metric=optimize_metric,
+            dataset=dataset,
+            budget_type=budget_type,
+            max_budget=max_budget,
+            total_walltime_limit=total_walltime_limit,
+            memory_limit=memory_limit,
+            all_supported_metrics=all_supported_metrics,
+            precision=precision,
+            disable_file_output=disable_file_output,
+            dask_client=dask_client
+        )
+
+        # Handle time resource allocation
+        elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
+        time_left_for_modelfit = int(max(0, total_walltime_limit - elapsed_time))
+        if func_eval_time_limit_secs is None or func_eval_time_limit_secs > time_left_for_modelfit:
+            self._logger.warning(
+                'Time limit for a single run is higher than total time '
+                'limit. Capping the limit for a single run to the total '
+                'time given to SMAC (%f)' % time_left_for_modelfit
+            )
+            func_eval_time_limit_secs = time_left_for_modelfit
+
+        # Make sure that at least 2 models are created for the ensemble process
+        num_models = time_left_for_modelfit // func_eval_time_limit_secs
+        if num_models < 2 and self.ensemble_size > 0:
+            func_eval_time_limit_secs = time_left_for_modelfit // 2
+            self._logger.warning(
+                "Capping the func_eval_time_limit_secs to {} to have "
+                "time for a least 2 models to ensemble.".format(
+                    func_eval_time_limit_secs
+                )
+            )
+
+        posthoc_ensemble_fit = posthoc_ensemble_fit \
+            and self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+        # ============> Run dummy predictions
+        # We only want to run dummy predictions in case we want to build an ensemble
+        if (
+            self.ensemble_size > 0
+            and (
+                 self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                 or (
+                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
+                 )
+                 )
+            ):
+            dummy_task_name = 'runDummy'
+            self._stopwatch.start_task(dummy_task_name)
+            self._do_dummy_prediction()
+            self._stopwatch.stop_task(dummy_task_name)
+
+        # ============> Run traditional ml
+        # We only want to run traditional predictions in case we want to build an ensemble
+        # We want time for at least 1 Neural network in SMAC
+        if (
+            enable_traditional_pipeline
+            and self.ensemble_size > 0
+            and (
+                 self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                 or (
+                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
+                 )
+            )
+            ):
+            traditional_runtime_limit = int(self._time_for_task - func_eval_time_limit_secs)
+            self.run_traditional_ml(current_task_name=self.dataset_name,
+                                    runtime_limit=traditional_runtime_limit,
+                                    func_eval_time_limit_secs=func_eval_time_limit_secs)
+
+        # ============> Starting ensemble
+        self.use_ensemble_opt_loss = use_ensemble_opt_loss
+        self.precision = precision
+        self.opt_metric = optimize_metric
+        elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
+
+        proc_ensemble = None
+
+        for cur_stacking_layer in range(self.num_stacking_layers):
+            self._run_smbo(
+                min_budget=min_budget,
+                max_budget=max_budget,
+                total_walltime_limit=total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
+                    if posthoc_ensemble_fit \
+                        else total_walltime_limit,
+                func_eval_time_limit_secs=func_eval_time_limit_secs,
+                smac_scenario_args=smac_scenario_args,
+                get_smac_object_callback=get_smac_object_callback,
+                tae_func=tae_func,
+                portfolio_selection=portfolio_selection,
+                smbo_class=smbo_class,
+                experiment_task_name=experiment_task_name,
+                proc_ensemble=proc_ensemble,
+                num_stacking_layers=self.num_stacking_layers
+                )
+
+        if proc_ensemble is not None:
+            self._collect_results_ensemble(proc_ensemble)
+        # Wait until the ensemble process is finished to avoid shutting down
+        # while the ensemble builder tries to access the data
+        self._logger.info("Starting Shutdown")
+
+        if posthoc_ensemble_fit and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation:
+            ensemble = self._backend.load_ensemble(self.seed)
+            initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
+            time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
+            iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
+            final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
+                optimize_metric=self.opt_metric,
+                time_left_for_ensemble=time_for_post_fit_ensemble,
+                last_successful_smac_initial_num_run=initial_num_run + 1,
+                ensemble_size=self.ensemble_size,
+                iteration=iteration,
+                enable_traditional_pipeline=enable_traditional_pipeline,
+                cleanup=False,
+                func_eval_time_limit_secs=func_eval_time_limit_secs
+            )
+            ensemble.identifiers_ = final_model_identifiers
+            stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers
+            broken = False
+            for i, layer_identifiers in enumerate(stacked_ensemble_identifiers):
+                if all([identifier is None for identifier in layer_identifiers]):
+                    broken = True
+                    break
+            last_nonnull_layer = i-1 if broken else i
+            self._logger.debug(f"broken: {broken}, lastnonnull layer: {last_nonnull_layer}, i: {i}")
+            ensemble.stacked_ensemble_identifiers[last_nonnull_layer] = final_model_identifiers
+            ensemble.weights_ = final_weights
+            self._backend.save_ensemble(ensemble, iteration+1, self.seed)
+
+        if load_models:
+            self._logger.info("Loading models...")
+            self._load_models()
+            self._logger.info("Finished loading models...")
+
+        self._cleanup()
         return self
 
     def _init_required_args(

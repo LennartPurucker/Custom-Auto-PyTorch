@@ -56,53 +56,56 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 ############################################################################
 # Build and fit a classifier
 # ==========================
-if __name__ == '__main__':
-    api = TabularClassificationTask(
-        # To maintain logs of the run, you can uncomment the
-        # Following lines
-        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_11',
-        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_11',
-        delete_tmp_folder_after_terminate=False,
-        delete_output_folder_after_terminate=False,
-        seed=4,
-        base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_selection,
-        stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer,
-        resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
-        ensemble_size=5,
-        num_stacking_layers=2,
-        resampling_strategy_args={
-            'num_splits': 2,
-            'num_repeats': 1
-        },
-        search_space_updates=search_space_updates,
-    )
+api = TabularClassificationTask(
+    # To maintain logs of the run, you can uncomment the
+    # Following lines
+    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_25',
+    output_directory='./tmp/stacking_optimisation_ensemble_out_25',
+    delete_tmp_folder_after_terminate=False,
+    delete_output_folder_after_terminate=False,
+    seed=4,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation,
+    stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation,
+    resampling_strategy=RepeatedCrossValTypes.stratified_repeated_k_fold_cross_validation,
+    ensemble_size=5,
+    num_stacking_layers=2,
+    resampling_strategy_args={
+        'num_splits': 2,
+        'num_repeats': 1
+    },
+    search_space_updates=search_space_updates,
+    n_jobs=1
+)
 
-    ############################################################################
-    # Search for an ensemble of machine learning algorithms
-    # =====================================================
-    api.search(
-        X_train=X_train,
-        y_train=y_train,
-        X_test=X_test.copy(),
-        y_test=y_test.copy(),
-        dataset_name='Australian',
-        optimize_metric='balanced_accuracy',
-        total_walltime_limit=900,
-        func_eval_time_limit_secs=150,
-        enable_traditional_pipeline=True,
-        all_supported_metrics=False,
-        min_budget=5,
-        max_budget=10
-    )
+############################################################################
+# Search for an ensemble of machine learning algorithms
+# =====================================================
+api.search(
+    X_train=X_train,
+    y_train=y_train,
+    X_test=X_test.copy(),
+    y_test=y_test.copy(),
+    dataset_name='Australian',
+    optimize_metric='balanced_accuracy',
+    total_walltime_limit=1200,
+    func_eval_time_limit_secs=150,
+    enable_traditional_pipeline=True,
+    smbo_class=autoPyTorchSMBO,
+    all_supported_metrics=False,
+    use_ensemble_opt_loss=True,
+    posthoc_ensemble_fit=True,
+    min_budget=5,
+    max_budget=10
+)
 
-    ############################################################################
-    # Print the final ensemble performance
-    # ====================================
-    y_pred = api.predict(X_test)
-    score = api.score(y_pred, y_test, metric='accuracy')
-    print(score)
-    # Print the final ensemble built by AutoPyTorch
-    print(api.show_models())
+############################################################################
+# Print the final ensemble performance
+# ====================================
+y_pred = api.predict(X_test)
+score = api.score(y_pred, y_test, metric='accuracy')
+print(score)
+# Print the final ensemble built by AutoPyTorch
+print(api.show_models())
 
-    # Print statistics from search
-    # print(api.sprint_statistics())
+# Print statistics from search
+# print(api.sprint_statistics())

@@ -1613,7 +1613,10 @@ class BaseTask(ABC):
             self.ensemble_size > 0
             and (
                  self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
-                 or self.stacking_ensemble_method != StackingEnsembleSelectionTypes.stacking_repeat_models
+                 or (
+                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
+                 )
                  )
             ):
             dummy_task_name = 'runDummy'
@@ -1629,8 +1632,11 @@ class BaseTask(ABC):
             and self.ensemble_size > 0
             and (
                  self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
-                 or self.stacking_ensemble_method != StackingEnsembleSelectionTypes.stacking_repeat_models
+                 or (
+                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
                  )
+            )
             ):
             traditional_runtime_limit = int(self._time_for_task - func_eval_time_limit_secs)
             self.run_traditional_ml(current_task_name=self.dataset_name,
@@ -1707,7 +1713,7 @@ class BaseTask(ABC):
             # while the ensemble builder tries to access the data
             self._logger.info("Starting Shutdown")
 
-        if posthoc_ensemble_fit and self.stacking_ensemble_method != StackingEnsembleSelectionTypes.stacking_repeat_models:
+        if posthoc_ensemble_fit and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation:
             ensemble = self._backend.load_ensemble(self.seed)
             initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
             time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
@@ -1720,7 +1726,7 @@ class BaseTask(ABC):
                 iteration=iteration,
                 enable_traditional_pipeline=enable_traditional_pipeline,
                 cleanup=False,
-                func_eval_time_limit_secs=0.5*func_eval_time_limit_secs
+                func_eval_time_limit_secs=func_eval_time_limit_secs
             )
             ensemble.identifiers_ = final_model_identifiers
             stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers

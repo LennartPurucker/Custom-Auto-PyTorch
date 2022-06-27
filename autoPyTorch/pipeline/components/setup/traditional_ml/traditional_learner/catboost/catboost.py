@@ -55,11 +55,11 @@ class CatboostModel(BaseTraditionalLearner):
                        y_train: np.ndarray
                        ) -> None:
         if not self.is_classification:
-            self.config['eval_metric'] = AutoPyTorchToCatboostMetrics[self.metric.name].value
+            self.eval_metric = AutoPyTorchToCatboostMetrics[self.metric.name].value
             # CatBoost Cannot handle a random state object, just the seed
             self.model = CatBoostRegressor(**self.config, random_state=self.random_state.get_state()[1][0])
         else:
-            self.config['eval_metric'] = AutoPyTorchToCatboostMetrics[self.metric.name].value
+            self.eval_metric = AutoPyTorchToCatboostMetrics[self.metric.name].value
             # CatBoost Cannot handle a random state object, just the seed
             self.model = CatBoostClassifier(**self.config, random_state=self.random_state.get_state()[1][0])
 
@@ -71,7 +71,7 @@ class CatboostModel(BaseTraditionalLearner):
         assert self.model is not None, "No model found. Can't fit without preparing the model"
         early_stopping = get_early_stopping_rounds(num_rows_train=X_train.shape[0])
         callbacks = []
-        callbacks.append(EarlyStoppingCallback(stopping_rounds=early_stopping, eval_metric=self.config['eval_metric']))
+        callbacks.append(EarlyStoppingCallback(stopping_rounds=early_stopping, eval_metric=self.eval_metric))
         num_rows_train = X_train.shape[0]
         num_cols_train = X_train.shape[1]
         self.num_classes = len(np.unique(y_train)) if len(np.unique(y_train)) != 2 else 1

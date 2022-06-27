@@ -314,7 +314,7 @@ class AutoMLSMBO(object):
         current_task_name = f'SMBO_{cur_stacking_layer}'
 
         self.watcher.start_task(current_task_name)
-        self.logger.info(f"Started {cur_stacking_layer} run of SMBO")
+        self.logger.info(f"Started {cur_stacking_layer} run of SMBO with initial_num_run: {initial_num_run}")
 
         # # == first things first: load the datamanager
         # self.reset_data_manager()
@@ -428,10 +428,12 @@ class AutoMLSMBO(object):
                                    initial_configurations=self.initial_configurations,
                                    smbo_class=self.smbo_class)
 
-        if self.stacking_ensemble_method is not None:
-            self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer, initial_num_run)
         if self.ensemble_callback is not None:
+            if self.stacking_ensemble_method is not None and cur_stacking_layer > 0:
+                self.logger.debug(f"Hey, I m here, updating the initial_num_run to {initial_num_run}")
+                self.ensemble_callback.update_for_new_stacking_layer(cur_stacking_layer, initial_num_run)
             smac.register_callback(self.ensemble_callback)
+        self.logger.debug(f"initial_num_run in {self.__class__.__name__}: {initial_num_run}")
         if self.other_callbacks is not None:
             for callback in self.other_callbacks:
                 smac.register_callback(callback)

@@ -1075,7 +1075,7 @@ class EnsembleBuilder(object):
             task_type=self.task_type,
         )
         performance_stamp.update({'train_' + str(key): val for key, val in train_scores.items()})
-        if self.y_test is not None:
+        if self.y_test is not None and test_pred is not None:
             test_scores = calculate_score(
                 metrics=self.metrics,
                 target=self.y_test,

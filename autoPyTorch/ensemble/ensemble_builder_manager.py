@@ -258,7 +258,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 ))
 
                 logger.info(
-                    f'{self.futures[0]}/{dask_client} Started Ensemble builder job at {time.strftime("%Y.%m.%d-%H.%M.%S")} for iteration {self.iteration} with time_left: {self.time_left_for_ensembles}.'
+                    f'{self.futures[0]}/{dask_client} Started Ensemble builder job at {time.strftime("%Y.%m.%d-%H.%M.%S")} for iteration {self.iteration} with time_left: {self.time_left_for_ensembles} with initial_num_run: {self.initial_num_run}.'
                 )
                 self.iteration += 1
                 # reset to False so only signal from smbo sets is_new_layer = True

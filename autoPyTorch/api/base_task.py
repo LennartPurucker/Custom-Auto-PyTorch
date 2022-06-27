@@ -1374,6 +1374,7 @@ class BaseTask(ABC):
                 max_budget=max_budget,
                 ensemble_callback=proc_ensemble,
                 base_ensemble_method=self.base_ensemble_method,
+                stacking_ensemble_method=self.stacking_ensemble_method,
                 logger_port=self._logger_port,
                 resampling_strategy=self.resampling_strategy,
                 resampling_strategy_args=self.resampling_strategy_args,

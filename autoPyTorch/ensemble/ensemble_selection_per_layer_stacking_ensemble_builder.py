@@ -205,9 +205,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
 
         used_time = time.time() - self.start_time
         self.logger.debug(
-            'Starting iteration %d, time left: %f',
-            iteration,
-            time_left - used_time,
+            f'Starting iteration {iteration}, time left: {time_left - used_time} and initial num_run: {self.initial_num_run}',
         )
 
         
@@ -355,6 +353,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
             # skip models that were part of previous stacking layer
             if _num_run < self.initial_num_run:
                 if y_ens_fn in self.read_losses:
+                    self.logger.debug(f"deleting {y_ens_fn} in ensemble builder")
                     del self.read_losses[y_ens_fn]
                 continue
 

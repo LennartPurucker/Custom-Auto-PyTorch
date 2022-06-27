@@ -36,8 +36,12 @@ def get_ensemble_builder_class(base_ensemble_method: int, stacking_ensemble_meth
     if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_selection:
         if stacking_ensemble_method is None or stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models:
             return EnsembleBuilder
+        elif stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
+            return EnsembleSelectionPerLayerStackingEnsembleBuilder
+        else:
+            raise ValueError(f"Expected stacking_ensemble_method: {stacking_ensemble_method} to be in "
+                             f"[StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer"
+                             f" None]")
     elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
         if stacking_ensemble_method is None or stacking_ensemble_method in (StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation):
             return EnsembleOptimisationStackingEnsembleBuilder
-    elif base_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
-        return EnsembleSelectionPerLayerStackingEnsembleBuilder

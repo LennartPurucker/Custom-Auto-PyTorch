@@ -1994,7 +1994,7 @@ class BaseTask(ABC):
                 )
 
             layer_ensemble = self._backend.load_ensemble(self.seed)
-            layer_identifiers = layer_ensemble.get_selected_model_identifiers()[-1]
+            layer_identifiers = layer_ensemble.get_selected_model_identifiers()[cur_stacking_layer]
             _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
                 layer_identifiers, layer_ensemble.weights_, self.ensemble_size, run_history=run_history)
 

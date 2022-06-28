@@ -133,9 +133,8 @@ class AdversarialTrainer(BaseTrainerComponent):
         data_copy = deepcopy(data)
         data_copy = data_copy.float().to(self.device)
         targets = self.cast_targets(targets)
-        data_copy = torch.autograd.Variable(data_copy)
-        data_copy.requires_grad = True
-
+        data_copy = torch.autograd.Variable(data_copy, requires_grad = True)
+        targets = torch.autograd.Variable(targets, requires_grad=False)
         outputs = self.model(data_copy)
         cost = self.criterion(outputs, targets)
 

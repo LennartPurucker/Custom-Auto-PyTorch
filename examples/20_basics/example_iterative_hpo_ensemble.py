@@ -60,8 +60,8 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_01',
-    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_01',
+    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_02',
+    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_02',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
@@ -88,7 +88,7 @@ api.run_iterative_hpo_ensemble_optimisation(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='balanced_accuracy',
-    total_walltime_limit=1800,
+    total_walltime_limit=3600,
     func_eval_time_limit_secs=150,
     enable_traditional_pipeline=False,
     smbo_class=None,
@@ -103,7 +103,7 @@ api.run_iterative_hpo_ensemble_optimisation(
 # Print the final ensemble performance
 # ====================================
 y_pred = api.predict(X_test)
-score = api.score(y_pred, y_test, metric='accuracy')
+score = api.score(y_pred, y_test, metric='balanced_accuracy')
 print(score)
 # Print the final ensemble built by AutoPyTorch
 print(api.show_models())

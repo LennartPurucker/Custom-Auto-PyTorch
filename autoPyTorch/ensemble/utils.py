@@ -8,15 +8,17 @@ from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import Ensembl
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble_builder import EnsembleOptimisationStackingEnsembleBuilder
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble_builder import EnsembleSelectionPerLayerStackingEnsembleBuilder
+from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble_builder import IterativeHPOStackingEnsembleBuilder
 
 
 class BaseLayerEnsembleSelectionTypes(IntEnum):
     ensemble_selection = 1
     ensemble_bayesian_optimisation = 2
     ensemble_autogluon = 3
+    ensemble_iterative_hpo = 4
 
     def is_stacking_ensemble(self) -> bool:
-        return getattr(self, self.name)  == self.ensemble_bayesian_optimisation
+        return getattr(self, self.name) in (self.ensemble_bayesian_optimisation, self.ensemble_iterative_hpo)
 
 
 class StackingEnsembleSelectionTypes(IntEnum):
@@ -24,6 +26,7 @@ class StackingEnsembleSelectionTypes(IntEnum):
     stacking_ensemble_selection_per_layer = 2
     stacking_repeat_models = 3
     stacking_autogluon = 4
+    stacking_ensemble_iterative_hpo = 5
 
 
 def is_stacking(base_ensemble_method: BaseLayerEnsembleSelectionTypes, stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None) -> bool:
@@ -45,3 +48,6 @@ def get_ensemble_builder_class(base_ensemble_method: int, stacking_ensemble_meth
     elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
         if stacking_ensemble_method is None or stacking_ensemble_method in (StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation):
             return EnsembleOptimisationStackingEnsembleBuilder
+    elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
+        if stacking_ensemble_method is None or stacking_ensemble_method in (StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_iterative_hpo):
+            return IterativeHPOStackingEnsembleBuilder

@@ -20,6 +20,7 @@ from autoPyTorch.constants import (
 )
 from autoPyTorch.datasets.resampling_strategy import HoldoutValTypes, RepeatedCrossValTypes
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble_builder import calculate_nomalised_margin_loss
+from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
 from autoPyTorch.evaluation.abstract_evaluator import (
     AbstractEvaluator,
     fit_and_suppress_warnings
@@ -148,11 +149,11 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
         self.num_repeats = len(self.splits)
         self.num_folds = len(self.splits[0])
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
-        self.old_ensemble: Optional[EnsembleOptimisationStackingEnsemble] = None
+        self.old_ensemble: Optional[Union[EnsembleOptimisationStackingEnsemble, IterativeHPOStackingEnsemble]] = None
         ensemble_dir = self.backend.get_ensemble_dir()
         if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
             self.old_ensemble = self.backend.load_ensemble(self.seed)
-            assert isinstance(self.old_ensemble, EnsembleOptimisationStackingEnsemble)
+            assert isinstance(self.old_ensemble, (EnsembleOptimisationStackingEnsemble, IterativeHPOStackingEnsemble))
 
         self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 

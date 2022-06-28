@@ -9,6 +9,7 @@ import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from smac.runhistory.runhistory import RunHistory
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
@@ -48,6 +49,7 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
         output_type: int,
         metrics: List[autoPyTorchMetric],
         opt_metric: str,
+        run_history: Optional[RunHistory] = None,
         ensemble_size: int = 10,
         ensemble_nbest: int = 100,
         max_models_on_disc: Union[float, int] = 100,
@@ -310,7 +312,6 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
         else:
             return self.ensemble_history, self.ensemble_nbest, None, None
 
-    # TODO: change to calculate stacked ensemble loss per model
     def compute_ensemble_loss_per_model(self) -> bool:
         """
             Compute the loss of the predictions on ensemble building data set;

@@ -15,7 +15,7 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner im
 from autoPyTorch.utils.common import HyperparameterSearchSpace
 
 
-# TODO: Make this a choice and individual components for each traditional classifier
+
 class TabularTraditionalModel(BaseModelComponent):
     """
     Implementation of a dynamic model, that consists of a learner and a head

@@ -13,7 +13,7 @@ from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMet
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
 from autoPyTorch.automl_common.common.utils.backend import Backend
 
-# TODO: Think of functionality of the functions in this class adjusted for stacking.
+
 class EnsembleSelectionPerLayerStackingEnsemble(AbstractEnsemble):
     def __init__(
         self,

@@ -139,7 +139,7 @@ class AdversarialTrainer(BaseTrainerComponent):
         outputs = self.model(data_copy)
         cost = self.criterion(outputs, targets)
 
-        grad = torch.autograd.grad(cost, data_copy, retain_graph=False, create_graph=False)[0]
+        grad = torch.autograd.grad(cost, data_copy, retain_graph=False, create_graph=False, allow_unused=True)[0]
 
         adv_data = data_copy + self.epsilon * grad.sign()
         adv_data = torch.clamp(adv_data, min=0, max=1).detach()

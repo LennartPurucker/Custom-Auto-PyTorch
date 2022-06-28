@@ -1,9 +1,7 @@
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple, Union
-import warnings
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from sklearn.base import BaseEstimator
 
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
@@ -11,7 +9,7 @@ from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMet
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
 
 
-class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
+class IterativeHPOStackingEnsemble(AbstractEnsemble):
     def __init__(
         self,
         ensemble_size: int,
@@ -196,7 +194,7 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         return average
 
     def __str__(self) -> str:
-        return f"Ensemble Optimisation Stacking Ensemble:\n\tWeights: {self.weights_}\
+        return f"Iterative HPO Stacking Ensemble:\n\tWeights: {self.weights_}\
             \n\tIdentifiers: {' '.join([str(identifier) for idx, identifier in enumerate(self.identifiers_) if self.weights_[idx] > 0])}"
 
     def get_layer_stacking_ensemble_predictions(

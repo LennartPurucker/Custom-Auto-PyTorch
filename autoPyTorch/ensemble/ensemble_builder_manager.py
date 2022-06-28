@@ -15,10 +15,9 @@ import pandas as pd
 
 from smac.callbacks import IncorporateRunResultCallback
 from smac.optimizer.smbo import SMBO
-from smac.runhistory.runhistory import RunInfo, RunValue
+from smac.runhistory.runhistory import RunInfo, RunValue, RunHistory
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
-from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
 from autoPyTorch.ensemble.utils import (
     BaseLayerEnsembleSelectionTypes,
     StackingEnsembleSelectionTypes,
@@ -56,7 +55,9 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         use_ensemble_loss=False,
         stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
         num_stacking_layers: Optional[int] = None,
-        iteration=0
+        iteration=0,
+        ensemble_slot_j = 0,
+        run_history: Optional[RunHistory] = None,
     ):
         """ SMAC callback to handle ensemble building
         Args:
@@ -131,6 +132,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         ):
             raise ValueError("Cant be none for stacked ensembles")
 
+        self.ensemble_slot_j = ensemble_slot_j
         self.num_stacking_layers = num_stacking_layers
         self.max_models_on_disc: Union[float, int] = max_models_on_disc
         self.seed = seed
@@ -141,6 +143,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.random_state = random_state
         self.logger_port = logger_port
         self.pynisher_context = pynisher_context
+        self.run_history = run_history
 
         self.is_new_layer = False
         # Store something similar to SMAC's runhistory
@@ -254,7 +257,9 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                     cur_stacking_layer=self.cur_stacking_layer,
                     is_new_layer=self.is_new_layer,
                     num_stacking_layers=self.num_stacking_layers,
-                    initial_num_run=self.initial_num_run
+                    initial_num_run=self.initial_num_run,
+                    ensemble_slot_j=self.ensemble_slot_j,
+                    run_history=self.run_history
                 ))
 
                 logger.info(
@@ -270,7 +275,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 logger.critical(error_message)
 
     def update_for_new_stacking_layer(self, cur_stacking_layer: int, initial_num_run: int) -> None:
-        if cur_stacking_layer >= self.num_stacking_layers:
+        if cur_stacking_layer > self.num_stacking_layers:
             raise ValueError(f"Unexpected value '{cur_stacking_layer}' for cur_stacking_layer. "
                              f"Max stacking layers are : {self.num_stacking_layers}.")
         self.cur_stacking_layer = cur_stacking_layer
@@ -307,6 +312,8 @@ def fit_and_return_ensemble(
     is_new_layer: bool = False,
     num_stacking_layers: Optional[int] = None,
     initial_num_run: int = 0,
+    ensemble_slot_j: int = 0,
+    run_history: Optional[RunHistory] = None,
 ) -> Tuple[
         List[Dict[str, float]],
         int,
@@ -384,6 +391,9 @@ def fit_and_return_ensemble(
     if stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
         ensemble_builder_run_kwargs.update({'is_new_layer': is_new_layer})
 
+    if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
+        ensemble_builder_run_kwargs.update({'ensemble_slot_j': ensemble_slot_j})
+
     result = ensemble_builder(
         backend=backend,
         dataset_name=dataset_name,
@@ -403,7 +413,8 @@ def fit_and_return_ensemble(
         unit_test=unit_test,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
         num_stacking_layers=num_stacking_layers,
-        initial_num_run=initial_num_run
+        initial_num_run=initial_num_run,
+        run_history=run_history
     ).run(
         **ensemble_builder_run_kwargs
     )

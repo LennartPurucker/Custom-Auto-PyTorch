@@ -164,7 +164,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             ):
                 raise ValueError(f"fitting ensemble stacking requires resampling strategy to be of {RepeatedCrossValTypes} but got {self.resampling_strategy}")
         elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
-            if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
+            if base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation, BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo):
                 eval_function = eval_ensemble_optimise_function
             elif (
                 stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer

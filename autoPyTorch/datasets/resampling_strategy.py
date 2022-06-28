@@ -309,7 +309,6 @@ class NoResamplingFuncs():
         return indices
 
 
-# TODO: Add resampling strategy for stacking, depends on the choice of implementation
 class RepeatedCrossValFuncs:
     @staticmethod
     def repeated_k_fold_cross_validation(random_state: np.random.RandomState,

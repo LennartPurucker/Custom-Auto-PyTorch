@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import zlib
 
 import numpy as np
+from smac.runhistory.runhistory import RunHistory
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
@@ -29,7 +30,6 @@ Y_TEST = 1
 MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 
-# TODO: make functions to support stacking.
 class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
     def __init__(
         self,
@@ -39,6 +39,7 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
         output_type: int,
         metrics: List[autoPyTorchMetric],
         opt_metric: str,
+        run_history: Optional[RunHistory] = None,
         ensemble_size: int = 10,
         ensemble_nbest: int = 100,
         max_models_on_disc: Union[float, int] = 100,
@@ -208,16 +209,6 @@ class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):
             f'Starting iteration {iteration}, time left: {time_left - used_time} and initial num_run: {self.initial_num_run}',
         )
 
-        
-        # self.cutoff_num_run = self._load_ensemble_cutoff_num_run()
-        # # TODO: check how to handle this now.
-        # # checks if we have moved to a new stacking layer.
-        # if self.cutoff_num_run is None or self.is_new_layer:
-        #     # to exclude the latest model we subtract 1 from last available num run
-        #     self.cutoff_num_run = self.backend.get_next_num_run(peek=True) - 1
-        #     self.logger.debug(f"Updated cut off num run to : {self.cutoff_num_run}")
-
-        # populates self.read_preds and self.read_losses with individual model predictions and ensemble loss.
         if not self.compute_loss_per_model():
             if return_predictions:
                 return self.ensemble_history, self.ensemble_nbest, train_pred, test_pred

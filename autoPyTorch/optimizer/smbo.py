@@ -132,7 +132,8 @@ class AutoMLSMBO(object):
                  stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
                  other_callbacks: Optional[List] = None,
                  smbo_class: Optional[SMBO] = None,
-                 use_ensemble_opt_loss: bool = False
+                 use_ensemble_opt_loss: bool = False,
+                 iteration: int = 0
                  ):
         """
         Interface to SMAC. This method calls the SMAC optimize method, and allows
@@ -256,6 +257,7 @@ class AutoMLSMBO(object):
 
         self.num_stacking_layers = num_stacking_layers
 
+        self.iteration = iteration
         self.run_history = RunHistory()
         self.trajectory: List[TrajEntry] = []
 
@@ -311,10 +313,10 @@ class AutoMLSMBO(object):
         func: Optional[Callable] = None,
         ) -> Tuple[RunHistory, List[TrajEntry], str]:
 
-        current_task_name = f'SMBO_{cur_stacking_layer}'
+        current_task_name = f'SMBO_{cur_stacking_layer}_{self.iteration}'
 
         self.watcher.start_task(current_task_name)
-        self.logger.info(f"Started {cur_stacking_layer} run of SMBO with initial_num_run: {initial_num_run}")
+        self.logger.info(f"Started layer: {cur_stacking_layer} run of SMBO with initial_num_run: {initial_num_run}")
 
         # # == first things first: load the datamanager
         # self.reset_data_manager()
@@ -478,12 +480,12 @@ class AutoMLSMBO(object):
             if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
                 old_ensemble = self.backend.load_ensemble(self.seed)
                 assert isinstance(old_ensemble, (EnsembleOptimisationStackingEnsemble, EnsembleSelectionPerLayerStackingEnsemble))
-            if cur_stacking_layer != self.num_stacking_layers -1:
-                selected_identifiers = old_ensemble.get_selected_model_identifiers()[old_ensemble.cur_stacking_layer]
-                nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
-                ensemble_runs = [self.backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
-                self.logger.debug(f"deleting runs other than {ensemble_runs}")
-                delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=self.backend.get_runs_directory())
+                if cur_stacking_layer != self.num_stacking_layers -1:
+                    selected_identifiers = old_ensemble.get_selected_model_identifiers()[old_ensemble.cur_stacking_layer]
+                    nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
+                    ensemble_runs = [self.backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
+                    self.logger.debug(f"deleting runs other than {ensemble_runs}")
+                    delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=self.backend.get_runs_directory())
             previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
             previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')
             self.logger.debug(f"Original feat types len: {len(self.datamanager.feat_types)}")

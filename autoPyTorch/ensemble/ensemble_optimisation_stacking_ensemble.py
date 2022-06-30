@@ -240,6 +240,7 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         """
         predictions = self.ensemble_predictions_.copy()
         if predictions[self.ensemble_slot_j] is None:
+            # increase the total ensemble size by 1 as the pipeline is added to the ensemble
             total_predictions = len([pred for pred in predictions if pred is not None])
             total_predictions += 1
             weights: np.ndarray = np.ndarray([1/total_predictions if pred is not None else 0 for pred in predictions])

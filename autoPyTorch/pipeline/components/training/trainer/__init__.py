@@ -400,8 +400,8 @@ class TrainerChoice(autoPyTorchChoice):
             if self.eval_valid_each_epoch(X):
                 if 'val_data_loader' in X and X['val_data_loader']:
                     val_loss, val_metrics = self.choice.evaluate(X['val_data_loader'], epoch, writer)
-                if 'test_data_loader' in X and X['test_data_loader']:
-                    test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'], epoch, writer)
+                # if 'test_data_loader' in X and X['test_data_loader']:
+                #     test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'], epoch, writer)
 
             # Save training information
             self.run_summary.add_performance(
@@ -456,8 +456,8 @@ class TrainerChoice(autoPyTorchChoice):
         if not self.eval_valid_each_epoch(X):
             if 'val_data_loader' in X and X['val_data_loader']:
                 val_loss, val_metrics = self.choice.evaluate(X['val_data_loader'], epoch, writer)
-            if 'test_data_loader' in X and X['test_data_loader']:
-                test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'])
+            # if 'test_data_loader' in X and X['test_data_loader']:
+            #     test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'])
             self.run_summary.add_performance(
                 epoch=epoch,
                 start_time=start_time,

@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.ensemble import VotingRegressor
 
 from smac.runhistory.runhistory import RunValue
+from autoPyTorch.utils.configurations import is_configuration_traditional
 
 from autoPyTorch.utils.common import autoPyTorchEnum
 
@@ -23,7 +24,7 @@ __all__ = [
 
 
 def check_pipeline_is_fitted(pipeline, configuration):
-    if isinstance(configuration, Configuration):
+    if isinstance(configuration, Configuration) and not is_configuration_traditional(configuration):
         return hasattr(pipeline.named_steps['network'], 'is_fitted_') and pipeline.named_steps['network'].is_fitted_
     else:
         return pipeline.is_fitted_

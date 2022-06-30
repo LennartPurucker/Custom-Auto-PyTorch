@@ -59,20 +59,20 @@ feat_types = ["numerical" if not indicator else "categorical" for indicator in c
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_autogluon_tmp_11',
-    output_directory='./tmp/stacking_autogluon_out_11',
+    temporary_directory='./tmp/stacking_autogluon_tmp_01',
+    output_directory='./tmp/stacking_autogluon_out_01',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=1,
+    seed=11,
     base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_autogluon,
     stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_autogluon,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
-        'num_splits': 2,
+        'num_splits': 3,
         'num_repeats': 1
     },
     ensemble_size=6,
-    num_stacking_layers=1,
+    num_stacking_layers=2,
 )
 
 ############################################################################
@@ -86,8 +86,8 @@ api.run_autogluon_stacking(
     dataset_name='Australian',
     feat_types=feat_types,
     optimize_metric='accuracy',
-    total_walltime_limit=600,
-    func_eval_time_limit_secs=130,
+    total_walltime_limit=1800,
+    func_eval_time_limit_secs=300,
     all_supported_metrics=False,
     max_budget=10
 )

@@ -6,6 +6,7 @@ import logging
 
 from ConfigSpace.configuration_space import ConfigurationSpace
 from ConfigSpace.hyperparameters import (
+    CategoricalHyperparameter,
     UniformIntegerHyperparameter,
     UniformFloatHyperparameter
 )
@@ -119,6 +120,9 @@ class LGBModel(BaseTraditionalLearner):
             value_range=(16, 96),
             default_value=31,
         ),
+        extra_trees: HyperparameterSearchSpace = HyperparameterSearchSpace('extra_trees',
+            value_range=[True, False],
+            default_value=False)
     ) -> ConfigurationSpace:
         """Get the hyperparameter search space for the SimpleImputer
 
@@ -140,6 +144,7 @@ class LGBModel(BaseTraditionalLearner):
         add_hyperparameter(cs, min_data_in_leaf, UniformIntegerHyperparameter)
         add_hyperparameter(cs, feature_fraction, UniformFloatHyperparameter)
         add_hyperparameter(cs, learning_rate, UniformFloatHyperparameter)
+        add_hyperparameter(cs, extra_trees, CategoricalHyperparameter)
 
         return cs
 

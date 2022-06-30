@@ -13,6 +13,7 @@ from smac.tae import StatusType
 
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.automl_common.common.utils.backend import Backend
+from autoPyTorch.utils.configurations import is_configuration_traditional
 from autoPyTorch.utils.common import dict_repr
 
 
@@ -60,7 +61,7 @@ def run_models_on_dataset(
             stats = Stats(scenario_mock)
             stats.start_timing()
 
-            if isinstance(config, Configuration):
+            if isinstance(config, Configuration) and not is_configuration_traditional(config):
                 config.config_id = n_r
                 init_num_run = smac_initial_run
             else:
@@ -127,7 +128,7 @@ def run_models_on_dataset(
                     origin = additional_info['configuration_origin']
                     config = additional_info['configuration']
                     budget = additional_info['budget']
-                    if isinstance(config, dict):
+                    if isinstance(config, dict) and not is_configuration_traditional(config):
                         configuration = Configuration(current_search_space, config)
                     else:
                         configuration = additional_info.pop('pipeline_configuration')

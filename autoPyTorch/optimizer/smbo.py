@@ -9,8 +9,6 @@ from ConfigSpace.configuration_space import Configuration
 
 import dask.distributed
 
-import numpy as np
-
 from smac.facade.smac_ac_facade import SMAC4AC
 from smac.intensification.hyperband import Hyperband
 from smac.optimizer.smbo import SMBO
@@ -21,10 +19,8 @@ from smac.tae.dask_runner import DaskParallelRunner
 from smac.tae.serial_runner import SerialRunner
 from smac.utils.io.traj_logging import TrajEntry
 
-from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.base_dataset import BaseDataset
-from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.datasets.resampling_strategy import (
     ResamplingStrategies,
     DEFAULT_RESAMPLING_PARAMETERS,
@@ -359,7 +355,6 @@ class AutoMLSMBO(object):
             base_ensemble_method=self.base_ensemble_method,
             stacking_ensemble_method=self.stacking_ensemble_method,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
-            cur_stacking_layer=cur_stacking_layer
         )
         ta = ExecuteTaFuncWithQueue
         self.logger.info("Finish creating Target Algorithm (TA) function")
@@ -454,6 +449,8 @@ class AutoMLSMBO(object):
             self._budget_type = smac.solver.tae_runner.budget_type
         else:
             raise NotImplementedError(type(smac.solver.tae_runner))
+
+        self.watcher.stop_task(current_task_name)
 
         return runhistory, trajectory, self._budget_type
 

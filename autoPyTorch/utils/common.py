@@ -291,7 +291,7 @@ def check_none(p: Any) -> bool:
     return False
 
 
-def validate_config(config, search_space: ConfigurationSpace, n_numerical_in_incumbent_on_task_id, num_numerical, assert_autogluon_numerical_hyperparameters: bool=False):
+def validate_config(config: Configuration, search_space: ConfigurationSpace, n_numerical_in_incumbent_on_task_id, num_numerical, assert_autogluon_numerical_hyperparameters: bool=False):
     modified_config = config.get_dictionary().copy() if isinstance(config, Configuration) else config.copy()
 
     if num_numerical > 0:
@@ -325,5 +325,3 @@ def validate_config(config, search_space: ConfigurationSpace, n_numerical_in_inc
         modified_config[child_hyperparam.name] = floor(modified_config[child_hyperparam.name]/n_numerical_in_incumbent_on_task_id * num_numerical)
 
     return Configuration(search_space, modified_config)
-
-

@@ -180,10 +180,11 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         elapsed_time = time.time() - self.start_time
 
         logger = get_named_client_logger(
-            name='EnsembleBuilder',
+            name='EnsembleBuilderManager',
             port=self.logger_port,
         )
 
+        logger.debug(f"In EnsembleBuilderManager iteration: {self.iteration}")
         # First test for termination conditions
         if self.time_left_for_ensembles < elapsed_time:
             logger.info(
@@ -274,14 +275,15 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 logger.critical(exception_traceback)
                 logger.critical(error_message)
 
-    def update_for_new_stacking_layer(self, cur_stacking_layer: int, initial_num_run: int) -> None:
+    def update_for_new_stacking_layer(self, cur_stacking_layer: int, initial_num_run: int, is_iterative_hpo=False) -> None:
         if cur_stacking_layer > self.num_stacking_layers:
             raise ValueError(f"Unexpected value '{cur_stacking_layer}' for cur_stacking_layer. "
                              f"Max stacking layers are : {self.num_stacking_layers}.")
         self.cur_stacking_layer = cur_stacking_layer
-        self.iteration = 0
         self.initial_num_run = initial_num_run
-        self.is_new_layer = True
+        if not is_iterative_hpo:
+            self.iteration = 0
+            self.is_new_layer = True
 
 
 def fit_and_return_ensemble(

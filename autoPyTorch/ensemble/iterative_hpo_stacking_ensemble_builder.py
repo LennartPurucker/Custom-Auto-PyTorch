@@ -200,7 +200,7 @@ class IterativeHPOStackingEnsembleBuilder(object):
         # and read it if available
         self.ensemble_memory_file = os.path.join(
             self.backend.internals_directory,
-            'ensemble_read_preds.pkl'
+            'iterative_ensemble_read_preds.pkl'
         )
         if os.path.exists(self.ensemble_memory_file):
             try:
@@ -217,7 +217,7 @@ class IterativeHPOStackingEnsembleBuilder(object):
 
         self.ensemble_loss_file = os.path.join(
             self.backend.internals_directory,
-            'ensemble_read_losses.pkl'
+            'iterative_ensemble_read_losses.pkl'
         )
         if os.path.exists(self.ensemble_loss_file):
             try:

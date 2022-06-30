@@ -122,8 +122,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False,
-                 cur_stacking_layer: int = 0) -> None:
+                 use_ensemble_opt_loss=False) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -145,7 +144,6 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
             use_ensemble_opt_loss=use_ensemble_opt_loss
         )
 
-        self.cur_stacking_layer = cur_stacking_layer
         self.num_repeats = len(self.splits)
         self.num_folds = len(self.splits[0])
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
@@ -452,6 +450,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
         if self.old_ensemble is not None:
             Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
             Y_ensemble_preds = self.old_ensemble.get_ensemble_predictions_with_current_pipeline(Y_pipeline_optimization_pred)
+            self.logger.debug(f"old ensemble has {self.old_ensemble.stacked_ensemble_identifiers}")
         else:
             Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
             Y_ensemble_preds = [Y_pipeline_optimization_pred]
@@ -560,7 +559,6 @@ def eval_ensemble_optimise_function(
     all_supported_metrics: bool = True,
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
-    cur_stacking_layer: int = 0,
     instance: str = None,
 ) -> None:
     """
@@ -644,6 +642,5 @@ def eval_ensemble_optimise_function(
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
-        cur_stacking_layer=cur_stacking_layer
     )
     evaluator.fit_predict_and_loss()

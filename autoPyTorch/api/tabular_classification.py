@@ -261,7 +261,8 @@ class TabularClassificationTask(BaseTask):
         all_supported_metrics: bool = True,
         precision: int = 32,
         disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
-        dask_client: Optional[dask.distributed.Client] = None
+        dask_client: Optional[dask.distributed.Client] = None,
+        load_models: bool = True,
     ):
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
 
@@ -289,6 +290,7 @@ class TabularClassificationTask(BaseTask):
             precision=precision,
             disable_file_output=disable_file_output,
             dask_client=dask_client,
+            load_models=load_models
         )
 
     def run_iterative_hpo_ensemble_optimisation(

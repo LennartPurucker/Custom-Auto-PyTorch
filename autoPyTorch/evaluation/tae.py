@@ -41,6 +41,7 @@ from autoPyTorch.evaluation.utils import (
     extract_learning_curve,
     read_queue
 )
+from autoPyTorch.utils.configurations import is_configuration_traditional
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import dict_repr, replace_string_bool_to_bool
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
@@ -136,7 +137,6 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         base_ensemble_method: BaseLayerEnsembleSelectionTypes = BaseLayerEnsembleSelectionTypes.ensemble_selection,
         stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
         use_ensemble_opt_loss=False,
-        cur_stacking_layer: int = 0
     ):
 
         self.backend = backend
@@ -226,7 +226,6 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         self.memory_limit = memory_limit
 
         self.search_space_updates = search_space_updates
-        self.cur_stacking_layer = cur_stacking_layer
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
 
     def _check_and_get_default_budget(self) -> float:
@@ -341,10 +340,10 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             context=context,
         )
 
-        if isinstance(config, (int, str)):
-            num_run = self.initial_num_run
-        else:
+        if isinstance(config, Configuration) and not is_configuration_traditional(config):
             num_run = config.config_id + self.initial_num_run
+        else:
+            num_run = self.initial_num_run
 
         self.logger.debug("Search space updates for {}: {}".format(num_run,
                                                                    self.search_space_updates))
@@ -368,7 +367,6 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             all_supported_metrics=self.all_supported_metrics,
             search_space_updates=self.search_space_updates,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
-            cur_stacking_layer=self.cur_stacking_layer
         )
 
         info: Optional[List[RunValue]]
@@ -509,7 +507,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
 
         if isinstance(config, int):
             origin = 'DUMMY'
-        elif isinstance(config, str):
+        elif isinstance(config, Configuration) and is_configuration_traditional(config):
             origin = 'traditional'
         else:
             origin = getattr(config, 'origin', 'UNKNOWN')

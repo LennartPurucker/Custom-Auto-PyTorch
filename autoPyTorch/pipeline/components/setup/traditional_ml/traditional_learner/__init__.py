@@ -25,7 +25,7 @@ _traditional_learners = {
     # datasets. The other models are complementary and
     # their ordering is not critical
     'lgb': LGBModel,
-    'catboost': CatboostModel,
+    # 'catboost': CatboostModel,
     'random_forest': RFModel,
     'extra_trees': ExtraTreesModel,
     'knn': KNNModel,
@@ -45,7 +45,7 @@ def get_available_traditional_learners(
     traditional_learners.update(_traditional_learners)
     traditional_learners.update(_addons.components)
 
-    if dataset_properties is not None and len(dataset_properties['numerical_columns']) ==0:
+    if dataset_properties is not None and len(dataset_properties['numerical_columns']) == 0:
         traditional_learners.pop('knn', None)
 
     return traditional_learners

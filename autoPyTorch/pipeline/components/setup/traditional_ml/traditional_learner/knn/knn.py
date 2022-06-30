@@ -2,6 +2,7 @@ import logging.handlers
 from typing import Dict, Optional, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.hyperparameters import CategoricalHyperparameter
 
 import numpy as np
 
@@ -12,6 +13,7 @@ from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
     BaseTraditionalLearner
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.knn.utils import get_params as knn_get_params
+from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 
 
 class KNNModel(BaseTraditionalLearner):
@@ -79,6 +81,9 @@ class KNNModel(BaseTraditionalLearner):
     @staticmethod
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+        weights: HyperparameterSearchSpace = HyperparameterSearchSpace('weights',
+                                                                        value_range=['uniform', 'distance'],
+                                                                        default_value='uniform')
     ) -> ConfigurationSpace:
         """Get the hyperparameter search space for the SimpleImputer
 
@@ -95,6 +100,8 @@ class KNNModel(BaseTraditionalLearner):
                 `dataset_properties`
         """
         cs = ConfigurationSpace()
+
+        add_hyperparameter(cs, weights, CategoricalHyperparameter)
 
         return cs
 

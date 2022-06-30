@@ -1,10 +1,6 @@
 from math import floor
 from multiprocessing.queues import Queue
-from optparse import Option
-import os
-import re
 import time
-from timeit import repeat
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ConfigSpace.configuration_space import Configuration
@@ -121,8 +117,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False,
-                 cur_stacking_layer: int = 0
+                 use_ensemble_opt_loss=False
                  ) -> None:
         super().__init__(
             backend=backend,
@@ -519,8 +514,8 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
             valid_pred = None
 
         if self.X_test is not None:
-            test_pred = self.predict_function(self.X_test, pipeline,
-                                              self.y_train[train_indices])
+            test_pred = None  # self.predict_function(self.X_test, pipeline,
+                                            #   self.y_train[train_indices])
         else:
             test_pred = None
 
@@ -548,7 +543,6 @@ def eval_repeated_cv_function(
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
     instance: str = None,
-    cur_stacking_layer: int = 0,
 ) -> None:
     """
     This closure allows the communication between the ExecuteTaFuncWithQueue and the
@@ -631,6 +625,5 @@ def eval_repeated_cv_function(
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
-        cur_stacking_layer=cur_stacking_layer,
     )
     evaluator.fit_predict_and_loss()

@@ -44,6 +44,7 @@ from autoPyTorch.pipeline.components.training.metrics.utils import (
     get_metrics,
 )
 from autoPyTorch.utils.common import dict_repr, subsampler
+from autoPyTorch.utils.configurations import get_traditional_search_space_updates, is_configuration_traditional
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import PicklableClientLogger, get_named_client_logger
 from autoPyTorch.utils.pipeline import get_dataset_requirements
@@ -73,7 +74,7 @@ class MyTraditionalTabularClassificationPipeline(BaseEstimator):
             a similar function as the kwargs
     """
 
-    def __init__(self, config: str,
+    def __init__(self, config: Configuration,
                  dataset_properties: Dict[str, BaseDatasetPropertiesType],
                  random_state: Optional[Union[int, np.random.RandomState]] = None,
                  init_params: Optional[Dict] = None):
@@ -84,7 +85,7 @@ class MyTraditionalTabularClassificationPipeline(BaseEstimator):
         self.pipeline = autoPyTorch.pipeline.traditional_tabular_classification. \
             TraditionalTabularClassificationPipeline(dataset_properties=dataset_properties,
                                                      random_state=self.random_state,
-                                                     search_space_updates=self._get_search_space_updates())
+                                                     search_space_updates=get_traditional_search_space_updates(config))
         # configuration_space = self.pipeline.get_hyperparameter_search_space()
         # default_configuration = configuration_space.get_default_configuration().get_dictionary()
         # default_configuration['model_trainer:tabular_traditional_model:traditional_learner'] = config
@@ -153,7 +154,7 @@ class MyTraditionalTabularRegressionPipeline(BaseEstimator):
             An optional dictionary that is passed to the pipeline's steps. It complies
             a similar function as the kwargs
     """
-    def __init__(self, config: str,
+    def __init__(self, config: Configuration,
                  dataset_properties: Dict[str, Any],
                  random_state: Optional[np.random.RandomState] = None,
                  init_params: Optional[Dict] = None):
@@ -164,7 +165,7 @@ class MyTraditionalTabularRegressionPipeline(BaseEstimator):
         self.pipeline = autoPyTorch.pipeline.traditional_tabular_regression. \
             TraditionalTabularRegressionPipeline(dataset_properties=dataset_properties,
                                                      random_state=self.random_state,
-                                                     search_space_updates=self._get_search_space_updates())
+                                                     search_space_updates=get_traditional_search_space_updates(config))
         # configuration_space = self.pipeline.get_hyperparameter_search_space()
         # default_configuration = configuration_space.get_default_configuration().get_dictionary()
         # default_configuration['model_trainer:tabular_traditional_model:traditional_learner'] = config
@@ -450,8 +451,7 @@ class AbstractEvaluator(object):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False,
-                 cur_stacking_layer: int = 0
+                 use_ensemble_opt_loss=False
                  ) -> None:
 
         self.starttime = time.time()
@@ -482,29 +482,31 @@ class AbstractEvaluator(object):
         self.pipeline_class: Optional[Union[BaseEstimator, BasePipeline]] = None
         if self.task_type in REGRESSION_TASKS:
             if isinstance(self.configuration, int):
-                self.pipeline_class = DummyRegressionPipeline
-            elif isinstance(self.configuration, str):
-                self.pipeline_class = MyTraditionalTabularRegressionPipeline
+                self.pipeline_class = DummyRegressionPipeline                
             elif isinstance(self.configuration, Configuration):
-                self.pipeline_class = autoPyTorch.pipeline.tabular_regression.TabularRegressionPipeline
+                if not is_configuration_traditional(self.configuration):
+                    self.pipeline_class = autoPyTorch.pipeline.tabular_regression.TabularRegressionPipeline
+                else:
+                    self.pipeline_class = MyTraditionalTabularRegressionPipeline
             else:
                 raise ValueError('task {} not available'.format(self.task_type))
             self.predict_function = self._predict_regression
         else:
             if isinstance(self.configuration, int):
                 self.pipeline_class = DummyClassificationPipeline
-            elif isinstance(self.configuration, str):
-                if self.task_type in TABULAR_TASKS:
-                    self.pipeline_class = MyTraditionalTabularClassificationPipeline
-                else:
-                    raise ValueError("Only tabular tasks are currently supported with traditional methods")
             elif isinstance(self.configuration, Configuration):
-                if self.task_type in TABULAR_TASKS:
-                    self.pipeline_class = autoPyTorch.pipeline.tabular_classification.TabularClassificationPipeline
-                elif self.task_type in IMAGE_TASKS:
-                    self.pipeline_class = autoPyTorch.pipeline.image_classification.ImageClassificationPipeline
+                if not is_configuration_traditional(self.configuration):
+                    if self.task_type in TABULAR_TASKS:
+                        self.pipeline_class = autoPyTorch.pipeline.tabular_classification.TabularClassificationPipeline
+                    elif self.task_type in IMAGE_TASKS:
+                        self.pipeline_class = autoPyTorch.pipeline.image_classification.ImageClassificationPipeline
+                    else:
+                        raise ValueError('task {} not available'.format(self.task_type))
                 else:
-                    raise ValueError('task {} not available'.format(self.task_type))
+                    if self.task_type in TABULAR_TASKS:
+                        self.pipeline_class = MyTraditionalTabularClassificationPipeline
+                    else:
+                        raise ValueError("Only tabular tasks are currently supported with traditional methods")
             self.predict_function = self._predict_proba
 
         self.additional_metrics: Optional[List[autoPyTorchMetric]] = None
@@ -669,18 +671,19 @@ class AbstractEvaluator(object):
                                            random_state=np.random.RandomState(self.seed),
                                            init_params=self._init_params)
         elif isinstance(self.configuration, Configuration):
-            pipeline = self.pipeline_class(config=self.configuration,
-                                           dataset_properties=self.dataset_properties,
-                                           random_state=np.random.RandomState(self.seed),
-                                           include=self.include,
-                                           exclude=self.exclude,
-                                           init_params=self._init_params,
-                                           search_space_updates=self.search_space_updates)
-        elif isinstance(self.configuration, str):
-            pipeline = self.pipeline_class(config=self.configuration,
-                                           dataset_properties=self.dataset_properties,
-                                           random_state=np.random.RandomState(self.seed),
-                                           init_params=self._init_params)
+            if not is_configuration_traditional(self.configuration):
+                pipeline = self.pipeline_class(config=self.configuration,
+                                            dataset_properties=self.dataset_properties,
+                                            random_state=np.random.RandomState(self.seed),
+                                            include=self.include,
+                                            exclude=self.exclude,
+                                            init_params=self._init_params,
+                                            search_space_updates=self.search_space_updates)
+            else:
+                pipeline = self.pipeline_class(config=self.configuration,
+                                            dataset_properties=self.dataset_properties,
+                                            random_state=np.random.RandomState(self.seed),
+                                            init_params=self._init_params)
         else:
             raise ValueError("Invalid configuration entered")
         return pipeline

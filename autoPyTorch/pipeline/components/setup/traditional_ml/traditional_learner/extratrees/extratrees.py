@@ -2,6 +2,7 @@ import logging.handlers
 from typing import Dict, Optional, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.hyperparameters import CategoricalHyperparameter
 
 import numpy as np
 
@@ -9,11 +10,13 @@ from sklearn.ensemble import (
     ExtraTreesClassifier,
     ExtraTreesRegressor,
 )
+from autoPyTorch.constants import CLASSIFICATION_TASKS, REGRESSION_TASKS, STRING_TO_TASK_TYPES
 
 from autoPyTorch.pipeline.base_pipeline import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
     BaseTraditionalLearner
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.extratrees.utils import get_params
+from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 
 
 class ExtraTreesModel(BaseTraditionalLearner):
@@ -70,6 +73,9 @@ class ExtraTreesModel(BaseTraditionalLearner):
     @staticmethod
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
+        criterion: HyperparameterSearchSpace = HyperparameterSearchSpace('criterion',
+                                                                        value_range=['gini', 'entropy', 'squared_error'],
+                                                                        default_value='gini'),
     ) -> ConfigurationSpace:
         """Get the hyperparameter search space for the SimpleImputer
 
@@ -87,6 +93,19 @@ class ExtraTreesModel(BaseTraditionalLearner):
         """
         cs = ConfigurationSpace()
 
+        if dataset_properties is not None:
+            if STRING_TO_TASK_TYPES[dataset_properties['task_type']] in CLASSIFICATION_TASKS:
+                if 'squared_error' in criterion.value_range:
+                    value_range = [value for value in criterion.value_range if value != 'squared_error']
+                    default_value = value_range[0]
+                    criterion = HyperparameterSearchSpace(criterion.hyperparameter,
+                                                          value_range=value_range,
+                                                          default_value=default_value)
+            elif STRING_TO_TASK_TYPES[dataset_properties['task_type']] in REGRESSION_TASKS:
+                criterion = HyperparameterSearchSpace(criterion.hyperparameter,
+                                                        value_range=('squared_error',),
+                                                        default_value='squared_error')
+        add_hyperparameter(cs, criterion, CategoricalHyperparameter)
         return cs
 
     @staticmethod

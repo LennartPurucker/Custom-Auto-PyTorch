@@ -132,8 +132,8 @@ class TrainEvaluator(AbstractEvaluator):
                  keep_models: Optional[bool] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False,
-                 cur_stacking_layer: int = 0) -> None:
+                 use_ensemble_opt_loss=False
+                 ) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -437,7 +437,6 @@ def eval_train_function(
     all_supported_metrics: bool = True,
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
-    cur_stacking_layer: int = 0,
     instance: str = None,
 ) -> None:
     """
@@ -521,6 +520,5 @@ def eval_train_function(
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
-        cur_stacking_layer=cur_stacking_layer
     )
     evaluator.fit_predict_and_loss()

@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import glob
 import gzip
 import logging
@@ -48,7 +49,7 @@ class IterativeHPOStackingEnsembleBuilder(object):
         output_type: int,
         metrics: List[autoPyTorchMetric],
         opt_metric: str,
-        run_history: Optional[RunHistory] = None,
+        run_history: Optional[Union[RunHistory, OrderedDict]] = None,
         ensemble_size: int = 10,
         ensemble_nbest: int = 100,
         seed: int = 1,
@@ -874,8 +875,9 @@ class IterativeHPOStackingEnsembleBuilder(object):
         best_model_identifier = []
         best_model_score = self.metric._worst_possible_result
 
-        for run_key in self.run_history.data.keys():
-            run_value = self.run_history.data[run_key]
+        data = self.run_history.data if isinstance(self.run_history, RunHistory) else self.run_history
+        for run_key in data.keys():
+            run_value = data[run_key]
             if run_value.status == StatusType.CRASHED:
                 continue
 

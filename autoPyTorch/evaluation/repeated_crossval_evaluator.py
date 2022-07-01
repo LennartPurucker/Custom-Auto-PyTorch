@@ -514,8 +514,8 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
             valid_pred = None
 
         if self.X_test is not None:
-            test_pred = None  # self.predict_function(self.X_test, pipeline,
-                                            #   self.y_train[train_indices])
+            test_pred =  self.predict_function(self.X_test, pipeline,
+                                               self.y_train[train_indices])
         else:
             test_pred = None
 

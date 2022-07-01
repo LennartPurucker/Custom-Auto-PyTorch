@@ -1,5 +1,11 @@
+from collections import OrderedDict
+from typing import Dict, Union, OrderedDict as OrderedDict_typing
+from ConfigSpace.configuration_space import ConfigurationSpace, Configuration
+
+from smac.runhistory.runhistory import RunHistory, RunKey, RunValue
+
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
-from smac.runhistory.runhistory import RunHistory
+
 
 def get_autogluon_default_nn_config(feat_types):
     has_numerical_features = "numerical" in feat_types
@@ -132,8 +138,27 @@ def get_autogluon_default_nn_config(feat_types):
     return search_space_updates
 
 
-def get_config_from_run_history(run_history: RunHistory, num_run: int):
-    for _, run_value in run_history.data.items():
+def get_config_from_run_history(run_history: Union[RunHistory, OrderedDict], num_run: int):
+    data = run_history.data if isinstance(run_history, RunHistory) else run_history
+
+    for _, run_value in data.items():
         if run_value.additional_info.get('num_run', -1) == num_run:  # to ensure that unsuccessful configs are not returned
             return run_value.additional_info['configuration']
     
+def update_run_history_with_max_config_id(run_history_data: OrderedDict_typing[RunKey, RunValue], ids_config: Dict[int, Configuration], max_run_history_config_id: int):
+
+    updated_run_history: OrderedDict_typing[RunKey, RunValue] = OrderedDict()
+    updated_ids_config: Dict[int, Configuration] = {}
+    for run_key, run_value in run_history_data.items():
+
+        configuration = ids_config[run_key.config_id]
+        new_config_id = run_key.config_id+max_run_history_config_id
+        configuration.config_id = new_config_id
+
+        updated_ids_config[new_config_id] = configuration
+        updated_run_history.update({
+            RunKey(config_id=new_config_id, instance_id=run_key.instance_id, seed=run_key.seed, budget=run_key.budget): \
+                RunValue(run_value.cost, run_value.time, run_value.status, run_value.starttime, run_value.endtime, run_value.additional_info)
+        })
+
+    return updated_run_history, updated_ids_config

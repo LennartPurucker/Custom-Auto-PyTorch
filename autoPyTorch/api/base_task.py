@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import copy
 import json
 import logging.handlers
@@ -35,7 +36,7 @@ from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history
+from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history, update_run_history_with_max_config_id
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -1371,13 +1372,14 @@ class BaseTask(ABC):
         model_identifiers: List[Tuple[int, int, float]],
         weights: List[float],
         ensemble_size: int,
-        run_history: Optional[RunHistory] = None
+        run_history: Optional[Union[RunHistory, OrderedDict]] = None
     ):
         run_history = run_history if run_history is not None else self.run_history
         model_configs = []
         previous_layer_predictions_train = []
         previous_layer_predictions_test = []
-        self._logger.debug(f'id_config: {dict_repr(run_history.data)}')
+        data = run_history.data if isinstance(run_history, RunHistory) else run_history
+        self._logger.debug(f'id_config: {dict_repr(data)}')
         for weight, model_identifier in zip(weights, model_identifiers):
             if model_identifier is None:
                 model_configs.append(None)
@@ -1803,10 +1805,6 @@ class BaseTask(ABC):
                     self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
                     and self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
                  )
-                 or (
-                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
-                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
-                 )
                  )
             ):
             dummy_task_name = 'runDummy'
@@ -1824,10 +1822,6 @@ class BaseTask(ABC):
                  (
                     self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
                     and self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
-                 )
-                 or (
-                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
-                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
                  )
             )
             ):
@@ -2077,10 +2071,13 @@ class BaseTask(ABC):
         time_per_layer_search = math.floor(total_walltime_limit/num_stacking_layers)
         dataset = copy.deepcopy(self.dataset)
 
+        max_run_history_config_id = 0
+        full_run_history = OrderedDict()
         for cur_stacking_layer in range(num_stacking_layers):
             layer_initial_num_runs = []
             time_per_slot_search = math.floor(time_per_layer_search/ensemble_size)
-            layer_run_history = RunHistory()
+            layer_run_history = OrderedDict()
+            layer_ids_config = dict()
             for ensemble_slot_j in range(ensemble_size):
                 start_time = time.time()
                 iteration = cur_stacking_layer*ensemble_size + ensemble_slot_j
@@ -2103,9 +2100,13 @@ class BaseTask(ABC):
                     search_space=current_search_space,
                     iteration=iteration
                     )
-                layer_run_history.update(run_history, DataOrigin.INTERNAL)
-                self._logger.debug(f"run history for ensemble_slot_j: {ensemble_slot_j} \n {dict_repr(run_history.data)} cur_stacking_layer:{cur_stacking_layer} \n {dict_repr(layer_run_history.data)}")
-                layer_initial_num_runs.append(smac_initial_num_run)
+                self._logger.debug(f"max_run_history_config_id: {max_run_history_config_id} before updating run history")
+                updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
+                layer_run_history.update(updated_run_history_data)
+                layer_ids_config.update(updated_ids_config)
+                self._logger.debug(f"updated run history for ensemble_slot_j: {ensemble_slot_j} \n {dict_repr(updated_run_history_data)} cur_stacking_layer:{cur_stacking_layer} \n {dict_repr(layer_run_history)}")
+                # smac_initial_num_run is return with peek=True
+                layer_initial_num_runs.append(smac_initial_num_run+1)
                 time_left_for_ensemble = time_per_slot_search - (time.time() - start_time)
                 self._logger.debug(f"starting iterative ensemble fit for iteration: {iteration} and time_left_for_ensemble: {time_left_for_ensemble}")
                 self.fit_ensemble(
@@ -2128,45 +2129,51 @@ class BaseTask(ABC):
                     num_stacking_layers=num_stacking_layers
                 )
 
-            layer_ensemble = self._backend.load_ensemble(self.seed)
-            layer_identifiers = layer_ensemble.get_selected_model_identifiers()[cur_stacking_layer]
-            _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
-                model_identifiers=layer_identifiers,
-                weights=layer_ensemble.weights_,
-                ensemble_size=self.ensemble_size,
-                run_history=layer_run_history
-            )
+                # update to adjust run history of the next run, we dont care about config ids as we have num run to identify
+                max_run_history_config_id = max(updated_ids_config.keys())
+                self._logger.debug(f" for ensemble_slot_j: max_run_history_config_id {max_run_history_config_id}")
 
-            self._logger.debug(f"Original feat types len: {len(dataset.feat_types)}")
-            nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
-            nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
-            assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
-            self._logger.debug(f"length Non null predictions: {len(nonnull_model_predictions_train)}")
-            dataset = get_appended_dataset(
-                original_dataset=dataset,
-                previous_layer_predictions_train=nonnull_model_predictions_train,
-                previous_layer_predictions_test=nonnull_model_predictions_test,
-                resampling_strategy=self.resampling_strategy,
-                resampling_strategy_args=self.resampling_strategy_args,
-            )
-            self._logger.debug(f"new feat_types len: {len(dataset.feat_types)}")
+            # dont append predictions to the dataset if we are running the last layer so post hoc works properly.
+            if cur_stacking_layer != num_stacking_layers-1:
+                layer_ensemble = self._backend.load_ensemble(self.seed)
+                layer_identifiers = layer_ensemble.get_selected_model_identifiers()[cur_stacking_layer]
+                _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
+                    model_identifiers=layer_identifiers,
+                    weights=layer_ensemble.weights_,
+                    ensemble_size=self.ensemble_size,
+                    run_history=layer_run_history
+                )
 
-            current_search_space = self._get_search_space(
-                                                dataset,
-                                                include_components=self.include_components,
-                                                exclude_components=self.exclude_components,
-                                                search_space_updates=self.search_space_updates)
-            self._reset_datamanager_in_backend(datamanager=dataset)
+                self._logger.debug(f"Original feat types len: {len(dataset.feat_types)}")
+                nonnull_model_predictions_train = [pred for pred in previous_layer_predictions_train if pred is not None]
+                nonnull_model_predictions_test = [pred for pred in previous_layer_predictions_test if pred is not None]
+                assert len(nonnull_model_predictions_train) == len(nonnull_model_predictions_test)
+                self._logger.debug(f"length Non null predictions: {len(nonnull_model_predictions_train)}")
+                dataset = get_appended_dataset(
+                    original_dataset=dataset,
+                    previous_layer_predictions_train=nonnull_model_predictions_train,
+                    previous_layer_predictions_test=nonnull_model_predictions_test,
+                    resampling_strategy=self.resampling_strategy,
+                    resampling_strategy_args=self.resampling_strategy_args,
+                )
+                self._logger.debug(f"new feat_types len: {len(dataset.feat_types)}")
+
+                current_search_space = self._get_search_space(
+                                                    dataset,
+                                                    include_components=self.include_components,
+                                                    exclude_components=self.exclude_components,
+                                                    search_space_updates=self.search_space_updates)
+                self._reset_datamanager_in_backend(datamanager=dataset)
 
             initial_num_runs.append(layer_initial_num_runs)
-            self.run_history.update(run_history, DataOrigin.INTERNAL)
-        
+            full_run_history.update(layer_run_history)
+
         if posthoc_ensemble_fit:
             ensemble: IterativeHPOStackingEnsemble = self._backend.load_ensemble(self.seed)
             initial_num_run = initial_num_runs[-1][0]
             time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
             iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
-            self._logger.debug(f"Starting post hoc ensemble fitting with iteration: {iteration}")
+            self._logger.debug(f"Starting post hoc ensemble fitting with iteration: {iteration}, ensemble.stacked_ensemble_identifiers: {ensemble.stacked_ensemble_identifiers}")
             final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
                 optimize_metric=self.opt_metric,
                 time_left_for_ensemble=time_for_post_fit_ensemble,
@@ -2185,7 +2192,7 @@ class BaseTask(ABC):
                     broken = True
                     break
             last_nonnull_layer = i-1 if broken else i
-            self._logger.debug(f"broken: {broken}, lastnonnull layer: {last_nonnull_layer}, i: {i}")
+            self._logger.debug(f"broken: {broken}, lastnonnull layer: {last_nonnull_layer}, i: {i}, ensemble.stacked_ensemble_identifiers: {ensemble.stacked_ensemble_identifiers}")
             ensemble.stacked_ensemble_identifiers[last_nonnull_layer] = final_model_identifiers
             ensemble.weights_ = final_weights
             self._backend.save_ensemble(ensemble, iteration+1, self.seed)
@@ -3007,6 +3014,7 @@ class BaseTask(ABC):
                     self.base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_autogluon, BaseLayerEnsembleSelectionTypes.ensemble_selection)
                     or self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
                 ):
+                    self._logger.debug(f"Yes, it is updating the predictions with more data")
                     concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
                         stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
                 else:

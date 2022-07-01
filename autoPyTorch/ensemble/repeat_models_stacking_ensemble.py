@@ -5,6 +5,7 @@ import numpy as np
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
+from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
 
 
@@ -136,7 +137,7 @@ class RepeatModelsStackingEnsemble(AbstractEnsemble):
                 problem.
         """
         outputs = []
-        first_layer_models = models[0] if isinstance(self.base_ensemble, EnsembleSelection) else [models[0]] 
+        first_layer_models = models[0] if isinstance(self.base_ensemble, (EnsembleSelection, IterativeHPOStackingEnsemble)) else [models[0]] 
         for _ in models:
             outputs.append(self.base_ensemble.get_models_with_weights(first_layer_models))
 

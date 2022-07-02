@@ -30,13 +30,13 @@ import numpy as np
 import pandas as pd
 
 from smac.optimizer.smbo import SMBO
-from smac.runhistory.runhistory import DataOrigin, RunHistory, RunInfo, RunValue
+from smac.runhistory.runhistory import DataOrigin, RunHistory, RunInfo, RunValue, EnumEncoder
 from smac.stats.stats import Stats
 from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history, update_run_history_with_max_config_id
+from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history, save_run_history, update_run_history_with_max_config_id
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -2073,6 +2073,7 @@ class BaseTask(ABC):
 
         max_run_history_config_id = 0
         full_run_history = OrderedDict()
+        full_ids_config = dict()
         for cur_stacking_layer in range(num_stacking_layers):
             layer_initial_num_runs = []
             time_per_slot_search = math.floor(time_per_layer_search/ensemble_size)
@@ -2167,6 +2168,11 @@ class BaseTask(ABC):
 
             initial_num_runs.append(layer_initial_num_runs)
             full_run_history.update(layer_run_history)
+            full_ids_config.update(layer_ids_config)
+
+        path_run_history = os.path.join(self._backend.internals_directory, 'run_history_full.json')
+
+        save_run_history(full_run_history, full_ids_config, path_run_history)
 
         if posthoc_ensemble_fit:
             ensemble: IterativeHPOStackingEnsemble = self._backend.load_ensemble(self.seed)
@@ -2199,6 +2205,7 @@ class BaseTask(ABC):
 
         return iteration + 1
 
+    
     def _init_required_args(
         self,
         experiment_task_name: str,

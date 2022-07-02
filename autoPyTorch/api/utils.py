@@ -1,8 +1,9 @@
 from collections import OrderedDict
+import json
 from typing import Dict, Union, OrderedDict as OrderedDict_typing
 from ConfigSpace.configuration_space import ConfigurationSpace, Configuration
 
-from smac.runhistory.runhistory import RunHistory, RunKey, RunValue
+from smac.runhistory.runhistory import DataOrigin, RunHistory, RunInfo, RunValue, EnumEncoder, RunKey
 
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 
@@ -52,6 +53,18 @@ def get_autogluon_default_nn_config(feat_types):
         hyperparameter='MLPBackbone:dropout',
         value_range=(0.1, 0.5),
         default_value=0.1,
+    )
+    search_space_updates.append(
+        node_name='network_backbone',
+        hyperparameter='MLPBackbone:use_dropout',
+        value_range=(True, False),
+        default_value=True,
+    )
+    search_space_updates.append(
+        node_name='network_backbone',
+        hyperparameter='MLPBackbone:use_batch_norm',
+        value_range=(True, False),
+        default_value=True,
     )
     search_space_updates.append(
         node_name='network_backbone',
@@ -162,3 +175,34 @@ def update_run_history_with_max_config_id(run_history_data: OrderedDict_typing[R
         })
 
     return updated_run_history, updated_ids_config
+
+def save_run_history(full_run_history: Dict, full_ids_config: Dict, path_run_history):
+        data = [
+            (
+                [
+                    int(k.config_id),
+                    str(k.instance_id) if k.instance_id is not None else None,
+                    int(k.seed),
+                    float(k.budget) if k[3] is not None else 0,
+                ],
+                [v.cost, v.time, v.status, v.starttime, v.endtime, v.additional_info],
+            )
+            for k, v in full_run_history.items()
+        ]
+        config_ids_to_serialize = set([entry[0][0] for entry in data])
+        configs = {
+            id_: conf.get_dictionary() for id_, conf in full_ids_config.items() if id_ in config_ids_to_serialize
+        }
+        config_origins = {
+            id_: conf.origin
+            for id_, conf in full_ids_config.items()
+            if (id_ in config_ids_to_serialize and conf.origin is not None)
+        }
+
+        with open(path_run_history, "w") as fp:
+            json.dump(
+                {"data": data, "config_origins": config_origins, "configs": configs},
+                fp,
+                cls=EnumEncoder,
+                indent=2,
+            )

@@ -1,6 +1,8 @@
 # -*- encoding: utf-8 -*-
 import logging
 import logging.handlers
+import os
+import pickle
 import time
 import traceback
 from typing import Dict, List, Optional, Tuple, Union
@@ -26,6 +28,7 @@ from autoPyTorch.ensemble.utils import (
 )
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.logging_ import get_named_client_logger
+from autoPyTorch.utils.single_thread_client import DummyFuture
 
 
 class EnsembleBuilderManager(IncorporateRunResultCallback):
@@ -160,6 +163,9 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
 
         self.use_ensemble_loss = use_ensemble_loss
         self.initial_num_run = initial_num_run
+        self.ensemble_history_tmp_file = os.path.join(self.backend.internals_directory, 'temp_ensemble_history.pkl')
+        if os.path.exists(self.ensemble_history_tmp_file):
+            self.history = pickle.load(open(self.ensemble_history_tmp_file, 'rb'))
 
     def __call__(
         self,
@@ -204,15 +210,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
 
         if len(self.futures) != 0:
             if self.futures[0].done():
-                result = self.futures.pop().result()
-                if result:
-                    ensemble_history, self.ensemble_nbest, _, _ = result
-                    logger.debug("iteration={} @ elapsed_time={} has history={}".format(
-                        self.iteration,
-                        elapsed_time,
-                        ensemble_history,
-                    ))
-                    self.history.extend(ensemble_history)
+                self.extend_history(elapsed_time, logger)
 
         # Only submit new jobs if the previous ensemble job finished
         if len(self.futures) == 0:
@@ -274,6 +272,21 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
                 error_message = repr(e)
                 logger.critical(exception_traceback)
                 logger.critical(error_message)
+        if isinstance(self.futures[0], DummyFuture):
+            self.extend_history(elapsed_time, logger)
+
+        pickle.dump(self.history, open(self.ensemble_history_tmp_file, 'wb'))
+
+    def extend_history(self, elapsed_time, logger):
+        result = self.futures.pop().result()
+        if result:
+            ensemble_history, self.ensemble_nbest, _, _ = result
+            logger.debug("iteration={} @ elapsed_time={} has history={}".format(
+                        self.iteration,
+                        elapsed_time,
+                        ensemble_history,
+                    ))
+            self.history.extend(ensemble_history)
 
     def update_for_new_stacking_layer(self, cur_stacking_layer: int, initial_num_run: int, is_iterative_hpo=False) -> None:
         if cur_stacking_layer > self.num_stacking_layers:

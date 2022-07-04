@@ -28,6 +28,7 @@ from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
+from autoPyTorch.ensemble.utils import read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss, calculate_score
 from autoPyTorch.utils.logging_ import get_named_client_logger
@@ -1181,21 +1182,5 @@ class EnsembleBuilder(object):
                 )
 
     def _read_np_fn(self, path: str) -> np.ndarray:
-        precision = self.precision
 
-        if path.endswith("gz"):
-            fp = gzip.open(path, 'rb')
-        elif path.endswith("npy"):
-            fp = open(path, 'rb')
-        else:
-            raise ValueError("Unknown filetype %s" % path)
-        if precision == 16:
-            predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float16)
-        elif precision == 32:
-            predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float32)
-        elif precision == 64:
-            predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float64)
-        else:
-            predictions = np.load(fp, allow_pickle=True)
-        fp.close()
-        return predictions
+        return read_np_fn(self.precision, path)

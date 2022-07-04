@@ -121,7 +121,7 @@ class RepeatModelsStackingEnsemble(AbstractEnsemble):
 
     def get_models_with_weights(
         self,
-        models: Dict[Any, BasePipeline]
+        models: List[Dict[Any, BasePipeline]]
     ) -> List[Tuple[float, BasePipeline]]:
         """
         Handy function to tag the provided input models with a given weight.
@@ -137,10 +137,18 @@ class RepeatModelsStackingEnsemble(AbstractEnsemble):
                 problem.
         """
         outputs = []
-        first_layer_models = models[0] if isinstance(self.base_ensemble, (EnsembleSelection, IterativeHPOStackingEnsemble)) else [models[0]] 
-        for _ in models:
-            outputs.append(self.base_ensemble.get_models_with_weights(first_layer_models))
-
+        is_ensemble_selection = isinstance(self.base_ensemble, EnsembleSelection) 
+        first_layer_models = models[0] if is_ensemble_selection else [models[0]]
+        base_models = self.base_ensemble.get_models_with_weights(first_layer_models)
+        outputs = base_models if not is_ensemble_selection else [base_models]
+        for i, layer_models in enumerate(models[1:]):
+            num_models = len(layer_models)
+            weights = [1/num_models] * num_models
+            output = []
+            for weight, model in zip(weights, layer_models):
+                output.append((weight, layer_models[model]))
+            output.sort(reverse=True, key=lambda t: t[0])
+            outputs.append(output)
         return outputs
 
     def get_expanded_layer_stacking_ensemble_predictions(
@@ -176,4 +184,3 @@ class RepeatModelsStackingEnsemble(AbstractEnsemble):
                 best ensemble training performance
         """
         return self.base_ensemble.trajectory_[-1]
-

@@ -277,10 +277,10 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         for i, layer_models in enumerate(models):
             output = []
             num_models = len(layer_models)
-            if i == len(models):
+            if i == len(models) - 1:
                 weights = self.weights_
             else:
-                weights = [1/num_models] * len(models)
+                weights = [1/num_models] * num_models
             for weight, model in zip(weights, layer_models):
                 output.append((weight, layer_models[model]))
             output.sort(reverse=True, key=lambda t: t[0])

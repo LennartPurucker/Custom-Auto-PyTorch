@@ -40,7 +40,7 @@ def cost2metric(cost: float, metric: autoPyTorchMetric) -> float:
     return metric._sign * (metric._optimum - cost)
 
 
-def get_start_time(run_history: RunHistory) -> float:
+def get_start_time(run_history: Dict) -> float:
     """
     Get start time of optimization.
 
@@ -54,7 +54,7 @@ def get_start_time(run_history: RunHistory) -> float:
     """
 
     start_times = []
-    for run_value in run_history.data.values():
+    for run_value in run_history.values():
         if run_value.status in (StatusType.STOP, StatusType.RUNNING):
             continue
         elif run_value.status not in STATUS_TYPES:
@@ -228,7 +228,8 @@ class SearchResults:
         self,
         metric: autoPyTorchMetric,
         scoring_functions: List[autoPyTorchMetric],
-        run_history: RunHistory,
+        run_history: Dict,
+        ids_config: Dict,
         order_by_endtime: bool = False
     ):
         """
@@ -295,7 +296,7 @@ class SearchResults:
         self._metric = metric
         self._instantiated = False
 
-        self._extract_results_from_run_history(run_history)
+        self._extract_results_from_run_history(run_history, ids_config)
         if order_by_endtime:
             self._sort_by_endtime()
 
@@ -400,7 +401,7 @@ class SearchResults:
         # Only rank_opt_scores is np.ndarray
         self.rank_opt_scores = self.rank_opt_scores[order]
 
-    def _extract_results_from_run_history(self, run_history: RunHistory) -> None:
+    def _extract_results_from_run_history(self, run_history: Dict, ids_config: Dict) -> None:
         """
         Extract the information to match this class format.
 
@@ -409,8 +410,8 @@ class SearchResults:
                 The history of config evals from SMAC.
         """
 
-        for run_key, run_value in run_history.data.items():
-            config = run_history.ids_config[run_key.config_id]
+        for run_key, run_value in run_history.items():
+            config = ids_config[run_key.config_id]
             self._update(config=config, run_key=run_key, run_value=run_value)
 
         self.rank_opt_scores = scipy.stats.rankdata(
@@ -423,7 +424,7 @@ class MetricResults:
     def __init__(
         self,
         metric: autoPyTorchMetric,
-        run_history: RunHistory,
+        run_history: Dict,
         ensemble_performance_history: List[Dict[str, Any]]
     ):
         """
@@ -552,7 +553,8 @@ class ResultsManager:
             trajectory (List[TrajEntry]):
                 A list of all incumbent configurations during search
         """
-        self.run_history: RunHistory = RunHistory()
+        self.run_history: Dict = dict()
+        self.ids_config: Dict = dict()
         self.ensemble_performance_history: List[Dict[str, Any]] = []
         self.trajectory: List[TrajEntry] = []
 
@@ -560,8 +562,14 @@ class ResultsManager:
         if self.run_history is None:
             raise RuntimeError("No Run History found, search has not been called.")
 
-        if self.run_history.empty():
+        if not self.run_history:
             raise RuntimeError("Run History is empty. Something went wrong, "
+                               "SMAC was not able to fit any model?")
+        if self.ids_config is None:
+            raise RuntimeError("No ids_config found, search has not been called.")
+
+        if not self.ids_config:
+            raise RuntimeError("ids_config is empty. Something went wrong, "
                                "SMAC was not able to fit any model?")
 
     def get_incumbent_results(

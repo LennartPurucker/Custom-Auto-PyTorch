@@ -74,7 +74,7 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner im
 from autoPyTorch.utils.configurations import get_traditional_config_space, get_traditional_learners_configurations, is_configuration_traditional
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
-from autoPyTorch.utils.common import FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.common import TIME_FOR_BASE_MODELS_SEARCH, FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT, dict_repr, replace_string_bool_to_bool, validate_config
 from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import (
@@ -452,8 +452,12 @@ class BaseTask(ABC):
         return dataset
 
     @property
-    def run_history(self) -> RunHistory:
+    def run_history(self) -> Dict:
         return self._results_manager.run_history
+
+    @property
+    def ids_config(self) -> Dict:
+        return self._results_manager.ids_config
 
     @property
     def ensemble_performance_history(self) -> List[Dict[str, Any]]:
@@ -703,7 +707,7 @@ class BaseTask(ABC):
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
                     cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
-                # self._logger.debug(f"stacked ensemble models are :{models}")
+                self._logger.debug(f"stacked ensemble models are :{models}")
                 self.models_ = models
                 self.cv_models_ = cv_models
 
@@ -923,9 +927,10 @@ class BaseTask(ABC):
 
         self._logger.debug("Run history traditional: {}".format(run_history))
         # add run history of traditional to api run history
-        self.run_history.update(run_history, DataOrigin.EXTERNAL_SAME_INSTANCES)
-        run_history.save_json(os.path.join(self._backend.internals_directory, 'traditional_run_history.json'),
-                              save_external=True)
+        self.run_history.update(run_history.data)
+        self.ids_config.update(run_history.ids_config)
+
+        save_run_history(run_history.data, run_history.ids_config, os.path.join(self._backend.internals_directory, 'traditional_run_history.json'))
         return
 
     def run_traditional_ml(
@@ -998,9 +1003,10 @@ class BaseTask(ABC):
 
         self._logger.debug("Run history for layer: {}: {}".format(stacking_layer, run_history))
         # add run history of traditional to api run history
-        self.run_history.update(run_history, DataOrigin.EXTERNAL_SAME_INSTANCES)
-        run_history.save_json(os.path.join(self._backend.internals_directory, f'run_history_{stacking_layer}.json'),
-                              save_external=True)
+        self.run_history.update(run_history.data)
+        self.ids_config.update(run_history.ids_config)
+        save_run_history(run_history.data, run_history.ids_config, os.path.join(self._backend.internals_directory, f'run_history_{stacking_layer}.json'))
+
         return model_identifiers
 
     def _reset_datamanager_in_backend(self, datamanager)-> None:
@@ -1014,7 +1020,6 @@ class BaseTask(ABC):
         ensemble_size,
         iteration,
         enable_traditional_pipeline=False,
-        cleanup=True,
         func_eval_time_limit_secs: int = 50,
         base_ensemble_method = BaseLayerEnsembleSelectionTypes.ensemble_selection,
         stacking_ensemble_method = None
@@ -1030,7 +1035,7 @@ class BaseTask(ABC):
             enable_traditional_pipeline=enable_traditional_pipeline,
             func_eval_time_limit_secs=func_eval_time_limit_secs,
             iteration=iteration,
-            cleanup=cleanup,
+            cleanup=False,
             base_ensemble_method=base_ensemble_method,
             stacking_ensemble_method=stacking_ensemble_method,
             load_models=False
@@ -1060,7 +1065,7 @@ class BaseTask(ABC):
         load_models: bool = True
     ):
         """
-        This function can be used to create a stacking ensemble
+        This function can be used to create a stacking ensemble based on autogluon tabular
         Args:
             current_task_name (str): name of the current task,
             runtime_limit (int): time limit for fitting traditional models,
@@ -1156,8 +1161,8 @@ class BaseTask(ABC):
             time_left_for_ensemble,
             last_successful_smac_initial_num_run,
             ensemble_size,
-            iteration,
-            cleanup=False)
+            iteration
+            )
         model_identifiers[-1] = final_model_identifiers
         stacked_weights[-1] = final_weights
         ensemble = ensemble.fit(model_identifiers, stacked_weights)
@@ -1192,7 +1197,7 @@ class BaseTask(ABC):
         self._stopwatch.start_task(stacking_task_name)
         self.precision = precision
         self.opt_metric = optimize_metric
-        time_left_for_search_base_models = math.floor(0.5*total_walltime_limit)
+        time_left_for_search_base_models = math.floor(TIME_FOR_BASE_MODELS_SEARCH*total_walltime_limit)
         if posthoc_ensemble_fit:
             time_left_for_search_base_models = math.floor(TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT*time_left_for_search_base_models)
             time_left_for_posthoc_ensemble = math.floor((1-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT)*time_left_for_search_base_models)
@@ -1246,8 +1251,8 @@ class BaseTask(ABC):
                     proc_ensemble.iteration + 1,
                     enable_traditional_pipeline=enable_traditional_pipeline,
                     base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_selection,
-                    stacking_ensemble_method=self.stacking_ensemble_method,
-                    cleanup=False)
+                    stacking_ensemble_method=self.stacking_ensemble_method
+                )
             final_ensemble_iteration = proc_ensemble.iteration+10
         elif self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
             final_ensemble_iteration = self._fit_iterative_hpo_ensemble(
@@ -1302,6 +1307,8 @@ class BaseTask(ABC):
         """
         base_ensemble = self._backend.load_ensemble(self.seed)
         # TODO: refactor to remove if
+        self._logger.debug(f"base_ensemble.get_selected_model_identifiers() from the base ensemble in repeat stacking: {base_ensemble.get_selected_model_identifiers()}")
+
         model_identifiers = [base_ensemble.get_selected_model_identifiers()] if isinstance(base_ensemble, EnsembleSelection) else base_ensemble.get_selected_model_identifiers()
         model_identifiers[-1] = [identifier for identifier in model_identifiers[-1] if identifier is not None]
         self._logger.debug(f"Model identifiers from the base ensemble in repeat stacking: {model_identifiers}")
@@ -1379,7 +1386,7 @@ class BaseTask(ABC):
         previous_layer_predictions_train = []
         previous_layer_predictions_test = []
         data = run_history.data if isinstance(run_history, RunHistory) else run_history
-        self._logger.debug(f'id_config: {dict_repr(data)}')
+        self._logger.debug(f'Run history: {dict_repr(data)}')
         for weight, model_identifier in zip(weights, model_identifiers):
             if model_identifier is None:
                 model_configs.append(None)
@@ -1486,7 +1493,8 @@ class BaseTask(ABC):
 
         if run_history is not None and trajectory is not None:
             self._results_manager.trajectory = trajectory
-            self.run_history.update(run_history, DataOrigin.INTERNAL)
+            self.run_history.update(run_history.data)
+            self.ids_config.update(run_history.ids_config)
             trajectory_filename = os.path.join(
                 self._backend.get_smac_output_directory_for_run(self.seed),
                 'trajectory.json')
@@ -1790,11 +1798,6 @@ class BaseTask(ABC):
                 )
             )
 
-        posthoc_ensemble_fit = posthoc_ensemble_fit \
-            and (
-                 self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
-                 or self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
-            )
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
         # ============> Run dummy predictions
         # We only want to run dummy predictions in case we want to build an ensemble
@@ -1900,39 +1903,38 @@ class BaseTask(ABC):
             # while the ensemble builder tries to access the data
             self._logger.info("Starting Shutdown")
 
-        if (
-            posthoc_ensemble_fit
-            and (
-                 self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
-                 and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation
-            )
-        ):
-            ensemble = self._backend.load_ensemble(self.seed)
-            initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
-            time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
-            iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
-            final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
-                optimize_metric=self.opt_metric,
-                time_left_for_ensemble=time_for_post_fit_ensemble,
-                last_successful_smac_initial_num_run=initial_num_run + 1,
-                ensemble_size=self.ensemble_size,
-                iteration=iteration,
-                enable_traditional_pipeline=enable_traditional_pipeline,
-                cleanup=False,
-                func_eval_time_limit_secs=func_eval_time_limit_secs
-            )
-            ensemble.identifiers_ = final_model_identifiers
-            stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers
-            broken = False
-            for i, layer_identifiers in enumerate(stacked_ensemble_identifiers):
-                if all([identifier is None for identifier in layer_identifiers]):
-                    broken = True
-                    break
-            last_nonnull_layer = i-1 if broken else i
-            self._logger.debug(f"broken: {broken}, lastnonnull layer: {last_nonnull_layer}, i: {i}")
-            ensemble.stacked_ensemble_identifiers[last_nonnull_layer] = final_model_identifiers
-            ensemble.weights_ = final_weights
-            self._backend.save_ensemble(ensemble, iteration+1, self.seed)
+            if (
+                posthoc_ensemble_fit
+                and (
+                    self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation
+                    and self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation
+                )
+            ):
+                ensemble = self._backend.load_ensemble(self.seed)
+                initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
+                time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
+                iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
+                final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
+                    optimize_metric=self.opt_metric,
+                    time_left_for_ensemble=time_for_post_fit_ensemble,
+                    last_successful_smac_initial_num_run=initial_num_run + 1,
+                    ensemble_size=self.ensemble_size,
+                    iteration=iteration,
+                    enable_traditional_pipeline=enable_traditional_pipeline,
+                    func_eval_time_limit_secs=func_eval_time_limit_secs
+                )
+                ensemble.identifiers_ = final_model_identifiers
+                stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers
+                broken = False
+                for i, layer_identifiers in enumerate(stacked_ensemble_identifiers):
+                    if all([identifier is None for identifier in layer_identifiers]):
+                        broken = True
+                        break
+                last_nonnull_layer = i-1 if broken else i
+                self._logger.debug(f"broken: {broken}, lastnonnull layer: {last_nonnull_layer}, i: {i}")
+                ensemble.stacked_ensemble_identifiers[last_nonnull_layer] = final_model_identifiers
+                ensemble.weights_ = final_weights
+                self._backend.save_ensemble(ensemble, iteration+1, self.seed)
 
         if load_models:
             self._logger.info("Loading models...")
@@ -2077,7 +2079,8 @@ class BaseTask(ABC):
         for cur_stacking_layer in range(num_stacking_layers):
             layer_initial_num_runs = []
             time_per_slot_search = math.floor(time_per_layer_search/ensemble_size)
-            layer_run_history = OrderedDict()
+            layer_run_history_warmstart = OrderedDict()
+            layer_run_history_dict = OrderedDict()
             layer_ids_config = dict()
             for ensemble_slot_j in range(ensemble_size):
                 start_time = time.time()
@@ -2101,11 +2104,14 @@ class BaseTask(ABC):
                     search_space=current_search_space,
                     iteration=iteration
                     )
-                self._logger.debug(f"max_run_history_config_id: {max_run_history_config_id} before updating run history")
+
+                layer_run_history_warmstart[ensemble_slot_j] = {'data': run_history.data, 'ids_config': run_history.ids_config}
+                if ensemble_slot_j != 0:
+                    
                 updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
-                layer_run_history.update(updated_run_history_data)
+                layer_run_history_dict.update(updated_run_history_data)
                 layer_ids_config.update(updated_ids_config)
-                self._logger.debug(f"updated run history for ensemble_slot_j: {ensemble_slot_j} \n {dict_repr(updated_run_history_data)} cur_stacking_layer:{cur_stacking_layer} \n {dict_repr(layer_run_history)}")
+
                 # smac_initial_num_run is return with peek=True
                 layer_initial_num_runs.append(smac_initial_num_run+1)
                 time_left_for_ensemble = time_per_slot_search - (time.time() - start_time)
@@ -2142,7 +2148,7 @@ class BaseTask(ABC):
                     model_identifiers=layer_identifiers,
                     weights=layer_ensemble.weights_,
                     ensemble_size=self.ensemble_size,
-                    run_history=layer_run_history
+                    run_history=layer_run_history_dict
                 )
 
                 self._logger.debug(f"Original feat types len: {len(dataset.feat_types)}")
@@ -2167,12 +2173,11 @@ class BaseTask(ABC):
                 self._reset_datamanager_in_backend(datamanager=dataset)
 
             initial_num_runs.append(layer_initial_num_runs)
-            full_run_history.update(layer_run_history)
+            full_run_history.update(layer_run_history_dict)
             full_ids_config.update(layer_ids_config)
 
-        path_run_history = os.path.join(self._backend.internals_directory, 'run_history_full.json')
-
-        save_run_history(full_run_history, full_ids_config, path_run_history)
+        self.run_history.update(full_run_history)
+        self.ids_config.update(full_ids_config)
 
         if posthoc_ensemble_fit:
             ensemble: IterativeHPOStackingEnsemble = self._backend.load_ensemble(self.seed)
@@ -2187,7 +2192,6 @@ class BaseTask(ABC):
                 ensemble_size=self.ensemble_size,
                 iteration=iteration,
                 enable_traditional_pipeline=enable_traditional_pipeline,
-                cleanup=False,
                 func_eval_time_limit_secs=func_eval_time_limit_secs
             )
             ensemble.identifiers_ = final_model_identifiers

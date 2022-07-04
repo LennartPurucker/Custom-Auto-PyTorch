@@ -26,6 +26,7 @@ HyperparameterValueType = Union[int, str, float]
 
 ENSEMBLE_ITERATION_MULTIPLIER = 1e10
 TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = 0.75
+TIME_FOR_BASE_MODELS_SEARCH = 0.5
 
 
 def ispandas(X: Any) -> bool:

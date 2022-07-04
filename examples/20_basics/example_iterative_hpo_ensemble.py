@@ -60,8 +60,8 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_04',
-    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_04',
+    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_07',
+    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_07',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=42,
@@ -88,7 +88,7 @@ api.run_iterative_hpo_ensemble_optimisation(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='balanced_accuracy',
-    total_walltime_limit=1500,
+    total_walltime_limit=900,
     func_eval_time_limit_secs=150,
     enable_traditional_pipeline=False,
     smbo_class=None,

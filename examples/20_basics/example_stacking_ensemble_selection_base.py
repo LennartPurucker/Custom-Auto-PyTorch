@@ -60,12 +60,12 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_repeat_base_models_tmp_03',
-    output_directory='./tmp/stacking_repeat_base_models_out_03',
+    temporary_directory='./tmp/stacking_repeat_base_models_tmp_12',
+    output_directory='./tmp/stacking_repeat_base_models_out_12',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
-    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_selection,
     stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_repeat_models,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
@@ -86,7 +86,7 @@ api.search(
     X_test=X_test.copy(),
     y_test=y_test.copy(),
     dataset_name='Australian',
-    optimize_metric='accuracy',
+    optimize_metric='balanced_accuracy',
     total_walltime_limit=900,
     func_eval_time_limit_secs=150,
     enable_traditional_pipeline=True,
@@ -94,14 +94,14 @@ api.search(
     all_supported_metrics=False,
     min_budget=5,
     max_budget=10,
-    posthoc_ensemble_fit=True,
+    posthoc_ensemble_fit=False,
 )
 
 ############################################################################
 # Print the final ensemble performance
 # ====================================
 y_pred = api.predict(X_test)
-score = api.score(y_pred, y_test, metric='accuracy')
+score = api.score(y_pred, y_test, metric='balanced_accuracy')
 print(score)
 # Print the final ensemble built by AutoPyTorch
 print(api.show_models())

@@ -60,8 +60,8 @@ if __name__ == '__main__':
     api = TabularClassificationTask(
         # To maintain logs of the run, you can uncomment the
         # Following lines
-        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_11',
-        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_11',
+        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_02',
+        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_02',
         delete_tmp_folder_after_terminate=False,
         delete_output_folder_after_terminate=False,
         seed=4,
@@ -99,7 +99,7 @@ if __name__ == '__main__':
     # Print the final ensemble performance
     # ====================================
     y_pred = api.predict(X_test)
-    score = api.score(y_pred, y_test, metric='accuracy')
+    score = api.score(y_pred, y_test, metric='balanced_accuracy')
     print(score)
     # Print the final ensemble built by AutoPyTorch
     print(api.show_models())

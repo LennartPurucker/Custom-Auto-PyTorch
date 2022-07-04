@@ -85,7 +85,7 @@ api.run_autogluon_stacking(
     y_test=y_test.copy(),
     dataset_name='Australian',
     feat_types=feat_types,
-    optimize_metric='accuracy',
+    optimize_metric='balanced_accuracy',
     total_walltime_limit=1800,
     func_eval_time_limit_secs=300,
     all_supported_metrics=False,
@@ -96,7 +96,7 @@ api.run_autogluon_stacking(
 # Print the final ensemble performance
 # ====================================
 y_pred = api.predict(X_test)
-score = api.score(y_pred, y_test, metric='accuracy')
+score = api.score(y_pred, y_test, metric='balanced_accuracy')
 print(score)
 # Print the final ensemble built by AutoPyTorch
 print(api.show_models())

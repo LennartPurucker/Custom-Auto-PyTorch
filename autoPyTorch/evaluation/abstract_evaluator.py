@@ -705,9 +705,9 @@ class AbstractEvaluator(object):
                 supported metric
         """
 
-        # if isinstance(self.configuration, int):
-        #     # We do not calculate performance of the dummy configurations
-        #     return {self.metric.name: self.metric._optimum - self.metric._sign * self.metric._worst_possible_result}
+        if isinstance(self.configuration, int):
+            # We do not calculate performance of the dummy configurations
+            return {self.metric.name: self.metric._optimum - self.metric._sign * self.metric._worst_possible_result}
 
         if self.additional_metrics is not None:
             metrics = self.additional_metrics

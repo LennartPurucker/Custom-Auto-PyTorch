@@ -60,16 +60,16 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_07',
-    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_07',
+    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_15',
+    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_15',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=42,
+    seed=11,
     base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo,
     stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_ensemble_iterative_hpo,
     resampling_strategy=RepeatedCrossValTypes.stratified_repeated_k_fold_cross_validation,
-    ensemble_size=3,
-    num_stacking_layers=2,
+    ensemble_size=4,
+    num_stacking_layers=1,
     resampling_strategy_args={
         'num_splits': 2,
         'num_repeats': 1
@@ -90,13 +90,16 @@ api.run_iterative_hpo_ensemble_optimisation(
     optimize_metric='balanced_accuracy',
     total_walltime_limit=900,
     func_eval_time_limit_secs=150,
-    enable_traditional_pipeline=False,
+    enable_traditional_pipeline=True,
     smbo_class=None,
     all_supported_metrics=False,
     use_ensemble_opt_loss=False,
     posthoc_ensemble_fit=True,
     min_budget=5,
-    max_budget=10
+    max_budget=10,
+    # smac_scenario_args={
+    #     'runcount_limit': 12,
+    # }
 )
 
 ############################################################################

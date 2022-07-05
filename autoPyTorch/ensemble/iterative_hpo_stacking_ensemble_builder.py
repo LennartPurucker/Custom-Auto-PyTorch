@@ -28,7 +28,7 @@ from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
-from autoPyTorch.ensemble.utils import read_np_fn
+from autoPyTorch.utils.common import read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
 from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER

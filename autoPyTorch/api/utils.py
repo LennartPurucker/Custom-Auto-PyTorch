@@ -1,5 +1,6 @@
 from collections import OrderedDict
-from glob import glob
+from distutils import cmd
+import glob
 import json
 import os
 import pickle
@@ -7,12 +8,31 @@ import re
 from typing import Dict, Union, OrderedDict as OrderedDict_typing
 from ConfigSpace.configuration_space import ConfigurationSpace, Configuration
 
-from smac.runhistory.runhistory import DataOrigin, RunHistory, RunInfo, RunValue, EnumEncoder, RunKey
+import json
+from typing import Any, Callable, Dict, List, Optional, Union
+import os
+
+import dask.distributed
+
+from smac.facade.smac_ac_facade import SMAC4AC
+from smac.intensification.hyperband import Hyperband
+from smac.optimizer.smbo import SMBO
+from smac.runhistory.runhistory import DataOrigin, RunHistory, RunValue, EnumEncoder, RunKey
+from smac.runhistory.runhistory2epm import RunHistory2EPM4LogCost
+from smac.scenario.scenario import Scenario
+from smac.stats.stats import Stats
+from smac.tae import StatusType
+from smac.utils.io.traj_logging import TrajLogger
+
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.ensemble.ensemble_builder import MODEL_FN_RE
-from autoPyTorch.ensemble.utils import read_np_fn
+from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
+from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
+from autoPyTorch.utils.common import read_np_fn
+from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
 
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
+from autoPyTorch.utils.results_manager import ResultsManager
 
 
 def get_autogluon_default_nn_config(feat_types):
@@ -217,16 +237,51 @@ def save_run_history(full_run_history: Dict, full_ids_config: Dict, path_run_his
         )
 
 
-def get_run_history_warmstart(layer_run_history_warmstart, backend: Backend, seed: int, initial_num_run, precision):
+def get_run_history_warmstart(
+    layer_run_history_warmstart: Dict,
+    backend: Backend,
+    seed: int,
+    initial_num_run,
+    precision,
+    opt_metric: autoPyTorchMetric,
+    task_type: int,
+    run_history_pred_path
+):
 
-    read_preds = read_predictions(backend, seed, initial_num_run, precision)
-    old_ensemble = 
+    read_preds = read_predictions(backend, seed, initial_num_run, precision, run_history_pred_path)
+    ensemble_dir = backend.get_ensemble_dir()
+    if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
+        old_ensemble = backend.load_ensemble(seed)
+        assert isinstance(old_ensemble, IterativeHPOStackingEnsemble)
+    y_true = backend.load_targets_ensemble()
+    
+    runhistory = RunHistory()
+    for _, slot_run_history in layer_run_history_warmstart.items():
+        data: OrderedDict[RunKey, RunValue] = slot_run_history['data']
+        ids_config = slot_run_history['ids_config']
+        for runkey, runvalue in data.items():
+            if runvalue.status == StatusType.SUCCESS:
+                pred = read_preds[(seed, runvalue.additional_info['num_run'], runkey.budget)]
+                y_hat = old_ensemble.predict_with_current_pipeline(pred)
+                cost = calculate_loss(
+                    y_true, y_hat, task_type, [opt_metric])
+                runhistory.add(
+                    config=ids_config[runkey.config_id],
+                    cost=cost[opt_metric.name],
+                    time=runvalue.additional_info['duration'],
+                    status=runvalue.status,
+                    seed=0,
+                    instance_id=runkey.instance_id,
+                    budget=runkey.budget,
+                    starttime=runvalue.starttime,
+                    endtime=runvalue.endtime,
+                    additional_info=runvalue.additional_info,
+                    origin=DataOrigin.INTERNAL
+                )
+    return runhistory
 
-    return
 
-
-def read_predictions(backend, seed, initial_num_run, precision):
-    run_history_pred_path = os.path.join(backend.internals_directory, 'run_history_pred_path.pkl')
+def read_predictions(backend, seed, initial_num_run, precision, run_history_pred_path):
     if os.path.exists(run_history_pred_path):
         read_preds = pickle.load(open(run_history_pred_path, 'rb'))
     else:
@@ -267,6 +322,73 @@ def read_predictions(backend, seed, initial_num_run, precision):
         if not y_ens_fn.endswith(".npy") and not y_ens_fn.endswith(".npy.gz"):
             continue
 
-        if not read_preds.get(dict_key):
+        if dict_key not in read_preds:
             read_preds[dict_key] = read_np_fn(precision, y_ens_fn)
+    pickle.dump(read_preds, open(run_history_pred_path, 'wb'))
     return read_preds
+
+def get_incumbent(run_history, ids_config, opt_metric):
+    manager = ResultsManager()
+    manager.run_history=run_history
+    manager.ids_config=ids_config
+    config, _ = manager.get_incumbent_results(metric=opt_metric)
+    return config
+
+def get_smac_callback_with_run_history(run_history, stats_path, incumbent, cmd_options):
+    
+    def get_smac_object(
+        scenario_dict: Dict[str, Any],
+        seed: int,
+        ta: Callable,
+        ta_kwargs: Dict[str, Any],
+        n_jobs: int,
+        initial_budget: int,
+        max_budget: int,
+        dask_client: Optional[dask.distributed.Client],
+        smbo_class: Optional[SMBO] = None,
+        initial_configurations: Optional[List[Configuration]] = None,
+    ) -> SMAC4AC:
+        """
+        This function returns an SMAC object that is gonna be used as
+        optimizer of pipelines
+
+        Args:
+            scenario_dict (Dict[str, Any]): constrain on how to run
+                the jobs
+            seed (int): to make the job deterministic
+            ta (Callable): the function to be intensifier by smac
+            ta_kwargs (Dict[str, Any]): Arguments to the above ta
+            n_jobs (int): Amount of cores to use for this task
+            dask_client (dask.distributed.Client): User provided scheduler
+            initial_configurations (List[Configuration]): List of initial
+                configurations which smac will run before starting the search process
+
+        Returns:
+            (SMAC4AC): sequential model algorithm configuration object
+
+        """
+        intensifier = Hyperband
+        new_scenario = Scenario(scenario_dict, cmd_options=cmd_options)
+        stats= Stats(new_scenario)
+        stats.load(stats_path)
+ 
+        rh2EPM = RunHistory2EPM4LogCost
+        return SMAC4AC(
+            scenario=new_scenario,
+            rng=seed,
+            runhistory2epm=rh2EPM,
+            tae_runner=ta,
+            tae_runner_kwargs=ta_kwargs,
+            initial_configurations=initial_configurations,
+            run_id=seed,
+            intensifier=intensifier,
+            intensifier_kwargs={'initial_budget': initial_budget, 'max_budget': max_budget,
+                                'eta': 3, 'min_chall': 1, 'instance_order': 'shuffle_once'},
+            dask_client=dask_client,
+            n_jobs=n_jobs,
+            smbo_class=smbo_class,
+            runhistory=run_history,
+            restore_incumbent=incumbent,
+            stats=stats
+        )
+    return get_smac_object

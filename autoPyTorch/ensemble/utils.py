@@ -52,22 +52,3 @@ def get_ensemble_builder_class(base_ensemble_method: int, stacking_ensemble_meth
     elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
         if stacking_ensemble_method is None or stacking_ensemble_method in (StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_iterative_hpo):
             return IterativeHPOStackingEnsembleBuilder
-
-
-def read_np_fn(precision,  path: str) -> np.ndarray:
-        if path.endswith("gz"):
-            fp = gzip.open(path, 'rb')
-        elif path.endswith("npy"):
-            fp = open(path, 'rb')
-        else:
-            raise ValueError("Unknown filetype %s" % path)
-        if precision == 16:
-            predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float16)
-        elif precision == 32:
-            predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float32)
-        elif precision == 64:
-            predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float64)
-        else:
-            predictions = np.load(fp, allow_pickle=True)
-        fp.close()
-        return predictions

@@ -594,7 +594,7 @@ class ResultsManager:
         """
         self._check_run_history()
 
-        results = SearchResults(metric=metric, scoring_functions=[], run_history=self.run_history)
+        results = SearchResults(metric=metric, scoring_functions=[], run_history=self.run_history, ids_config=self.ids_config)
 
         if not include_traditional:
             non_traditional = ~np.array(results.is_traditionals)

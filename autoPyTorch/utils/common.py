@@ -1,5 +1,6 @@
 import copy
 from enum import Enum
+import gzip
 from math import floor
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Type, Union
 
@@ -25,7 +26,8 @@ HyperparameterValueType = Union[int, str, float]
 
 
 ENSEMBLE_ITERATION_MULTIPLIER = 1e10
-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = 0.75
+TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE = 0.75
+TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE = 0.9
 TIME_FOR_BASE_MODELS_SEARCH = 0.5
 
 
@@ -326,3 +328,22 @@ def validate_config(config: Configuration, search_space: ConfigurationSpace, n_n
         modified_config[child_hyperparam.name] = floor(modified_config[child_hyperparam.name]/n_numerical_in_incumbent_on_task_id * num_numerical)
 
     return Configuration(search_space, modified_config)
+
+
+def read_np_fn(precision,  path: str) -> np.ndarray:
+    if path.endswith("gz"):
+        fp = gzip.open(path, 'rb')
+    elif path.endswith("npy"):
+        fp = open(path, 'rb')
+    else:
+        raise ValueError("Unknown filetype %s" % path)
+    if precision == 16:
+        predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float16)
+    elif precision == 32:
+        predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float32)
+    elif precision == 64:
+        predictions = np.load(fp, allow_pickle=True).astype(dtype=np.float64)
+    else:
+        predictions = np.load(fp, allow_pickle=True)
+    fp.close()
+    return predictions

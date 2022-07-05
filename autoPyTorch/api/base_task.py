@@ -36,7 +36,7 @@ from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history, save_run_history, update_run_history_with_max_config_id
+from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_smac_callback_with_run_history, save_run_history, update_run_history_with_max_config_id
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -74,7 +74,7 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner im
 from autoPyTorch.utils.configurations import get_traditional_config_space, get_traditional_learners_configurations, is_configuration_traditional
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
-from autoPyTorch.utils.common import TIME_FOR_BASE_MODELS_SEARCH, FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.common import TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE, TIME_FOR_BASE_MODELS_SEARCH, FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, dict_repr, replace_string_bool_to_bool, validate_config
 from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import (
@@ -1199,8 +1199,17 @@ class BaseTask(ABC):
         self.opt_metric = optimize_metric
         time_left_for_search_base_models = math.floor(TIME_FOR_BASE_MODELS_SEARCH*total_walltime_limit)
         if posthoc_ensemble_fit:
-            time_left_for_search_base_models = math.floor(TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT*time_left_for_search_base_models)
-            time_left_for_posthoc_ensemble = math.floor((1-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT)*time_left_for_search_base_models)
+            if self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_selection:
+                warnings.warn(f"Post Hoc ensemble fitting is not compatible with {self.base_ensemble_method.name}")
+                posthoc_ensemble_fit = False
+            else:
+                if enable_traditional_pipeline:
+                    TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE
+                else:
+                    TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE
+
+                time_left_for_search_base_models = math.floor(TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT*time_left_for_search_base_models)
+                time_left_for_posthoc_ensemble = math.floor((1-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT)*time_left_for_search_base_models)
         proc_ensemble = None
         if time_left_for_search_base_models <= 0:
             # Fit only raises error when ensemble_size is not zero but
@@ -1387,6 +1396,7 @@ class BaseTask(ABC):
         previous_layer_predictions_test = []
         data = run_history.data if isinstance(run_history, RunHistory) else run_history
         self._logger.debug(f'Run history: {dict_repr(data)}')
+        self._logger.debug(f'\nensemble_size : {ensemble_size}')
         for weight, model_identifier in zip(weights, model_identifiers):
             if model_identifier is None:
                 model_configs.append(None)
@@ -1395,7 +1405,7 @@ class BaseTask(ABC):
                 continue
             seed, num_run, budget = model_identifier
             
-            self._logger.debug(f'num_run: {num_run}')
+            self._logger.debug(f'num_run: {num_run}, weight: {weight}')
             config = get_config_from_run_history(run_history, num_run=num_run)
             self._logger.debug(f'Configuration from previous layer: {config}')
             model_configs.append((config, budget))
@@ -1858,7 +1868,17 @@ class BaseTask(ABC):
             self.opt_metric = optimize_metric
             elapsed_time = self._stopwatch.wall_elapsed(self.dataset_name)
             time_left_for_ensembles = max(0, total_walltime_limit - elapsed_time)
+            if enable_traditional_pipeline:
+                TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE
+            else:
+                TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE
+
             time_left_for_ensembles = int(time_left_for_ensembles * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT) if posthoc_ensemble_fit else time_left_for_ensembles
+
+            time_for_post_fit_ensemble = int((1-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT)*total_walltime_limit)
+            total_walltime_limit= int(total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT) \
+                    if posthoc_ensemble_fit \
+                        else total_walltime_limit
             proc_ensemble = None
             if time_left_for_ensembles <= 0:
                 # Fit only raises error when ensemble_size is not zero but
@@ -1883,9 +1903,7 @@ class BaseTask(ABC):
             self.run_smbo(
                 min_budget=min_budget,
                 max_budget=max_budget,
-                total_walltime_limit=total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
-                    if posthoc_ensemble_fit \
-                        else total_walltime_limit,
+                total_walltime_limit=total_walltime_limit,
                 func_eval_time_limit_secs=func_eval_time_limit_secs,
                 smac_scenario_args=smac_scenario_args,
                 get_smac_object_callback=get_smac_object_callback,
@@ -1912,7 +1930,7 @@ class BaseTask(ABC):
             ):
                 ensemble = self._backend.load_ensemble(self.seed)
                 initial_num_run = int(open(os.path.join(self._backend.internals_directory, 'ensemble_cutoff_run.txt'), 'r').read())
-                time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
+
                 iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
                 final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
                     optimize_metric=self.opt_metric,
@@ -2061,17 +2079,30 @@ class BaseTask(ABC):
         tae_func: Optional[Callable] = None,
         portfolio_selection: Optional[str] = None,
         smbo_class: Optional[SMBO] = None,
-        posthoc_ensemble_fit: bool = False
+        posthoc_ensemble_fit: bool = False,
+        warmstart: bool = True
     ):
         proc_ensemble = None
 
         initial_num_runs = []
+        if enable_traditional_pipeline:
+            TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE
+        else:
+            TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE
+        time_for_post_fit_ensemble = int((1-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT)*total_walltime_limit)
         total_walltime_limit = total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
                                 if posthoc_ensemble_fit else total_walltime_limit
 
         current_search_space = copy.copy(self.search_space)
         time_per_layer_search = math.floor(total_walltime_limit/num_stacking_layers)
         dataset = copy.deepcopy(self.dataset)
+        run_history_pred_path = os.path.join(self._backend.internals_directory, 'run_history_pred_path.pkl')
+
+        runcount_limit = None
+        if smac_scenario_args is not None:
+            runcount_limit = smac_scenario_args.pop('runcount_limit', None)
+            if runcount_limit is not None:
+                runcount_limit_slot = math.floor(runcount_limit/ensemble_size)
 
         max_run_history_config_id = 0
         full_run_history = OrderedDict()
@@ -2083,15 +2114,22 @@ class BaseTask(ABC):
             layer_run_history_dict = OrderedDict()
             layer_ids_config = dict()
             for ensemble_slot_j in range(ensemble_size):
-                start_time = time.time()
                 iteration = cur_stacking_layer*ensemble_size + ensemble_slot_j
                 self._logger.debug(f"search time for smbo = {time_per_slot_search},ensemble_slot_j: "
                                    f"{ensemble_slot_j}, iteration: {iteration}")
+                if cur_stacking_layer > 0 and ensemble_slot_j == 0:
+                    get_smac_object_callback = None
+                    os.remove(run_history_pred_path)
 
+                if runcount_limit is not None:
+                    smac_scenario_args.update({'runcount_limit': runcount_limit_slot*(ensemble_slot_j+1)})
+                time_search = 0.85*time_per_slot_search
+                if warmstart:
+                    time_search *= (ensemble_slot_j+1)
                 smac_initial_num_run, run_history, trajectory = self._run_smbo(
                     min_budget=min_budget,
                     max_budget=max_budget,
-                    total_walltime_limit=0.95*time_per_slot_search,
+                    total_walltime_limit=time_search,
                     func_eval_time_limit_secs=func_eval_time_limit_secs,
                     smac_scenario_args=smac_scenario_args,
                     get_smac_object_callback=get_smac_object_callback,
@@ -2104,17 +2142,23 @@ class BaseTask(ABC):
                     search_space=current_search_space,
                     iteration=iteration
                     )
+                self._logger.debug(f"run_history.data: {dict_repr(run_history.data)}")
 
-                layer_run_history_warmstart[ensemble_slot_j] = {'data': run_history.data, 'ids_config': run_history.ids_config}
-                if ensemble_slot_j != 0:
-                    
-                updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
+                if not warmstart:
+                    updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
+                else:
+                    updated_run_history_data = run_history.data
+                    updated_ids_config = run_history.ids_config
+                
+                self._logger.debug(f"updated_run_history_data {dict_repr(updated_run_history_data)}")
+
                 layer_run_history_dict.update(updated_run_history_data)
                 layer_ids_config.update(updated_ids_config)
+                self._logger.debug(f"layer_run_history_dict {dict_repr(layer_run_history_dict)}")
 
                 # smac_initial_num_run is return with peek=True
                 layer_initial_num_runs.append(smac_initial_num_run+1)
-                time_left_for_ensemble = time_per_slot_search - (time.time() - start_time)
+                time_left_for_ensemble = 0.15 * time_per_slot_search #  - (time.time() - start_time)
                 self._logger.debug(f"starting iterative ensemble fit for iteration: {iteration} and time_left_for_ensemble: {time_left_for_ensemble}")
                 self.fit_ensemble(
                     optimize_metric=optimize_metric,
@@ -2135,6 +2179,10 @@ class BaseTask(ABC):
                     load_models=False,
                     num_stacking_layers=num_stacking_layers
                 )
+
+                if warmstart:
+                    layer_run_history_warmstart[ensemble_slot_j] = {'data': run_history.data, 'ids_config': run_history.ids_config}
+                    get_smac_object_callback = self._warmstart_next_smac(run_history_pred_path, layer_initial_num_runs, layer_run_history_warmstart, layer_run_history_dict, layer_ids_config)
 
                 # update to adjust run history of the next run, we dont care about config ids as we have num run to identify
                 max_run_history_config_id = max(updated_ids_config.keys())
@@ -2182,7 +2230,6 @@ class BaseTask(ABC):
         if posthoc_ensemble_fit:
             ensemble: IterativeHPOStackingEnsemble = self._backend.load_ensemble(self.seed)
             initial_num_run = initial_num_runs[-1][0]
-            time_for_post_fit_ensemble = max(0, total_walltime_limit-self._stopwatch.wall_elapsed(self.dataset_name))
             iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
             self._logger.debug(f"Starting post hoc ensemble fitting with iteration: {iteration}, ensemble.stacked_ensemble_identifiers: {ensemble.stacked_ensemble_identifiers}")
             final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
@@ -2209,6 +2256,26 @@ class BaseTask(ABC):
 
         return iteration + 1
 
+    def _warmstart_next_smac(self, run_history_pred_path, layer_initial_num_runs, layer_run_history_warmstart, layer_run_history_dict, layer_ids_config):
+        run_history_warmstart = get_run_history_warmstart(
+                    layer_run_history_warmstart=layer_run_history_warmstart,
+                    backend=self._backend,
+                    initial_num_run=layer_initial_num_runs[0],
+                    precision=self.precision,
+                    opt_metric=self._metric,
+                    task_type=STRING_TO_TASK_TYPES[self.task_type],
+                    run_history_pred_path=run_history_pred_path,
+                    seed=self.seed
+                )
+
+        cmd_options = {
+                    "output_dir": "restored",
+                }
+        smac_output_dir = os.path.join(self._backend.get_smac_output_directory(), f'run_{self.seed}')
+        stats_path = os.path.join(smac_output_dir, "stats.json")
+        incumbent = get_incumbent(run_history=layer_run_history_dict, ids_config=layer_ids_config, opt_metric=self._metric)
+        get_smac_object_callback = get_smac_callback_with_run_history(run_history_warmstart, stats_path=stats_path, incumbent=incumbent, cmd_options=cmd_options)
+        return get_smac_object_callback
     
     def _init_required_args(
         self,

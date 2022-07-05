@@ -60,12 +60,12 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_repeat_base_models_tmp_12',
-    output_directory='./tmp/stacking_repeat_base_models_out_12',
+    temporary_directory='./tmp/stacking_repeat_base_models_tmp_16',
+    output_directory='./tmp/stacking_repeat_base_models_out_16',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
-    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_selection,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo,
     stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_repeat_models,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
@@ -94,7 +94,7 @@ api.search(
     all_supported_metrics=False,
     min_budget=5,
     max_budget=10,
-    posthoc_ensemble_fit=False,
+    posthoc_ensemble_fit=True,
 )
 
 ############################################################################

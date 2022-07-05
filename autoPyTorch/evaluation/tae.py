@@ -21,7 +21,6 @@ from smac.runhistory.runhistory import RunInfo, RunValue
 from smac.stats.stats import Stats
 from smac.tae import StatusType, TAEAbortException
 from smac.tae.execute_func import AbstractTAFunc
-from autoPyTorch.ensemble import ensemble_selection
 from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
@@ -294,6 +293,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
                 and not isinstance(run_info.cutoff, int)
         ):
             run_info = run_info._replace(cutoff=int(np.ceil(run_info.cutoff)))
+
+        # run_info = run_info._replace(seed=self.seed)
 
         self.logger.info("Starting to evaluate configuration %s" % run_info.config.config_id)
         run_info, run_value = super().run_wrapper(run_info=run_info)

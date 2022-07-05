@@ -60,8 +60,8 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_repeat_base_models_tmp_16',
-    output_directory='./tmp/stacking_repeat_base_models_out_16',
+    temporary_directory='./tmp/stacking_repeat_base_models_tmp_17',
+    output_directory='./tmp/stacking_repeat_base_models_out_17',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
@@ -95,6 +95,7 @@ api.search(
     min_budget=5,
     max_budget=10,
     posthoc_ensemble_fit=True,
+    warmstart=True
 )
 
 ############################################################################

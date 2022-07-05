@@ -707,7 +707,6 @@ class BaseTask(ABC):
                     nonnull_identifiers = [i for i in identifier if i is not None]
                     models.append(self._backend.load_models_by_identifiers(nonnull_identifiers))
                     cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
-                self._logger.debug(f"stacked ensemble models are :{models}")
                 self.models_ = models
                 self.cv_models_ = cv_models
 
@@ -1190,7 +1189,8 @@ class BaseTask(ABC):
         smac_scenario_args: Optional[Dict[str, Any]] = None,
         get_smac_object_callback: Optional[Callable] = None,
         smbo_class: Optional[SMBO] = None,
-        load_models: bool = True
+        load_models: bool = True,
+        warmstart: bool = True,
     ):
         stacking_task_name = "runStacking"
         self._logger.debug(f"Starting to run stacking")
@@ -1279,7 +1279,8 @@ class BaseTask(ABC):
                 posthoc_ensemble_fit=posthoc_ensemble_fit,
                 experiment_task_name=experiment_task_name,
                 ensemble_size=self.ensemble_size,
-                num_stacking_layers=1
+                num_stacking_layers=1,
+                warmstart=warmstart
             )
         else:
             raise ValueError(f"Unsupported base_ensemble_method: {self.base_ensemble_method}")
@@ -1637,7 +1638,8 @@ class BaseTask(ABC):
         dask_client: Optional[dask.distributed.Client] = None,
         smbo_class: Optional[SMBO] = None,
         use_ensemble_opt_loss: bool = False,
-        posthoc_ensemble_fit: bool = False
+        posthoc_ensemble_fit: bool = False,
+        warmstart: bool = True
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -1861,7 +1863,8 @@ class BaseTask(ABC):
                 experiment_task_name=experiment_task_name,
                 posthoc_ensemble_fit=posthoc_ensemble_fit,
                 smbo_class=smbo_class,
-                enable_traditional_pipeline=enable_traditional_pipeline
+                enable_traditional_pipeline=enable_traditional_pipeline,
+                warmstart=warmstart
             )
         else:
             self.precision = precision
@@ -1985,7 +1988,8 @@ class BaseTask(ABC):
         dask_client: Optional[dask.distributed.Client] = None,
         smbo_class: Optional[SMBO] = None,
         use_ensemble_opt_loss: bool = False,
-        posthoc_ensemble_fit: bool = False
+        posthoc_ensemble_fit: bool = False,
+        warmstart=True
     ) -> 'BaseTask':
         experiment_task_name: str = 'runIterativeHPOEnsembleOptimisation'
 
@@ -2049,7 +2053,8 @@ class BaseTask(ABC):
             posthoc_ensemble_fit=posthoc_ensemble_fit,
             experiment_task_name=experiment_task_name,
             ensemble_size=self.ensemble_size,
-            num_stacking_layers=self.num_stacking_layers
+            num_stacking_layers=self.num_stacking_layers,
+            warmstart=warmstart
         )
 
         self._logger.info("Starting Shutdown")
@@ -2142,19 +2147,15 @@ class BaseTask(ABC):
                     search_space=current_search_space,
                     iteration=iteration
                     )
-                self._logger.debug(f"run_history.data: {dict_repr(run_history.data)}")
 
                 if not warmstart:
                     updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
                 else:
                     updated_run_history_data = run_history.data
                     updated_ids_config = run_history.ids_config
-                
-                self._logger.debug(f"updated_run_history_data {dict_repr(updated_run_history_data)}")
 
                 layer_run_history_dict.update(updated_run_history_data)
                 layer_ids_config.update(updated_ids_config)
-                self._logger.debug(f"layer_run_history_dict {dict_repr(layer_run_history_dict)}")
 
                 # smac_initial_num_run is return with peek=True
                 layer_initial_num_runs.append(smac_initial_num_run+1)

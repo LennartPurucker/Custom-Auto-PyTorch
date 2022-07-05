@@ -319,7 +319,8 @@ class TabularClassificationTask(BaseTask):
         dataset_compression: Union[Mapping[str, Any], bool] = False,
         smbo_class: Optional[SMBO] = None,
         use_ensemble_opt_loss=False,
-        posthoc_ensemble_fit: bool = False
+        posthoc_ensemble_fit: bool = False,
+        warmstart: bool = True
     ) -> 'BaseTask':
 
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
@@ -355,7 +356,8 @@ class TabularClassificationTask(BaseTask):
             portfolio_selection=portfolio_selection,
             smbo_class=smbo_class,
             use_ensemble_opt_loss=use_ensemble_opt_loss,
-            posthoc_ensemble_fit=posthoc_ensemble_fit  
+            posthoc_ensemble_fit=posthoc_ensemble_fit,
+            warmstart=warmstart  
         )
 
     def search(
@@ -384,7 +386,8 @@ class TabularClassificationTask(BaseTask):
         dataset_compression: Union[Mapping[str, Any], bool] = False,
         smbo_class: Optional[SMBO] = None,
         use_ensemble_opt_loss=False,
-        posthoc_ensemble_fit: bool = False
+        posthoc_ensemble_fit: bool = False,
+        warmstart: bool = True
     ) -> 'BaseTask':
         """
         Search for the best pipeline configuration for the given dataset.
@@ -588,7 +591,8 @@ class TabularClassificationTask(BaseTask):
             portfolio_selection=portfolio_selection,
             smbo_class=smbo_class,
             use_ensemble_opt_loss=use_ensemble_opt_loss,
-            posthoc_ensemble_fit=posthoc_ensemble_fit  
+            posthoc_ensemble_fit=posthoc_ensemble_fit,
+            warmstart=warmstart  
         )
 
     def predict(

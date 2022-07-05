@@ -60,8 +60,8 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_15',
-    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_15',
+    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_16',
+    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_16',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=11,
@@ -97,9 +97,9 @@ api.run_iterative_hpo_ensemble_optimisation(
     posthoc_ensemble_fit=True,
     min_budget=5,
     max_budget=10,
-    # smac_scenario_args={
-    #     'runcount_limit': 12,
-    # }
+    smac_scenario_args={
+        'runcount_limit': 12,
+    }
 )
 
 ############################################################################

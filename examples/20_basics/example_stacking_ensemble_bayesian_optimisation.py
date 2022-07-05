@@ -59,8 +59,8 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_02',
-    output_directory='./tmp/stacking_optimisation_ensemble_out_02',
+    temporary_directory='./tmp/stacking_optimisation_ensemble_tmp_03',
+    output_directory='./tmp/stacking_optimisation_ensemble_out_03',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=4,
@@ -87,7 +87,7 @@ api.search(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='balanced_accuracy',
-    total_walltime_limit=900,
+    total_walltime_limit=1200,
     func_eval_time_limit_secs=150,
     enable_traditional_pipeline=True,
     smbo_class=autoPyTorchSMBO,
@@ -95,7 +95,10 @@ api.search(
     use_ensemble_opt_loss=True,
     posthoc_ensemble_fit=True,
     min_budget=5,
-    max_budget=10
+    max_budget=10,
+    smac_scenario_args={
+        'runcount_limit': 12,
+    }
 )
 
 ############################################################################

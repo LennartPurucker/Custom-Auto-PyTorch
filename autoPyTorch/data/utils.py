@@ -39,7 +39,7 @@ DatasetCompressionInputType = Union[np.ndarray, spmatrix, pd.DataFrame]
 # Default specification for arg `dataset_compression`
 default_dataset_compression_arg: DatasetCompressionSpec = {
     "memory_allocation": 0.1,
-    "methods": ["precision", "subsample"]
+    "methods": ["precision"], # "subsample"]
 }
 
 
@@ -524,8 +524,8 @@ def reduce_dataset_size_if_too_large(
     """
 
     for method in methods:
-        if megabytes(X) <= memory_allocation:
-            break
+        # if megabytes(X) <= memory_allocation:
+        #     break
 
         if method == 'precision':
             # If the dataset is too big for the allocated memory,

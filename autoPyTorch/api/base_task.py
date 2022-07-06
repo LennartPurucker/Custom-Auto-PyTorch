@@ -2943,7 +2943,7 @@ class BaseTask(ABC):
                              "Please call the `search()` method of {}.".format(self.__class__.__name__))
 
         self._logger.info("Starting ensemble")
-        ensemble_task_name = 'ensemble'
+        ensemble_task_name = f'ensemble_init_{iteration}'
         self._stopwatch.start_task(ensemble_task_name)
 
         self._logger.debug(f"Initialising ensemble manager with iteration: {iteration}")

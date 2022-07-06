@@ -356,7 +356,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
 
         Y_train_pred, Y_optimization_pred, Y_valid_pred, Y_test_pred, additional_run_info = self._run_fit_predict_repeats()
 
-        train_loss = self._loss(self.Y_actual_train, Y_train_pred)
+        train_loss = None # self._loss(self.Y_actual_train, Y_train_pred)
         opt_loss = self._loss(self.Y_optimization, Y_optimization_pred)
 
         status = StatusType.SUCCESS
@@ -393,7 +393,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
             if repeat_id >= total_repeats:
                 break
 
-            y_train_pred_folds = [None] * self.num_folds
+            # y_train_pred_folds = [None] * self.num_folds
             y_optimization_pred_folds = [None] * self.num_folds
             y_valid_pred_folds = [None] * self.num_folds
             y_test_pred_folds = [None] * self.num_folds
@@ -412,7 +412,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
                 ) = self._fit_and_predict(pipeline, i, repeat_id,
                                         train_indices=train_split,
                                         test_indices=test_split)
-                y_train_pred_folds[i] = y_train_pred
+                # y_train_pred_folds[i] = y_train_pred
                 y_optimization_pred_folds[i] = y_opt_pred
                 if y_valid_pred is not None:
                     y_valid_pred_folds[i] = y_valid_pred
@@ -436,7 +436,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
                         if total_repeats <= repeat_id:
                             raise ValueError("Not expected to complete first repeat, terminating configuration")
 
-            Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
+            # Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_optimization_pred[repeat_id] = self.get_sorted_preds(y_optimization_pred_folds, repeat_id)
             if self.X_valid is not None:
                 Y_valid_pred[repeat_id] = np.array([y_valid_pred_folds[i] for i in range(self.num_folds) if y_valid_pred_folds[i] is not None])
@@ -459,7 +459,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         # Y_train_targets = self.y_train.copy() # self.get_sorted_train_targets(y_train_targets, -1)
 
         # Average prediction values accross repeats
-        Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
+        # Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
         Y_optimization_pred = np.nanmean(Y_optimization_pred[:total_repeats], axis=0)
         Y_valid_pred = np.nanmean(Y_valid_pred[:total_repeats], axis=0) if Y_valid_pred is not None else None
         Y_test_pred = np.nanmean(Y_test_pred[:total_repeats], axis=0) if Y_test_pred is not None else None
@@ -508,8 +508,8 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         test_indices: Union[np.ndarray, List],
         train_indices: Union[np.ndarray, List]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
-        train_pred = self.predict_function(subsampler(self.X_train, train_indices), pipeline,
-                                           self.y_train[train_indices])
+        train_pred = None # self.predict_function(subsampler(self.X_train, train_indices), pipeline,
+                                        #    self.y_train[train_indices])
 
         opt_pred = self.predict_function(subsampler(self.X_train, test_indices), pipeline,
                                          self.y_train[train_indices])

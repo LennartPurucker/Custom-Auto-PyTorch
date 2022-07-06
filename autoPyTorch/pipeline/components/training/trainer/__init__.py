@@ -332,7 +332,6 @@ class TrainerChoice(autoPyTorchChoice):
             max_epochs=X['epochs'] if 'epochs' in X else None,
         )
 
-        self.logger.debug(f"preprocessed_dtype {X['preprocessed_dtype']} \n X['train_data_loader']: {X['train_data_loader'].__dict__}")
         # Support additional user metrics
         metrics = get_metrics(dataset_properties=X['dataset_properties'])
         if 'additional_metrics' in X:

@@ -93,9 +93,9 @@ def _extract_metrics_info(
         # Additional info for metrics is not available in this case.
         return {metric.name: metric._worst_possible_result for metric in scoring_functions}
 
-    inference_choices = ['train', 'opt', 'test']
+    inference_choices = ['opt', 'test'] # 'train', 
     if inference_name not in inference_choices:
-        raise ValueError(f'inference_name must be in {inference_choices}, but got {inference_choices}')
+        raise ValueError(f'inference_name must be in {inference_choices}, but got {inference_name}')
 
     cost_info = run_value.additional_info[f'{inference_name}_loss']
     avail_metrics = cost_info.keys()
@@ -359,7 +359,7 @@ class SearchResults:
         self._fit_times.append(run_value.time)
         self._end_times.append(run_value.endtime)
 
-        for inference_name in ['train', 'opt', 'test']:
+        for inference_name in ['opt', 'test']:  # 'train'
             metric_info = _extract_metrics_info(
                 run_value=run_value,
                 scoring_functions=self._scoring_functions,
@@ -484,7 +484,7 @@ class MetricResults:
     def _extract_results(self) -> None:
         """ Extract metric values of `self.metric` and store them in `self.data`. """
         metric_name = self.metric.name
-        for inference_name in ['train', 'test', 'opt']:
+        for inference_name in ['test', 'opt']: # 'train', 
             # TODO: Extract information from self.search_results
             data = getattr(self.search_results, f'{inference_name}_metric_dict')[metric_name]
             self.data[f'single::{inference_name}::{metric_name}'] = np.array(data)

@@ -2127,10 +2127,14 @@ class BaseTask(ABC):
                     os.remove(run_history_pred_path)
 
                 if runcount_limit is not None:
-                    smac_scenario_args.update({'runcount_limit': runcount_limit_slot*(ensemble_slot_j+1)})
+                    if warmstart:
+                        smac_scenario_args.update({'runcount_limit': runcount_limit_slot*(ensemble_slot_j+1)})
+                    else:
+                        smac_scenario_args.update({'runcount_limit': runcount_limit_slot})
                 time_search = 0.85*time_per_slot_search
                 if warmstart:
-                    time_search *= (ensemble_slot_j+1)
+                    if ensemble_slot_j > 0:
+                        time_search *= 2 
                 smac_initial_num_run, run_history, trajectory = self._run_smbo(
                     min_budget=min_budget,
                     max_budget=max_budget,

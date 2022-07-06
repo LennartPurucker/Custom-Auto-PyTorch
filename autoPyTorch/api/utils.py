@@ -30,7 +30,7 @@ from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOSta
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.utils.common import read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
-
+from autoPyTorch.evaluation.tae import get_cost_of_crash
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.results_manager import ResultsManager
 
@@ -265,19 +265,24 @@ def get_run_history_warmstart(
                 y_hat = old_ensemble.predict_with_current_pipeline(pred)
                 cost = calculate_loss(
                     y_true, y_hat, task_type, [opt_metric])
-                runhistory.add(
-                    config=ids_config[runkey.config_id],
-                    cost=cost[opt_metric.name],
-                    time=runvalue.additional_info['duration'],
-                    status=runvalue.status,
-                    seed=0,
-                    instance_id=runkey.instance_id,
-                    budget=runkey.budget,
-                    starttime=runvalue.starttime,
-                    endtime=runvalue.endtime,
-                    additional_info=runvalue.additional_info,
-                    origin=DataOrigin.INTERNAL
-                )
+                cost = cost[opt_metric.name]
+                duration = runvalue.additional_info['duration']
+            else:
+                cost = get_cost_of_crash(opt_metric)
+                duration = runvalue.endtime - runvalue.starttime
+            runhistory.add(
+                config=ids_config[runkey.config_id],
+                cost=cost,
+                time=duration,
+                status=runvalue.status,
+                seed=0,
+                instance_id=runkey.instance_id,
+                budget=runkey.budget,
+                starttime=runvalue.starttime,
+                endtime=runvalue.endtime,
+                additional_info=runvalue.additional_info,
+                origin=DataOrigin.INTERNAL
+            )
     return runhistory
 
 

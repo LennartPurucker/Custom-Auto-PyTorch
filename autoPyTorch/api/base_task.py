@@ -1,3 +1,4 @@
+from cProfile import run
 from collections import OrderedDict
 import copy
 import json
@@ -2126,11 +2127,12 @@ class BaseTask(ABC):
                     get_smac_object_callback = None
                     os.remove(run_history_pred_path)
 
+                runcount_limit_slot_to_pass = runcount_limit_slot
                 if runcount_limit is not None:
-                    if warmstart:
-                        smac_scenario_args.update({'runcount_limit': runcount_limit_slot*(ensemble_slot_j+1)})
-                    else:
-                        smac_scenario_args.update({'runcount_limit': runcount_limit_slot})
+                    if warmstart and ensemble_slot_j > 0:
+                        runcount_limit_slot_to_pass *= 2
+                    smac_scenario_args.update({'runcount_limit': runcount_limit_slot_to_pass})
+
                 time_search = 0.85*time_per_slot_search
                 if warmstart:
                     if ensemble_slot_j > 0:
@@ -2188,7 +2190,7 @@ class BaseTask(ABC):
                 if warmstart:
                     layer_run_history_warmstart[ensemble_slot_j] = {'data': run_history.data, 'ids_config': run_history.ids_config}
                     get_smac_object_callback = self._warmstart_next_smac(run_history_pred_path, layer_initial_num_runs, layer_run_history_warmstart, layer_run_history_dict, layer_ids_config)
-
+                    runcount_limit_slot
                 # update to adjust run history of the next run, we dont care about config ids as we have num run to identify
                 max_run_history_config_id = max(updated_ids_config.keys())
                 self._logger.debug(f" for ensemble_slot_j: max_run_history_config_id {max_run_history_config_id}")

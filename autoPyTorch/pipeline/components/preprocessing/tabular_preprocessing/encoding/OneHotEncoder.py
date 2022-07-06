@@ -24,7 +24,8 @@ class OneHotEncoder(BaseEncoder):
             self.preprocessor['encode'] = OHE(
                 # It is safer to have the OHE produce a 0 array than to crash a good configuration
                 sparse=False,
-                handle_unknown='ignore')
+                handle_unknown='ignore',
+                dtype=np.float32)
         return self
 
     @staticmethod

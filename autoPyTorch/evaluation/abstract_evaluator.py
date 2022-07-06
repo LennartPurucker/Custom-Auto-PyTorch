@@ -989,11 +989,14 @@ class AbstractEvaluator(object):
                               (filename, lineno, category.__name__, message))
             return
 
+        self.logger.debug(f"predicting in abstract evaluator")
+        batch_size = min(int(2 ** (3 + np.floor(np.log10(len(X))))), 1000)
         with warnings.catch_warnings():
             warnings.showwarning = send_warnings_to_log
-            Y_pred = pipeline.predict_proba(X, batch_size=1000)
+            Y_pred = pipeline.predict_proba(X, batch_size=batch_size)
 
         Y_pred = self._ensure_prediction_array_sizes(Y_pred, Y_train)
+        self.logger.debug(f"finished predicting in abstract evaluator")
         return Y_pred
 
     def _predict_regression(self, X: np.ndarray, pipeline: BaseEstimator,

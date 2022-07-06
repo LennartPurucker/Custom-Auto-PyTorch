@@ -332,6 +332,7 @@ class TrainerChoice(autoPyTorchChoice):
             max_epochs=X['epochs'] if 'epochs' in X else None,
         )
 
+        self.logger.debug(f"preprocessed_dtype {X['preprocessed_dtype']} \n X['train_data_loader']: {X['train_data_loader'].__dict__}")
         # Support additional user metrics
         metrics = get_metrics(dataset_properties=X['dataset_properties'])
         if 'additional_metrics' in X:
@@ -444,13 +445,13 @@ class TrainerChoice(autoPyTorchChoice):
         if self.choice.use_stochastic_weight_averaging and self.choice.swa_updated:
 
             # update batch norm statistics
-            swa_utils.update_bn(loader=X['train_data_loader'], model=self.choice.swa_model.double())
+            swa_utils.update_bn(loader=X['train_data_loader'], model=self.choice.swa_model)  # .double())
 
             # change model
             update_model_state_dict_from_swa(X['network'], self.choice.swa_model.state_dict())
             if self.choice.use_snapshot_ensemble:
                 # we update only the last network which pertains to the stochastic weight averaging model
-                swa_utils.update_bn(X['train_data_loader'], self.choice.model_snapshots[-1].double())
+                swa_utils.update_bn(X['train_data_loader'], self.choice.model_snapshots[-1])  # .double())
 
         # wrap up -- add score if not evaluating every epoch
         if not self.eval_valid_each_epoch(X):

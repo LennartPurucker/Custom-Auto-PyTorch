@@ -179,7 +179,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         if loss_ is not None:
             return self.duration, loss_, self.seed, additional_run_info_
 
-        cost = loss[self.metric.name]
+        cost = self._get_cost(loss)
 
         additional_run_info = (
             {} if additional_run_info is None else additional_run_info
@@ -206,6 +206,10 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
 
         self.queue.put(rval_dict)
         return None
+
+    def _get_cost(self, loss):
+        cost = loss[self.metric.name]
+        return cost
 
     def get_sorted_preds(self, preds: List[List[np.ndarray]], repeat_id: int) -> np.ndarray:
         predictions = np.concatenate([pred for pred in preds if pred is not None])
@@ -350,6 +354,28 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         assert self.splits is not None, "Can't fit pipeline in {} is datamanager.splits is None" \
             .format(self.__class__.__name__)
 
+        Y_train_pred, Y_optimization_pred, Y_valid_pred, Y_test_pred, additional_run_info = self._run_fit_predict_repeats()
+
+        train_loss = self._loss(self.Y_actual_train, Y_train_pred)
+        opt_loss = self._loss(self.Y_optimization, Y_optimization_pred)
+
+        status = StatusType.SUCCESS
+        self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
+            self.num_run,
+            opt_loss
+        ))
+        self.finish_up(
+            loss=opt_loss,
+            train_loss=train_loss,
+            opt_pred=Y_optimization_pred,
+            valid_pred=Y_valid_pred,
+            test_pred=Y_test_pred,
+            additional_run_info=additional_run_info,
+            file_output=True,
+            status=status,
+        )
+
+    def _run_fit_predict_repeats(self):
         Y_train_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
         Y_optimization_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
         Y_valid_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
@@ -442,25 +468,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         self.Y_actual_train = self.y_train # np.array(Y_train_targets)
 
         self.pipeline = self._get_pipeline()
-
-        train_loss = self._loss(self.Y_actual_train, Y_train_pred)
-        opt_loss = self._loss(self.Y_optimization, Y_optimization_pred)
-
-        status = StatusType.SUCCESS
-        self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
-            self.num_run,
-            opt_loss
-        ))
-        self.finish_up(
-            loss=opt_loss,
-            train_loss=train_loss,
-            opt_pred=Y_optimization_pred,
-            valid_pred=Y_valid_pred,
-            test_pred=Y_test_pred,
-            additional_run_info=additional_run_info,
-            file_output=True,
-            status=status,
-        )
+        return Y_train_pred,Y_optimization_pred,Y_valid_pred,Y_test_pred,additional_run_info
 
     def _fit_and_predict(
         self,

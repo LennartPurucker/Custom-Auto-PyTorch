@@ -61,7 +61,7 @@ def get_tabular_preprocessors() -> Dict[str, List[BaseEstimator]]:
 
     # Categorical Preprocessors
     ordinal_encoder = OrdinalEncoder(handle_unknown='use_encoded_value',
-                                     unknown_value=-1)
+                                     unknown_value=-1, dtype=np.float32)
     categorical_imputer = SimpleImputer(strategy='constant', copy=False)
 
     preprocessors['categorical'] = [categorical_imputer, ordinal_encoder]

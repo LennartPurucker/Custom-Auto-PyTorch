@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ConfigSpace.configuration_space import Configuration
+from autoPyTorch.evaluation.repeated_crossval_evaluator import RepeatedCrossValEvaluator
 
 import numpy as np
 
@@ -43,7 +44,7 @@ def _get_y_array(y: np.ndarray, task_type: int) -> np.ndarray:
         return y
 
 
-class EnsembleOptimisationEvaluator(AbstractEvaluator):
+class EnsembleOptimisationEvaluator(RepeatedCrossValEvaluator):
     """
     This class builds a pipeline using the provided configuration.
     A pipeline implementing the provided configuration is fitted
@@ -143,9 +144,6 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
             search_space_updates=search_space_updates,
             use_ensemble_opt_loss=use_ensemble_opt_loss
         )
-
-        self.num_repeats = len(self.splits)
-        self.num_folds = len(self.splits[0])
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
         self.old_ensemble: Optional[Union[EnsembleOptimisationStackingEnsemble, IterativeHPOStackingEnsemble]] = None
         ensemble_dir = self.backend.get_ensemble_dir()
@@ -218,142 +216,6 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
         self.queue.put(rval_dict)
         return None
 
-    def get_sorted_preds(self, preds: List[List[np.ndarray]], repeat_id: int) -> np.ndarray:
-        predictions = np.concatenate([pred for pred in preds if pred is not None])
-        indices = np.concatenate([test_indices for _, test_indices in self.splits[repeat_id]])
-        zipped_lists = zip(indices, predictions)
-
-        sorted_zipped_lists = sorted(zipped_lists)
-        predictions = [pred for _, pred in sorted_zipped_lists]
-        return predictions
-
-    def get_sorted_train_preds(self, preds: List[List[np.ndarray]], repeat_id: int):
-        predictions = np.concatenate([pred for pred in preds if pred is not None])
-        indices = np.concatenate([train_indices for train_indices, _ in self.splits[repeat_id]])
-
-        unique_indices = set(indices)
-        sorted_predictions = np.zeros((len(unique_indices), self.num_classes))
-
-        for i in unique_indices:
-            positions = np.where(indices == i)
-            tmp = list()
-            for position in positions:
-                tmp.append(predictions[position])
-            mean_tmp = np.squeeze(np.mean(tmp, axis=1))
-            for j, mean in enumerate(mean_tmp):
-                sorted_predictions[i][j] = mean
-        return sorted_predictions
-
-    def get_sorted_train_targets(self, preds: List[List[np.ndarray]], repeat_id: int):
-        predictions = np.concatenate([pred for pred in preds if pred is not None])
-        indices = np.concatenate([train_indices for train_indices, _ in self.splits[repeat_id]])
-
-        unique_indices = set(indices)
-        sorted_predictions = np.zeros(len(unique_indices))
-
-        for i in unique_indices:
-            positions = np.where(indices == i)
-            tmp = list()
-            for position in positions:
-                tmp.append(predictions[position])
-            mean_tmp = np.squeeze(np.mean(tmp, axis=1))
-            sorted_predictions[i] = mean_tmp
-        return sorted_predictions
-
-    def file_output(
-        self,
-        Y_optimization_pred: np.ndarray,
-        Y_valid_pred: np.ndarray,
-        Y_test_pred: np.ndarray,
-    ) -> Tuple[Optional[float], Dict]:
-
-        # Abort in case of shape misalignment
-        if self.Y_optimization.shape[0] != Y_optimization_pred.shape[0]:
-            return (
-                1.0,
-                {
-                    'error':
-                        "Targets %s and prediction %s don't have "
-                        "the same length. Probably training didn't "
-                        "finish" % (self.Y_optimization.shape, Y_optimization_pred.shape)
-                },
-            )
-
-        # Abort if predictions contain NaNs
-        for y, s in [
-            # Y_train_pred deleted here. Fix unittest accordingly.
-            [Y_optimization_pred, 'optimization'],
-            [Y_valid_pred, 'validation'],
-            [Y_test_pred, 'test']
-        ]:
-            if y is not None and not np.all(np.isfinite(y)):
-                return (
-                    1.0,
-                    {
-                        'error':
-                            'Model predictions for %s set contains NaNs.' % s
-                    },
-                )
-
-        # Abort if we don't want to output anything.
-        if hasattr(self, 'disable_file_output'):
-            if self.disable_file_output:
-                return None, {}
-            else:
-                self.disabled_file_outputs = []
-
-        # This file can be written independently of the others down bellow
-        if 'y_optimization' not in self.disabled_file_outputs:
-            if self.output_y_hat_optimization:
-                self.backend.save_targets_ensemble(self.Y_optimization)
-
-        if hasattr(self, 'pipelines') and self.pipelines is not None and isinstance(self.resampling_strategy, RepeatedCrossValTypes):
-            if self.pipelines[0] is not None and len(self.pipelines) > 0:
-                if 'pipelines' not in self.disabled_file_outputs:
-                    if self.task_type in CLASSIFICATION_TASKS:
-                        pipelines = VotingClassifier(estimators=None, voting='soft', )
-                    else:
-                        pipelines = VotingRegressorWrapper(estimators=None)
-                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
-                else:
-                    pipelines = None
-            else:
-                pipelines = None
-        else:
-            pipelines = None
-
-        if hasattr(self, 'pipeline') and self.pipeline is not None and isinstance(self.resampling_strategy, HoldoutValTypes):
-            if 'pipeline' not in self.disabled_file_outputs:
-                pipeline = self.pipeline
-            else:
-                pipeline = None
-        else:
-            # need a pipeline to get representation of the model.
-            # see https://github.com/automl/Auto-PyTorch/blob/master/autoPyTorch/api/base_task.py#L467
-            pipeline = self.pipelines[-1][-1]
-
-        self.logger.debug("Saving model {}_{}_{} to disk".format(self.seed, self.num_run, self.budget))
-        self.backend.save_numrun_to_dir(
-            seed=int(self.seed),
-            idx=int(self.num_run),
-            budget=float(self.budget),
-            model=pipeline,
-            cv_model=pipelines,
-            ensemble_predictions=(
-                Y_optimization_pred if 'y_optimization' not in
-                                       self.disabled_file_outputs else None
-            ),
-            valid_predictions=(
-                Y_valid_pred if 'y_valid' not in
-                                self.disabled_file_outputs else None
-            ),
-            test_predictions=(
-                Y_test_pred if 'y_test' not in
-                               self.disabled_file_outputs else None
-            ),
-        )
-
-        return None, {}
 
     def fit_predict_and_loss(self) -> None:
         """Fit, predict and compute the loss for cross-validation and
@@ -361,91 +223,7 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
         assert self.splits is not None, "Can't fit pipeline in {} is datamanager.splits is None" \
             .format(self.__class__.__name__)
 
-        Y_train_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
-        Y_pipeline_optimization_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
-        Y_valid_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
-        Y_test_pred: List[List[Optional[np.ndarray]]] = [None] * self.num_repeats
-        # Y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
-        # Y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
-
-        self.pipelines = [[self._get_pipeline() for _ in range(self.num_folds)] for _ in range(self.num_repeats)]
-
-        additional_run_info = {}
-
-        total_repeats = self.num_repeats
-        for repeat_id, folds in enumerate(self.splits):
-            if repeat_id >= total_repeats:
-                break
-            y_train_pred_folds = [None] * self.num_folds
-            y_pipeline_optimization_pred_folds = [None] * self.num_folds
-            y_valid_pred_folds = [None] * self.num_folds
-            y_test_pred_folds = [None] * self.num_folds
-            # y_train_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
-            # y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
-
-            for i, (train_split, test_split) in enumerate(folds):
-                starttime = time.time()
-                self.logger.info(f"Starting fit for repeat: {repeat_id} and fold: {i}")
-                pipeline = self.pipelines[repeat_id][i]
-                (
-                    y_train_pred,
-                    y_pipeline_opt_pred,
-                    y_valid_pred,
-                    y_test_pred,
-                ) = self._fit_and_predict(pipeline, i, repeat_id,
-                                        train_indices=train_split,
-                                        test_indices=test_split)
-                y_train_pred_folds[i] = y_train_pred
-                y_pipeline_optimization_pred_folds[i] = y_pipeline_opt_pred
-                if y_valid_pred is not None:
-                    y_valid_pred_folds[i] = y_valid_pred
-                if y_test_pred is not None:
-                    y_test_pred_folds[i] = y_test_pred
-
-                # y_train_targets[i] = self.y_train[train_split]
-                # y_targets[i] = self.y_train[test_split]
-                
-                additional_run_info.update(pipeline.get_additional_run_info() if hasattr(
-                    pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
-                duration_fit_single = time.time() - starttime
-                if repeat_id == 0 and i == 0:
-                    expected_num_folds = floor(self.cutoff/(1.15*duration_fit_single))
-                    self.logger.debug(f"cutoff :{self.cutoff}, expected num folds: {expected_num_folds}, duration_fit_single: {duration_fit_single}")
-                    expected_total_repeats = floor(expected_num_folds/self.num_folds)
-                    if expected_total_repeats < total_repeats:
-                        self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
-                                          f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
-                        total_repeats = expected_total_repeats
-                        if total_repeats <= repeat_id:
-                            raise ValueError("Not expected to complete first repeat, terminating configuration")
-
-            Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
-            Y_pipeline_optimization_pred[repeat_id] = self.get_sorted_preds(y_pipeline_optimization_pred_folds, repeat_id)
-            if self.X_valid is not None:
-                Y_valid_pred[repeat_id] = np.array([y_valid_pred_folds[i] for i in range(self.num_folds) if y_valid_pred_folds[i] is not None])
-                # Average the predictions of several pipelines
-                if len(Y_valid_pred[repeat_id].shape) == 3:
-                    Y_valid_pred[repeat_id] = np.nanmean(Y_valid_pred[repeat_id], axis=0)
-            else:
-                Y_valid_pred = None
-
-            if self.X_test is not None:
-                Y_test_pred[repeat_id] = np.array([y_test_pred_folds[i] for i in range(self.num_folds) if y_test_pred_folds[i] is not None])
-                # Average the predictions of several pipelines of the folds
-                if len(Y_test_pred[repeat_id].shape) == 3:
-                    Y_test_pred[repeat_id] = np.nanmean(Y_test_pred[repeat_id], axis=0)
-            else:
-                Y_test_pred = None
-
-        # # as targets do change within repeats
-        # Y_targets = self.y_train.copy() # self.get_sorted_preds(y_targets, -1)
-        # Y_train_targets = self.y_train.copy() # self.get_sorted_train_targets(y_train_targets, -1)
-
-        # Average prediction values accross repeats
-        Y_train_pred = np.nanmean(Y_train_pred[:total_repeats], axis=0)
-        Y_pipeline_optimization_pred = np.nanmean(Y_pipeline_optimization_pred[:total_repeats], axis=0)
-        Y_valid_pred = np.nanmean(Y_valid_pred[:total_repeats], axis=0) if Y_valid_pred is not None else None
-        Y_test_pred = np.nanmean(Y_test_pred[:total_repeats], axis=0) if Y_test_pred is not None else None
+        Y_train_pred, Y_pipeline_optimization_pred, Y_valid_pred, Y_test_pred, additional_run_info = self._run_fit_predict_repeats()
 
         if self.old_ensemble is not None:
             Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
@@ -455,10 +233,6 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
             Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
             Y_ensemble_preds = [Y_pipeline_optimization_pred]
 
-        self.Y_optimization = self.y_train # np.array(Y_targets)
-        self.Y_actual_train = self.y_train # np.array(Y_train_targets)
-
-        self.pipeline = self._get_pipeline()
 
         train_loss = self._loss(self.Y_actual_train, Y_train_pred)
         opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
@@ -480,63 +254,6 @@ class EnsembleOptimisationEvaluator(AbstractEvaluator):
             status=status,
             pipeline_opt_pred=Y_pipeline_optimization_pred
         )
-
-    def _fit_and_predict(
-        self,
-        pipeline: BaseEstimator,
-        fold: int,
-        repeat_id: int,
-        train_indices: Union[np.ndarray, List],
-        test_indices: Union[np.ndarray, List],
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
-
-        # See autoPyTorch/pipeline/components/base_component.py::autoPyTorchComponent for more details
-        # about fit_dictionary
-        X = {'train_indices': train_indices,
-             'val_indices': test_indices,
-             'split_id': fold,
-             'repeat_id': repeat_id,
-             'num_run': self.num_run,
-             **self.fit_dictionary}  # fit dictionary
-        y = None
-        fit_and_suppress_warnings(self.logger, pipeline, X, y)
-        self.logger.info("Model fitted, now predicting")
-        Y_train_pred, Y_pipeline_opt_pred, Y_valid_pred, Y_test_pred = self._predict(
-            pipeline,
-            train_indices=train_indices,
-            test_indices=test_indices,
-        )
-
-        self.pipeline = pipeline
-
-        return Y_train_pred, Y_pipeline_opt_pred, Y_valid_pred, Y_test_pred
-
-    def _predict(
-        self,
-        pipeline: BaseEstimator,
-        test_indices: Union[np.ndarray, List],
-        train_indices: Union[np.ndarray, List]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
-        train_pred = self.predict_function(subsampler(self.X_train, train_indices), pipeline,
-                                           self.y_train[train_indices])
-
-        pipeline_opt_pred = self.predict_function(subsampler(self.X_train, test_indices), pipeline,
-                                         self.y_train[train_indices])
-
-        # self.logger.debug(f"for model {self.seed}_{self.num_run}_{self.budget} ensemble_predictions are {ensemble_opt_pred}")
-        if self.X_valid is not None:
-            valid_pred = self.predict_function(self.X_valid, pipeline,
-                                               self.y_valid)
-        else:
-            valid_pred = None
-
-        if self.X_test is not None:
-            test_pred = self.predict_function(self.X_test, pipeline,
-                                              self.y_train[train_indices])
-        else:
-            test_pred = None
-
-        return train_pred, pipeline_opt_pred, valid_pred, test_pred
 
 
 # create closure for evaluating an algorithm

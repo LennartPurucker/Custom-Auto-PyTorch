@@ -128,7 +128,7 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
         self.ensemble_nbest = ensemble_nbest
         self.base_ensemble_method = base_ensemble_method
         self.stacking_ensemble_method = stacking_ensemble_method
-        self.cur_stacking_layer = 0 if self.stacking_ensemble_method is not None else None
+        self.cur_stacking_layer = 0 if is_stacking(base_ensemble_method, stacking_ensemble_method) else None
         if (
             is_stacking(base_ensemble_method, stacking_ensemble_method)
             and num_stacking_layers is None
@@ -323,7 +323,7 @@ def fit_and_return_ensemble(
     unit_test: bool = False,
     use_ensemble_opt_loss=False,
     stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
-    cur_stacking_layer: Optional[int] = None,
+    cur_stacking_layer: int = 0,
     is_new_layer: bool = False,
     num_stacking_layers: Optional[int] = None,
     initial_num_run: int = 0,

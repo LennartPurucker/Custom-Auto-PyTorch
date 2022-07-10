@@ -127,7 +127,7 @@ class NetworkComponent(autoPyTorchTrainingComponent):
 
     def _predict(self, network: torch.nn.Module, loader: torch.utils.data.DataLoader) -> torch.Tensor:
         network.to(self.device)
-        # network.float()
+        network.float()
         network.eval()
         # Batch prediction
         Y_batch_preds = list()

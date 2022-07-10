@@ -43,7 +43,7 @@ class EarlyPreprocessing(autoPyTorchSetupComponent):
         X.update({
             'preprocess_transforms': transforms,
             'shape_after_preprocessing': X['X_train'].shape[1:],
-            'preprocessed_dtype': X['X_train'].dtype
+            'preprocessed_dtype': X['X_train'].dtype.name
             })
         return X
 

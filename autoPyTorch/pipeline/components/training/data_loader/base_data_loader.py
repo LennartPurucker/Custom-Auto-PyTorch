@@ -13,6 +13,7 @@ import torchvision
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.base_dataset import BaseDataset, BaseDatasetPropertiesType
+from autoPyTorch.datasets.resampling_strategy import NoResamplingStrategyTypes
 from autoPyTorch.pipeline.components.training.base_training import autoPyTorchTrainingComponent
 from autoPyTorch.utils.common import (
     FitRequirement,
@@ -153,6 +154,7 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
             shuffle=False,
             train_transforms=self.test_transform,
             val_transforms=self.test_transform,
+            resampling_strategy=NoResamplingStrategyTypes.no_resampling
         )
         return torch.utils.data.DataLoader(
             dataset,

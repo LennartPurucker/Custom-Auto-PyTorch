@@ -454,12 +454,13 @@ class IterativeHPOStackingEnsembleBuilder(object):
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
             self.backend.save_ensemble(ensemble, int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration), self.seed)
-            ensemble_identifiers=self._get_identifiers_from_num_runs(ensemble.identifiers_)
+            ensemble_identifiers = self._get_identifiers_from_num_runs(ensemble.stacked_ensemble_identifiers[self.cur_stacking_layer])
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
             self._save_current_ensemble_identifiers(
                 ensemble_identifiers=ensemble_identifiers,
                 cur_stacking_layer=self.cur_stacking_layer
                 )
+            self._save_ensemble_unique_identifier(ensemble.unique_identifiers)
 
         # Save the read losses status for the next iteration
         with open(self.ensemble_loss_file, "wb") as memory:
@@ -699,6 +700,7 @@ class IterativeHPOStackingEnsembleBuilder(object):
             ]
             for layer_identifiers in stacked_ensemble_identifiers
         ]
+        unique_identifiers = self._load_ensemble_unique_identifier()
         ensemble = IterativeHPOStackingEnsemble(
             ensemble_size=self.ensemble_size,
             metric=self.metric,
@@ -707,7 +709,8 @@ class IterativeHPOStackingEnsembleBuilder(object):
             ensemble_slot_j=self.ensemble_slot_j,
             cur_stacking_layer=self.cur_stacking_layer,
             stacked_ensemble_identifiers=stacked_ensemble_num_runs,
-            predictions_stacking_ensemble=predictions_stacking_ensemble
+            predictions_stacking_ensemble=predictions_stacking_ensemble,
+            unique_identifiers=unique_identifiers
         )
         try:
             self.logger.debug(
@@ -952,6 +955,20 @@ class IterativeHPOStackingEnsembleBuilder(object):
                 num_run = (_seed, _num_run, _budget)
             num_runs.append(num_run)
         return num_runs
+
+    def _get_ensemble_unique_identifier_filename(self):
+        return os.path.join(self.backend.internals_directory, 'ensemble_unique_identifier.txt')
+
+    def _save_ensemble_unique_identifier(self, ensemble_unique_identifier: dict()) -> None:
+        pickle.dump(ensemble_unique_identifier, open(self._get_ensemble_unique_identifier_filename(), 'wb'))
+
+    def _load_ensemble_unique_identifier(self):
+        if os.path.exists(self._get_ensemble_unique_identifier_filename()):
+            ensemble_unique_identifier = pickle.load(open(self._get_ensemble_unique_identifier_filename(), "rb"))
+            
+        else:
+            ensemble_unique_identifier = dict()
+        return ensemble_unique_identifier
 
     # TODO: fix to remove all the models other than the best model
     # def _delete_excess_models(self, selected_keys: List[str]) -> None:

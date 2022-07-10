@@ -266,13 +266,14 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
             self.backend.save_ensemble(ensemble, int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration), self.seed)
-            ensemble_identifiers=self._get_identifiers_from_num_runs(ensemble.identifiers_)
+            ensemble_identifiers = self._get_identifiers_from_num_runs(ensemble.stacked_ensemble_identifiers[self.cur_stacking_layer])
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
             self._save_current_ensemble_identifiers(
                 ensemble_identifiers=ensemble_identifiers,
                 cur_stacking_layer=self.cur_stacking_layer
                 )
             self._save_ensemble_cutoff_num_run(cutoff_num_run=self.initial_num_run)
+            self._save_ensemble_unique_identifier(ensemble.unique_identifiers)
         # Delete files of non-candidate models - can only be done after fitting the ensemble and
         # saving it to disc so we do not accidentally delete models in the previous ensemble
         if self.max_resident_models is not None:
@@ -494,6 +495,7 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
             raise ValueError(f"Cannot optimize for {self.opt_metric} in {self.metrics} "
                              "as more than one unique optimization metric was found.")
 
+        unique_identifiers = self._load_ensemble_unique_identifier()
         ensemble = EnsembleOptimisationStackingEnsemble(
             ensemble_size=self.ensemble_size,
             metric=opt_metric,
@@ -502,7 +504,8 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
             ensemble_slot_j=self.ensemble_slot_j,
             cur_stacking_layer=self.cur_stacking_layer,
             stacked_ensemble_identifiers=stacked_ensemble_num_runs,
-            predictions_stacking_ensemble=predictions_stacking_ensemble
+            predictions_stacking_ensemble=predictions_stacking_ensemble,
+            unique_identifiers=unique_identifiers
         )
 
         try:
@@ -693,6 +696,20 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
     def _save_ensemble_cutoff_num_run(self, cutoff_num_run: int) -> None:
         with open(self._get_ensemble_cutoff_num_run_filename(), "w") as file:
             file.write(str(cutoff_num_run))
+
+    def _get_ensemble_unique_identifier_filename(self):
+        return os.path.join(self.backend.internals_directory, 'ensemble_unique_identifier.txt')
+
+    def _save_ensemble_unique_identifier(self, ensemble_unique_identifier: dict()) -> None:
+        pickle.dump(ensemble_unique_identifier, open(self._get_ensemble_unique_identifier_filename(), 'wb'))
+
+    def _load_ensemble_unique_identifier(self):
+        if os.path.exists(self._get_ensemble_unique_identifier_filename()):
+            ensemble_unique_identifier = pickle.load(open(self._get_ensemble_unique_identifier_filename(), "rb"))
+            
+        else:
+            ensemble_unique_identifier = dict()
+        return ensemble_unique_identifier
 
     def _load_ensemble_cutoff_num_run(self) -> Optional[int]:
         if os.path.exists(self._get_ensemble_cutoff_num_run_filename()):

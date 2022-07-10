@@ -60,15 +60,15 @@ search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_16',
-    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_16',
+    temporary_directory='./tmp/stacking_iterative_hpo_ensemble_tmp_03',
+    output_directory='./tmp/stacking_iterative_hpo_ensemble_out_03',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=11,
     base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo,
     stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_ensemble_iterative_hpo,
     resampling_strategy=RepeatedCrossValTypes.stratified_repeated_k_fold_cross_validation,
-    ensemble_size=4,
+    ensemble_size=3,
     num_stacking_layers=1,
     resampling_strategy_args={
         'num_splits': 2,
@@ -88,7 +88,7 @@ api.run_iterative_hpo_ensemble_optimisation(
     y_test=y_test.copy(),
     dataset_name='Australian',
     optimize_metric='balanced_accuracy',
-    total_walltime_limit=900,
+    total_walltime_limit=450,
     func_eval_time_limit_secs=150,
     enable_traditional_pipeline=True,
     smbo_class=None,

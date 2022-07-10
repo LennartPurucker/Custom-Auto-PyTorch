@@ -1,7 +1,8 @@
-import copy
+import os
 from enum import Enum
 import gzip
 from math import floor
+import shutil
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Type, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace, Configuration
@@ -22,11 +23,12 @@ from scipy.sparse import spmatrix
 import torch
 from torch.utils.data.dataloader import default_collate
 
+
 HyperparameterValueType = Union[int, str, float]
 
 
 ENSEMBLE_ITERATION_MULTIPLIER = 1e10
-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE = 0.75
+TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE = 0.85
 TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE = 0.9
 TIME_FOR_BASE_MODELS_SEARCH = 0.5
 
@@ -347,3 +349,17 @@ def read_np_fn(precision,  path: str) -> np.ndarray:
         predictions = np.load(fp, allow_pickle=True)
     fp.close()
     return predictions
+
+
+def delete_other_runs(ensemble_runs, runs_directory):
+    all_runs = os.listdir(runs_directory)
+    for run in all_runs:
+        if run not in ensemble_runs:
+            shutil.rmtree(os.path.join(runs_directory, run))
+
+
+def delete_runs_except_ensemble(old_ensemble, backend):
+    selected_identifiers = old_ensemble.get_selected_model_identifiers()[old_ensemble.cur_stacking_layer]
+    nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
+    ensemble_runs = [backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
+    delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=backend.get_runs_directory())

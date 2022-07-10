@@ -75,7 +75,7 @@ from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner im
 from autoPyTorch.utils.configurations import get_traditional_config_space, get_traditional_learners_configurations, is_configuration_traditional
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
-from autoPyTorch.utils.common import TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE, TIME_FOR_BASE_MODELS_SEARCH, FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.common import TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE, TIME_FOR_BASE_MODELS_SEARCH, FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, delete_runs_except_ensemble, dict_repr, replace_string_bool_to_bool, validate_config
 from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import (
@@ -2197,6 +2197,7 @@ class BaseTask(ABC):
             # dont append predictions to the dataset if we are running the last layer so post hoc works properly.
             if cur_stacking_layer != num_stacking_layers-1:
                 layer_ensemble = self._backend.load_ensemble(self.seed)
+                delete_runs_except_ensemble(layer_ensemble, self._backend)
                 layer_identifiers = layer_ensemble.get_selected_model_identifiers()[cur_stacking_layer]
                 _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
                     model_identifiers=layer_identifiers,
@@ -2259,6 +2260,7 @@ class BaseTask(ABC):
             ensemble.stacked_ensemble_identifiers[last_nonnull_layer] = final_model_identifiers
             ensemble.weights_ = final_weights
             self._backend.save_ensemble(ensemble, iteration+1, self.seed)
+
 
         return iteration + 1
 

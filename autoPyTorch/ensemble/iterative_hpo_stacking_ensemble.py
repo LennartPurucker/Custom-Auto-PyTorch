@@ -20,7 +20,8 @@ class IterativeHPOStackingEnsemble(EnsembleOptimisationStackingEnsemble):
         ensemble_slot_j: int,
         cur_stacking_layer: int,
         stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]],
-        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]]
+        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]],
+        unique_identifiers,
     ) -> None:
         super().__init__(
             ensemble_size=ensemble_size,
@@ -31,6 +32,7 @@ class IterativeHPOStackingEnsemble(EnsembleOptimisationStackingEnsemble):
             cur_stacking_layer=cur_stacking_layer,
             stacked_ensemble_identifiers=stacked_ensemble_identifiers,
             predictions_stacking_ensemble=predictions_stacking_ensemble,
+            unique_identifiers=unique_identifiers
         )
 
     def __str__(self) -> str:

@@ -50,13 +50,6 @@ def read_return_initial_configurations(
     return initial_configurations
 
 
-def delete_other_runs(ensemble_runs, runs_directory):
-    all_runs = os.listdir(runs_directory)
-    for run in all_runs:
-        if run not in ensemble_runs:
-            shutil.rmtree(os.path.join(runs_directory, run))
-
-
 class AdjustRunHistoryCallback:
     """
     Allows manipulating run history for custom needs

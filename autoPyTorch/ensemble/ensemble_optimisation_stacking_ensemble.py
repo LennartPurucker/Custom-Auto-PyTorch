@@ -21,7 +21,8 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         ensemble_slot_j: int,
         cur_stacking_layer: int,
         stacked_ensemble_identifiers: List[List[Optional[Tuple[int, int, float]]]],
-        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]]
+        predictions_stacking_ensemble: List[List[Dict[str, Optional[np.ndarray]]]],
+        unique_identifiers: Dict,
     ) -> None:
         self.ensemble_size = ensemble_size
         self.metric = metric
@@ -31,6 +32,7 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         self.cur_stacking_layer = cur_stacking_layer
         self.stacked_ensemble_identifiers = stacked_ensemble_identifiers
         self.predictions_stacking_ensemble = predictions_stacking_ensemble
+        self.unique_identifiers = unique_identifiers if unique_identifiers is not None else dict()
 
     def __getstate__(self) -> Dict[str, Any]:
         # Cannot serialize a metric if
@@ -73,6 +75,8 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         predictions_ensemble[self.ensemble_slot_j] = best_model_predictions_ensemble
         ensemble_identifiers[self.ensemble_slot_j] = best_model_identifier
         self._fit(predictions_ensemble, labels)
+        nonnull_ensemble_identifiers = [identifier for identifier in ensemble_identifiers if identifier is not None]
+        self.unique_identifiers[self.cur_stacking_layer] = Counter(nonnull_ensemble_identifiers)
         self.identifiers_ = ensemble_identifiers
         self.stacked_ensemble_identifiers[self.cur_stacking_layer] = ensemble_identifiers
         self.predictions_stacking_ensemble[self.cur_stacking_layer][self.ensemble_slot_j] =  {
@@ -276,11 +280,14 @@ class EnsembleOptimisationStackingEnsemble(AbstractEnsemble):
         outputs = []
         for i, layer_models in enumerate(models):
             output = []
-            num_models = len(layer_models)
             if i == len(models) - 1:
                 weights = self.weights_
             else:
-                weights = [1/num_models] * num_models
+                weights = []
+                num_models = sum(list(self.unique_identifiers[i].values()))
+                for identifier in layer_models:
+                    weights.append((self.unique_identifiers[i][identifier]/num_models))
+
             for weight, model in zip(weights, layer_models):
                 output.append((weight, layer_models[model]))
             output.sort(reverse=True, key=lambda t: t[0])

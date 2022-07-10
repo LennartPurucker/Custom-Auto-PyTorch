@@ -33,8 +33,9 @@ from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import Ensembl
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, is_stacking
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
-from autoPyTorch.optimizer.utils import delete_other_runs, read_return_initial_configurations
+from autoPyTorch.optimizer.utils import read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
+from autoPyTorch.utils.common import delete_runs_except_ensemble
 from autoPyTorch.utils.pipeline import get_configuration_space, get_dataset_requirements
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import get_named_client_logger
@@ -85,7 +86,7 @@ def get_smac_object(
         run_id=seed,
         intensifier=intensifier,
         intensifier_kwargs={'initial_budget': initial_budget, 'max_budget': max_budget,
-                            'eta': 3, 'min_chall': 1, 'instance_order': 'shuffle_once'},
+                            'eta': 2, 'min_chall': 1, 'instance_order': 'shuffle_once'},
         dask_client=dask_client,
         n_jobs=n_jobs,
         smbo_class=smbo_class
@@ -478,11 +479,7 @@ class AutoMLSMBO(object):
                 old_ensemble = self.backend.load_ensemble(self.seed)
                 assert isinstance(old_ensemble, (EnsembleOptimisationStackingEnsemble, EnsembleSelectionPerLayerStackingEnsemble))
                 if cur_stacking_layer != self.num_stacking_layers -1:
-                    selected_identifiers = old_ensemble.get_selected_model_identifiers()[old_ensemble.cur_stacking_layer]
-                    nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
-                    ensemble_runs = [self.backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
-                    self.logger.debug(f"deleting runs other than {ensemble_runs}")
-                    delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=self.backend.get_runs_directory())
+                    delete_runs_except_ensemble(old_ensemble, self.backend)
             previous_layer_predictions_train = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer)
             previous_layer_predictions_test = old_ensemble.get_layer_stacking_ensemble_predictions(stacking_layer=cur_stacking_layer, dataset='test')
             self.logger.debug(f"Original feat types len: {len(self.datamanager.feat_types)}")
@@ -504,3 +501,4 @@ class AutoMLSMBO(object):
             self.logger.debug(f"cutoff num_run: {initial_num_run}")
 
         return self.run_history, self.trajectory, self._budget_type
+

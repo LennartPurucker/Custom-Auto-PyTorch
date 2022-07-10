@@ -65,12 +65,10 @@ class _LearnedEntityEmbedding(nn.Module):
         # before passing it through the model
         concat_seq = []
 
-        x_pointer = 0
         layer_pointer = 0
         for x_pointer, embed in enumerate(self.embed_features):
             current_feature_slice = x[:, x_pointer]
             if not embed:
-                x_pointer += 1
                 concat_seq.append(current_feature_slice.view(-1, 1))
                 continue
             current_feature_slice = current_feature_slice.to(torch.int)

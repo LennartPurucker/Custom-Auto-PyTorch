@@ -11,10 +11,6 @@ import dask.distributed
 
 import numpy as np
 
-import pandas as pd
-
-
-
 from smac.callbacks import IncorporateRunResultCallback
 from smac.optimizer.smbo import SMBO
 from smac.runhistory.runhistory import RunInfo, RunValue, RunHistory

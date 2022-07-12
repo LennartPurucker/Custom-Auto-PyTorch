@@ -345,10 +345,11 @@ def reduce_precision(
     if isinstance(X, np.ndarray) or issparse(X):
         dtypes = X.dtype
         if X.dtype not in supported_precision_reductions:
-            raise ValueError(f"X.dtype = {X.dtype} not equal to any supported"
+            warnings.warn(f"X.dtype = {X.dtype} not equal to any supported"
                              f" {supported_precision_reductions}")
-        reduced_dtypes = reduction_mapping[X.dtype]
-        X = X.astype(reduced_dtypes)
+        else:
+            reduced_dtypes = reduction_mapping[X.dtype]
+            X = X.astype(reduced_dtypes)
 
     elif ispandas(X):
         dtypes = dict(X.dtypes)

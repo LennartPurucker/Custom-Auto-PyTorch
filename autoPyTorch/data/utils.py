@@ -346,7 +346,7 @@ def reduce_precision(
         dtypes = X.dtype
         if X.dtype not in supported_precision_reductions:
             warnings.warn(f"X.dtype = {X.dtype} not equal to any supported"
-                             f" {supported_precision_reductions}")
+                          f" {supported_precision_reductions}")
         else:
             reduced_dtypes = reduction_mapping[X.dtype]
             X = X.astype(reduced_dtypes)

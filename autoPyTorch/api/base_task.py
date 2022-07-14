@@ -1088,7 +1088,7 @@ class BaseTask(ABC):
             disable_file_output=disable_file_output,
             dask_client=dask_client
         )
-        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+
         self.precision = precision
         available_classifiers = get_traditional_learners_configurations(
             random_state=self.seed,
@@ -1112,6 +1112,14 @@ class BaseTask(ABC):
         model_identifiers = []
         stacked_weights = []
         last_successful_smac_initial_num_run = None
+
+        time_per_layer_run = (TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE*total_walltime_limit)/(self.num_stacking_layers)
+        per_model_runtime = math.floor(time_per_layer_run/len(model_configs))
+        if per_model_runtime > func_eval_time_limit_secs:
+            self._logger.info(f"func_eval_time_limit_secs :{func_eval_time_limit_secs} increased to {per_model_runtime}")
+            func_eval_time_limit_secs = per_model_runtime
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+
         for stacking_layer in range(self.num_stacking_layers):
             smac_initial_run=self._backend.get_next_num_run()
             updated_model_configs, current_search_space = self._update_configs_for_current_config_space(
@@ -1124,7 +1132,7 @@ class BaseTask(ABC):
                 model_configs=updated_model_configs,
                 func_eval_time_limit_secs=func_eval_time_limit_secs,
                 stacking_layer=stacking_layer,
-                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers),
+                time_left=time_per_layer_run,
                 current_search_space=current_search_space,
                 smac_initial_run=smac_initial_run,
                 search_space_updates=autogluon_nn_search_space_updates,

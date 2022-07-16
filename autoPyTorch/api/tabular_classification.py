@@ -595,6 +595,75 @@ class TabularClassificationTask(BaseTask):
             warmstart=warmstart  
         )
 
+    def run_fine_tune_stacked_ensemble(
+        self,
+        optimize_metric: str,
+        X_train: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        y_train: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        X_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        y_test: Optional[Union[List, pd.DataFrame, np.ndarray]] = None,
+        dataset_name: Optional[str] = None,
+        feat_types: Optional[List[str]] = None,
+        budget_type: str = 'epochs',
+        min_budget: int = 5,
+        max_budget: int = 50,
+        total_walltime_limit: int = 100,
+        func_eval_time_limit_secs: Optional[int] = None,
+        enable_traditional_pipeline: bool = True,
+        memory_limit: int = 4096,
+        smac_scenario_args: Optional[Dict[str, Any]] = None,
+        get_smac_object_callback: Optional[Callable] = None,
+        all_supported_metrics: bool = True,
+        precision: int = 32,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
+        load_models: bool = True,
+        portfolio_selection: Optional[str] = None,
+        dataset_compression: Union[Mapping[str, Any], bool] = True,
+        smbo_class: Optional[SMBO] = None,
+        use_ensemble_opt_loss=False,
+        posthoc_ensemble_fit: bool = False,
+        warmstart: bool = True,
+        max_fine_tune_iterations = 1,
+    ) -> 'BaseTask':
+
+        self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
+        self.feat_types = feat_types
+
+        self.dataset, self.input_validator = self._get_dataset_input_validator(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            resampling_strategy=self.resampling_strategy,
+            resampling_strategy_args=self.resampling_strategy_args,
+            dataset_name=dataset_name,
+            dataset_compression=self._dataset_compression,
+            feat_types=feat_types)
+
+        return self._run_fine_tune_stacked_ensemble(
+            dataset=self.dataset,
+            optimize_metric=optimize_metric,
+            budget_type=budget_type,
+            min_budget=min_budget,
+            max_budget=max_budget,
+            total_walltime_limit=total_walltime_limit,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
+            enable_traditional_pipeline=enable_traditional_pipeline,
+            memory_limit=memory_limit,
+            smac_scenario_args=smac_scenario_args,
+            get_smac_object_callback=get_smac_object_callback,
+            all_supported_metrics=all_supported_metrics,
+            precision=precision,
+            disable_file_output=disable_file_output,
+            load_models=load_models,
+            portfolio_selection=portfolio_selection,
+            smbo_class=smbo_class,
+            use_ensemble_opt_loss=use_ensemble_opt_loss,
+            posthoc_ensemble_fit=posthoc_ensemble_fit,
+            warmstart=warmstart,
+            max_fine_tune_iterations=max_fine_tune_iterations
+        )
+
     def predict(
             self,
             X_test: np.ndarray,

@@ -37,7 +37,7 @@ from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_smac_callback_with_run_history, save_run_history, update_run_history_with_max_config_id
+from autoPyTorch.api.utils import get_autogluon_default_nn_config_space, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_smac_callback_with_run_history, save_run_history, update_run_history_with_max_config_id
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -1098,7 +1098,7 @@ class BaseTask(ABC):
 
         if self.feat_types is None:
             raise ValueError("Cant run autogluon stacking without information about dataset features passed with `feat_type`")
-        autogluon_nn_search_space_updates = get_autogluon_default_nn_config(feat_types=self.feat_types)
+        autogluon_nn_search_space_updates = get_autogluon_default_nn_config_space(feat_types=self.feat_types)
         autogluon_nn_search_space = self._get_search_space(
                 self.dataset,
                 include_components=self.include_components,
@@ -2082,6 +2082,159 @@ class BaseTask(ABC):
 
         self._cleanup()
 
+        return self
+
+    def _run_fine_tune_stacked_ensemble(
+        self,
+        optimize_metric: str,
+        dataset: BaseDataset,
+        budget_type: str = 'epochs',
+        min_budget: int = 5,
+        max_budget: int = 50,
+        total_walltime_limit: int = 100,
+        func_eval_time_limit_secs: Optional[int] = 50,
+        enable_traditional_pipeline: bool = True,
+        memory_limit: Optional[int] = 4096,
+        smac_scenario_args: Optional[Dict[str, Any]] = None,
+        get_smac_object_callback: Optional[Callable] = None,
+        tae_func: Optional[Callable] = None,
+        all_supported_metrics: bool = True,
+        precision: int = 32,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]] = None,
+        load_models: bool = True,
+        portfolio_selection: Optional[str] = None,
+        dask_client: Optional[dask.distributed.Client] = None,
+        smbo_class: Optional[SMBO] = None,
+        posthoc_ensemble_fit: bool = False,
+        max_fine_tune_iterations=1
+
+    ) -> 'BaseTask':
+        experiment_task_name: str = 'runFineTuneStackedEnsemble'
+
+        self._init_required_args(
+            experiment_task_name=experiment_task_name,
+            optimize_metric=optimize_metric,
+            dataset=dataset,
+            budget_type=budget_type,
+            max_budget=max_budget,
+            total_walltime_limit=total_walltime_limit,
+            memory_limit=memory_limit,
+            all_supported_metrics=all_supported_metrics,
+            precision=precision,
+            disable_file_output=disable_file_output,
+            dask_client=dask_client
+        )
+
+        # Handle time resource allocation
+        elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
+        time_left_for_modelfit = int(max(0, total_walltime_limit - elapsed_time))
+        if func_eval_time_limit_secs is None or func_eval_time_limit_secs > time_left_for_modelfit:
+            self._logger.warning(
+                'Time limit for a single run is higher than total time '
+                'limit. Capping the limit for a single run to the total '
+                'time given to SMAC (%f)' % time_left_for_modelfit
+            )
+            func_eval_time_limit_secs = time_left_for_modelfit
+
+        # Make sure that at least 2 models are created for the ensemble process
+        num_models = time_left_for_modelfit // func_eval_time_limit_secs
+        if num_models < 2 and self.ensemble_size > 0:
+            func_eval_time_limit_secs = time_left_for_modelfit // 2
+            self._logger.warning(
+                "Capping the func_eval_time_limit_secs to {} to have "
+                "time for a least 2 models to ensemble.".format(
+                    func_eval_time_limit_secs
+                )
+            )
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+
+        if self.feat_types is None:
+            raise ValueError("Cant run autogluon stacking without information about dataset features passed with `feat_type`")
+        autogluon_nn_search_space_updates = get_autogluon_default_nn_config_space(feat_types=self.feat_types)
+        autogluon_nn_search_space = self._get_search_space(
+                self.dataset,
+                include_components=self.include_components,
+                exclude_components=self.exclude_components,
+                search_space_updates=autogluon_nn_search_space_updates)
+        
+        model_configs = []
+        for _ in range(self.ensemble_size):
+            random_config = autogluon_nn_search_space.sample_configuration()
+            model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
+        # self._logger.info("Starting Autogluon Stacking.")
+
+        model_identifiers = []
+        stacked_weights = []
+        last_successful_smac_initial_num_run = None
+        for stacking_layer in range(self.num_stacking_layers):
+            smac_initial_run=self._backend.get_next_num_run()
+            if stacking_layer != 0:
+                _, current_search_space = self._update_configs_for_current_config_space(
+                    model_descriptions=model_configs,
+                    dataset=dataset,
+                    search_space_updates=autogluon_nn_search_space_updates,
+                )
+                updated_model_configs = []
+                for _ in range(self.ensemble_size):
+                    random_config = current_search_space.sample_configuration()
+                    updated_model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
+            else:
+                updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
+            self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}")
+
+            layer_model_identifiers = self._fit_models_on_dataset(
+                model_configs=updated_model_configs,
+                func_eval_time_limit_secs=func_eval_time_limit_secs,
+                stacking_layer=stacking_layer,
+                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers),
+                current_search_space=current_search_space,
+                smac_initial_run=smac_initial_run,
+                search_space_updates=autogluon_nn_search_space_updates,
+                base_ensemble_method=self.base_ensemble_method
+            )
+            nonnull_identifiers = [identifier for identifier in layer_model_identifiers if identifier is not None]
+            if len(nonnull_identifiers) > 0:
+                model_identifiers.append(
+                    nonnull_identifiers
+                )
+                last_successful_smac_initial_num_run = smac_initial_run
+                ensemble_size = len(nonnull_identifiers)
+                weights = [1/ensemble_size] * ensemble_size
+                stacked_weights.append(weights)
+            _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
+                model_identifiers=model_identifiers[-1],
+                weights=weights,
+                ensemble_size=ensemble_size
+            )
+            self._logger.info(f"stacking_layer: {stacking_layer}, nonnull_identifiers: {nonnull_identifiers}")
+            dataset = get_appended_dataset(
+                original_dataset=self.dataset,
+                previous_layer_predictions_train=previous_layer_predictions_train,
+                previous_layer_predictions_test=previous_layer_predictions_test,
+                resampling_strategy=self.resampling_strategy,
+                resampling_strategy_args=self.resampling_strategy_args,
+            )
+            self._reset_datamanager_in_backend(datamanager=dataset)
+
+        ensemble = AutogluonStackingEnsemble()
+        iteration = 0
+        time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
+        # final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
+        #     optimize_metric,
+        #     time_left_for_ensemble,
+        #     last_successful_smac_initial_num_run,
+        #     ensemble_size,
+        #     iteration
+        #     )
+        # model_identifiers[-1] = final_model_identifiers
+        # stacked_weights[-1] = final_weights
+        ensemble = ensemble.fit(model_identifiers, stacked_weights)
+        self._backend.save_ensemble(ensemble, iteration+1, self.seed)
+        if load_models:
+            self._logger.info("Loading models...")
+            self._load_models()
+            self._logger.info("Finished loading models...")
+        self._cleanup()
         return self
 
     def _fit_iterative_hpo_ensemble(

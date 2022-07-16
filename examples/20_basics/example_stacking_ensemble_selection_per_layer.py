@@ -8,7 +8,7 @@ with AutoPyTorch
 import os
 import tempfile as tmp
 import warnings
-from autoPyTorch.api.utils import get_autogluon_default_nn_config
+from autoPyTorch.api.utils import get_autogluon_default_nn_config_space
 
 from autoPyTorch.datasets.resampling_strategy import RepeatedCrossValTypes
 
@@ -29,7 +29,7 @@ from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 ############################################################################
 # Data Loading
 # ============
-task = openml.tasks.get_task(task_id=146821)
+task = openml.tasks.get_task(task_id=9981)
 dataset = task.get_dataset()
 X, y, categorical_indicator, _ = dataset.get_data(
     dataset_format='dataframe',
@@ -52,7 +52,7 @@ y_test = y.iloc[test_indices]
 
 feat_type = ["numerical" if not indicator else "categorical" for indicator in categorical_indicator]
 
-search_space_updates = get_autogluon_default_nn_config(feat_types=feat_type)
+search_space_updates = get_autogluon_default_nn_config_space(feat_types=feat_type)
 ############################################################################
 # Build and fit a classifier
 # ==========================
@@ -60,8 +60,8 @@ if __name__ == '__main__':
     api = TabularClassificationTask(
         # To maintain logs of the run, you can uncomment the
         # Following lines
-        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_02',
-        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_02',
+        temporary_directory='./tmp/stacking_ensemble_selection_per_layer_tmp_03',
+        output_directory='./tmp/stacking_ensemble_selection_per_layer_out_03',
         delete_tmp_folder_after_terminate=False,
         delete_output_folder_after_terminate=False,
         seed=4,

@@ -35,7 +35,7 @@ from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterS
 from autoPyTorch.utils.results_manager import ResultsManager
 
 
-def get_autogluon_default_nn_config(feat_types):
+def get_autogluon_default_nn_config_space(feat_types):
     has_numerical_features = "numerical" in feat_types
     has_cat_features = "categorical" in feat_types
     search_space_updates = HyperparameterSearchSpaceUpdates()

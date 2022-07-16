@@ -22,7 +22,6 @@ warnings.simplefilter(action='ignore', category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import openml
-import sklearn.model_selection
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
 from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
@@ -30,7 +29,7 @@ from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, Stacking
 ############################################################################
 # Data Loading
 # ============
-task = openml.tasks.get_task(task_id=3917)
+task = openml.tasks.get_task(task_id=146821)
 dataset = task.get_dataset()
 X, y, categorical_indicator, _ = dataset.get_data(
     dataset_format='dataframe',
@@ -59,8 +58,8 @@ feat_types = ["numerical" if not indicator else "categorical" for indicator in c
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_autogluon_tmp_01',
-    output_directory='./tmp/stacking_autogluon_out_01',
+    temporary_directory='./tmp/stacking_autogluon_tmp_03',
+    output_directory='./tmp/stacking_autogluon_out_04',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=11,
@@ -71,7 +70,7 @@ api = TabularClassificationTask(
         'num_splits': 3,
         'num_repeats': 1
     },
-    ensemble_size=6,
+    ensemble_size=5,
     num_stacking_layers=2,
 )
 
@@ -86,7 +85,7 @@ api.run_autogluon_stacking(
     dataset_name='Australian',
     feat_types=feat_types,
     optimize_metric='balanced_accuracy',
-    total_walltime_limit=1800,
+    total_walltime_limit=2000,
     func_eval_time_limit_secs=300,
     all_supported_metrics=False,
     max_budget=10

@@ -1,3 +1,4 @@
+from tkinter.tix import Y_REGION
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import dask.distributed
@@ -25,6 +26,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     ResamplingStrategies,
 )
 from autoPyTorch.datasets.tabular_dataset import TabularDataset
+from autoPyTorch.datasets.utils import FineTuneDataset
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
 from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 from autoPyTorch.pipeline.tabular_classification import TabularClassificationPipeline
@@ -326,19 +328,24 @@ class TabularClassificationTask(BaseTask):
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
         self.feat_types = feat_types
 
-        self.dataset, self.input_validator = self._get_dataset_input_validator(
-            X_train=X_train,
-            y_train=y_train,
+        validator_args = dict(
+            dataset_compression=self._dataset_compression,
+            is_classification=True,
+            logger_port=self._logger_port,
+            feat_types=self.feat_types)
+        
+        dataset = FineTuneDataset(
+            finetune_dataset_path=self._backend.internals_directory,
+            X=X_train,
+            Y=y_train,
             X_test=X_test,
-            y_test=y_test,
+            Y_test=y_test,
             resampling_strategy=self.resampling_strategy,
             resampling_strategy_args=self.resampling_strategy_args,
-            dataset_name=dataset_name,
-            dataset_compression=self._dataset_compression,
-            feat_types=feat_types)
+            dataset_name=dataset_name)
 
         return self._run_iterative_hpo_ensemble_optimisation(
-            dataset=self.dataset,
+            dataset=dataset,
             optimize_metric=optimize_metric,
             budget_type=budget_type,
             min_budget=min_budget,

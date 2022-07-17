@@ -363,3 +363,8 @@ def delete_runs_except_ensemble(old_ensemble, backend):
     nonnull_identifiers = [identifier for identifier in selected_identifiers if identifier is not None]
     ensemble_runs = [backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget).split('/')[-1] for seed, num_run, budget in nonnull_identifiers]
     delete_other_runs(ensemble_runs=ensemble_runs, runs_directory=backend.get_runs_directory())
+
+
+def get_column_data(column, data):
+    col_data = data[column] if isinstance(data, pd.DataFrame) else data[:, column]
+    return col_data

@@ -1294,8 +1294,15 @@ class BaseTask(ABC):
         else:
             raise ValueError(f"Unsupported base_ensemble_method: {self.base_ensemble_method}")
 
+        time_left_for_repeats = total_walltime_limit - self._stopwatch.wall_elapsed('stacking_task_name')
+        per_model_runtime = math.floor(time_left_for_repeats/self.ensemble_size)
+        if per_model_runtime > func_eval_time_limit_secs:
+            self._logger.info(f"func_eval_time_limit_secs :{func_eval_time_limit_secs} increased to {per_model_runtime}")
+            func_eval_time_limit_secs = per_model_runtime
+        self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
+
         self._repeat_base_models(
-            total_walltime_limit=total_walltime_limit,
+            total_walltime_limit=time_left_for_repeats,
             func_eval_time_limit_secs=func_eval_time_limit_secs,
             stacking_task_name=stacking_task_name,
             final_ensemble_iteration=final_ensemble_iteration

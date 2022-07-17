@@ -14,7 +14,7 @@ from scipy.stats import skew
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.preprocessing.tabular_preprocessing.base_tabular_preprocessing import \
     autoPyTorchTabularPreprocessingComponent
-from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter, ispandas
+from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter, get_column_data, ispandas
 
 
 def _get_skew(
@@ -56,11 +56,12 @@ class ColumnSplitter(autoPyTorchTabularPreprocessingComponent):
 
         # Make sure each column is a valid type
         for column in X['dataset_properties']['numerical_columns']:
-
-                if np.abs(_get_skew(X['X_train'][X['train_indices']][column])) > self.skew_threshold:
-                    self.special_feature_types['skew_columns'].append(column)
-                else:
-                    self.special_feature_types['scale_columns'].append(column)
+            data = X['X_train'][X['train_indices']]
+            col_data = get_column_data(column, data)
+            if np.abs(_get_skew(col_data)) > self.skew_threshold:
+                self.special_feature_types['skew_columns'].append(column)
+            else:
+                self.special_feature_types['scale_columns'].append(column)
 
         return self
 

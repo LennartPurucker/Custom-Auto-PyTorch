@@ -39,7 +39,7 @@ def run_models_on_dataset(
     n_jobs: int,
     current_search_space: ConfigurationSpace,
     smac_initial_run: int
-) -> RunHistory:
+) -> Tuple[RunHistory, List[Tuple]]:
     starttime = time.time()
     run_history = RunHistory()
     memory_limit = memory_limit

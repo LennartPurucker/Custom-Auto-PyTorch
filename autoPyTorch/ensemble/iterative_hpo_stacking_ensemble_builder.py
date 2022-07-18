@@ -28,10 +28,16 @@ from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
+from autoPyTorch.ensemble.utils import get_identifiers_from_num_runs, get_num_runs_from_identifiers, save_stacking_ensemble
 from autoPyTorch.utils.common import read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
-from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER
+from autoPyTorch.utils.common import (
+    ENSEMBLE_ITERATION_MULTIPLIER,
+    get_ensemble_cutoff_num_run_filename,
+    get_ensemble_identifiers_filename,
+    get_ensemble_unique_identifier_filename
+)
 from autoPyTorch.utils.logging_ import get_named_client_logger
 from autoPyTorch.utils.parallel import preload_modules
 
@@ -453,14 +459,13 @@ class IterativeHPOStackingEnsembleBuilder(object):
 
         # Save the ensemble for later use in the main module!
         if ensemble is not None and self.SAVE2DISC:
-            self.backend.save_ensemble(ensemble, int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration), self.seed)
-            ensemble_identifiers = self._get_identifiers_from_num_runs(ensemble.stacked_ensemble_identifiers[self.cur_stacking_layer])
+            ensemble_identifiers = save_stacking_ensemble(
+                iteration=int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration),
+                ensemble=ensemble,
+                seed=self.seed,
+                cur_stacking_layer=self.cur_stacking_layer,
+                backend=self.backend)
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
-            self._save_current_ensemble_identifiers(
-                ensemble_identifiers=ensemble_identifiers,
-                cur_stacking_layer=self.cur_stacking_layer
-                )
-            self._save_ensemble_unique_identifier(ensemble.unique_identifiers)
 
         # Save the read losses status for the next iteration
         with open(self.ensemble_loss_file, "wb") as memory:
@@ -680,7 +685,7 @@ class IterativeHPOStackingEnsembleBuilder(object):
         best_model_predictions_ensemble = self.read_preds[best_model_identifier][Y_ENSEMBLE]
         best_model_predictions_test = self.read_preds[best_model_identifier][Y_TEST]
 
-        ensemble_num_runs = self._get_num_runs_from_identifiers(self.current_ensemble_identifiers)
+        ensemble_num_runs = get_num_runs_from_identifiers(self.backend, self.model_fn_re, self.current_ensemble_identifiers)
 
         best_model_num_run = (
                             self.read_losses[best_model_identifier]["seed"],
@@ -690,7 +695,7 @@ class IterativeHPOStackingEnsembleBuilder(object):
         stacked_ensemble_identifiers = self._load_stacked_ensemble_identifiers()
         self.logger.debug(f"Stacked ensemble identifiers: {stacked_ensemble_identifiers}")
         stacked_ensemble_num_runs = [
-            self._get_num_runs_from_identifiers(layer_identifiers)
+            get_num_runs_from_identifiers(self.backend, self.model_fn_re, layer_identifiers)
             for layer_identifiers in stacked_ensemble_identifiers
         ]
 
@@ -905,15 +910,35 @@ class IterativeHPOStackingEnsembleBuilder(object):
 
         return best_model_identifier
 
-    def _get_ensemble_identifiers_filename(self, cur_stacking_layer) -> str:
-        return os.path.join(self.backend.internals_directory, f'ensemble_identifiers_{cur_stacking_layer}.pkl')
+    
+    def _save_ensemble_cutoff_num_run(self, cutoff_num_run: int) -> None:
+        with open(get_ensemble_cutoff_num_run_filename(self.backend), "w") as file:
+            file.write(str(cutoff_num_run))
+
+    def _save_ensemble_unique_identifier(self, ensemble_unique_identifier: dict()) -> None:
+        pickle.dump(ensemble_unique_identifier, open(get_ensemble_unique_identifier_filename(self.backend), 'wb'))
+
+    def _load_ensemble_unique_identifier(self):
+        if os.path.exists(get_ensemble_unique_identifier_filename(self.backend)):
+            ensemble_unique_identifier = pickle.load(open(get_ensemble_unique_identifier_filename(self.backend), "rb"))   
+        else:
+            ensemble_unique_identifier = dict()
+        return ensemble_unique_identifier
+
+    def _load_ensemble_cutoff_num_run(self) -> Optional[int]:
+        if os.path.exists(get_ensemble_cutoff_num_run_filename(self.backend)):
+            with open(get_ensemble_cutoff_num_run_filename(self.backend), "r") as file:
+                cutoff_num_run = int(file.read())
+        else:
+            cutoff_num_run = None
+        return cutoff_num_run
 
     def _save_current_ensemble_identifiers(self, ensemble_identifiers: List[Optional[str]], cur_stacking_layer) -> None:
-        with open(self._get_ensemble_identifiers_filename(cur_stacking_layer=cur_stacking_layer), "wb") as file:
+        with open(get_ensemble_identifiers_filename(self.backend, cur_stacking_layer=cur_stacking_layer), "wb") as file:
             pickle.dump(ensemble_identifiers, file=file)
     
     def _load_current_ensemble_identifiers(self, cur_stacking_layer) -> List[Optional[str]]:
-        file_name = self._get_ensemble_identifiers_filename(cur_stacking_layer)
+        file_name = get_ensemble_identifiers_filename(self.backend,cur_stacking_layer)
         if os.path.exists(file_name):
             with open(file_name, "rb") as file:
                 identifiers = pickle.load(file)
@@ -927,110 +952,3 @@ class IterativeHPOStackingEnsembleBuilder(object):
             ensemble_identifiers.append(self._load_current_ensemble_identifiers(cur_stacking_layer=i))
         return ensemble_identifiers
 
-    def _get_identifiers_from_num_runs(self, num_runs, subset='ensemble') -> List[Optional[str]]:
-        identifiers: List[Optional[str]] = []
-        for num_run in num_runs:
-            identifier = None
-            if num_run is not None:
-                seed, idx, budget = num_run
-                identifier = os.path.join(
-                    self.backend.get_numrun_directory(seed, idx, budget),
-                    self.backend.get_prediction_filename(subset, seed, idx, budget)
-                )
-            identifiers.append(identifier)
-        return identifiers
-
-    def _get_num_runs_from_identifiers(self, identifiers) -> List[Optional[Tuple[int, int, float]]]:
-        num_runs: List[Optional[Tuple[int, int, float]]] = []
-        for identifier in identifiers:
-            num_run = None
-            if identifier is not None:
-                match = self.model_fn_re.search(identifier)
-                if match is None:
-                    raise ValueError(f"Could not interpret file {identifier} "
-                                    "Something went wrong while scoring predictions")
-                _seed = int(match.group(1))
-                _num_run = int(match.group(2))
-                _budget = float(match.group(3))
-                num_run = (_seed, _num_run, _budget)
-            num_runs.append(num_run)
-        return num_runs
-
-    def _get_ensemble_unique_identifier_filename(self):
-        return os.path.join(self.backend.internals_directory, 'ensemble_unique_identifier.txt')
-
-    def _save_ensemble_unique_identifier(self, ensemble_unique_identifier: dict()) -> None:
-        pickle.dump(ensemble_unique_identifier, open(self._get_ensemble_unique_identifier_filename(), 'wb'))
-
-    def _load_ensemble_unique_identifier(self):
-        if os.path.exists(self._get_ensemble_unique_identifier_filename()):
-            ensemble_unique_identifier = pickle.load(open(self._get_ensemble_unique_identifier_filename(), "rb"))
-            
-        else:
-            ensemble_unique_identifier = dict()
-        return ensemble_unique_identifier
-
-    # TODO: fix to remove all the models other than the best model
-    # def _delete_excess_models(self, selected_keys: List[str]) -> None:
-    #     """
-    #         Deletes models excess models on disc. self.max_models_on_disc
-    #         defines the upper limit on how many models to keep.
-    #         Any additional model with a worse loss than the top
-    #         self.max_models_on_disc is deleted.
-    #     """
-
-    #     # Comply with mypy
-    #     if self.max_resident_models is None:
-    #         return
-
-    #     # Obtain a list of sorted pred keys
-    #     pre_sorted_keys = self._get_list_of_sorted_preds()
-    #     sorted_keys = list(map(lambda x: x[0], pre_sorted_keys))
-
-    #     if len(sorted_keys) <= self.max_resident_models:
-    #         # Don't waste time if not enough models to delete
-    #         return
-
-    #     self.logger.debug(f"num sorted_keys before delete: {len(sorted_keys)}, pred files: {len(self.y_ens_files)}")
-
-    #     # The top self.max_resident_models models would be the candidates
-    #     # Any other low performance model will be deleted
-    #     # The list is in ascending order of score
-    #     candidates = sorted_keys[:self.max_resident_models]
-
-    #     # Loop through the files currently in the directory
-    #     for pred_path in self.y_ens_files:
-
-    #         # Do not delete candidates
-    #         if pred_path in candidates:
-    #             continue
-
-    #         if pred_path in self._has_been_candidate:
-    #             continue
-
-    #         match = self.model_fn_re.search(pred_path)
-    #         if match is None:
-    #             raise ValueError("Could not interpret file {pred_path} "
-    #                              "Something went wrong while reading predictions")
-    #         _seed = int(match.group(1))
-    #         _num_run = int(match.group(2))
-    #         _budget = float(match.group(3))
-
-    #         # Do not delete the dummy prediction
-    #         if _num_run == 1 or _num_run < self.initial_num_run:
-    #             self.logger.debug(f"skipping for numrun {_num_run}")
-    #             continue
-
-    #         numrun_dir = self.backend.get_numrun_directory(_seed, _num_run, _budget)
-    #         try:
-    #             os.rename(numrun_dir, numrun_dir + '.old')
-    #             shutil.rmtree(numrun_dir + '.old')
-    #             self.logger.info("Deleted files of non-candidate model %s", pred_path)
-    #             self.read_losses[pred_path]["disc_space_cost_mb"] = None
-    #             self.read_losses[pred_path]["loaded"] = 3
-    #             self.read_losses[pred_path]["ens_loss"] = np.inf
-    #         except Exception as e:
-    #             self.logger.error(
-    #                 "Failed to delete files of non-candidate model %s due"
-    #                 " to error %s", pred_path, e
-    #             )

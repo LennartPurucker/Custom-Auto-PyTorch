@@ -328,24 +328,19 @@ class TabularClassificationTask(BaseTask):
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
         self.feat_types = feat_types
 
-        validator_args = dict(
-            dataset_compression=self._dataset_compression,
-            is_classification=True,
-            logger_port=self._logger_port,
-            feat_types=self.feat_types)
-        
-        dataset = FineTuneDataset(
-            finetune_dataset_path=self._backend.internals_directory,
-            X=X_train,
-            Y=y_train,
+        self.dataset, self.input_validator = self._get_dataset_input_validator(
+            X_train=X_train,
+            y_train=y_train,
             X_test=X_test,
-            Y_test=y_test,
+            y_test=y_test,
             resampling_strategy=self.resampling_strategy,
             resampling_strategy_args=self.resampling_strategy_args,
-            dataset_name=dataset_name)
+            dataset_name=dataset_name,
+            dataset_compression=self._dataset_compression,
+            feat_types=feat_types)
 
         return self._run_iterative_hpo_ensemble_optimisation(
-            dataset=dataset,
+            dataset=self.dataset,
             optimize_metric=optimize_metric,
             budget_type=budget_type,
             min_budget=min_budget,
@@ -627,28 +622,35 @@ class TabularClassificationTask(BaseTask):
         portfolio_selection: Optional[str] = None,
         dataset_compression: Union[Mapping[str, Any], bool] = True,
         smbo_class: Optional[SMBO] = None,
-        use_ensemble_opt_loss=False,
         posthoc_ensemble_fit: bool = False,
-        warmstart: bool = True,
         max_fine_tune_iterations = 1,
     ) -> 'BaseTask':
 
         self._dataset_compression = get_dataset_compression_mapping(memory_limit, dataset_compression)
         self.feat_types = feat_types
 
-        self.dataset, self.input_validator = self._get_dataset_input_validator(
-            X_train=X_train,
-            y_train=y_train,
+        validator_args = dict(
+            dataset_compression=self._dataset_compression,
+            is_classification=True,
+            logger_port=self._logger_port,
+            feat_types=self.feat_types)
+        
+        dataset = FineTuneDataset(
+            finetune_dataset_path=self._backend.internals_directory,
+            X=X_train,
+            Y=y_train,
             X_test=X_test,
-            y_test=y_test,
+            Y_test=y_test,
             resampling_strategy=self.resampling_strategy,
             resampling_strategy_args=self.resampling_strategy_args,
             dataset_name=dataset_name,
-            dataset_compression=self._dataset_compression,
-            feat_types=feat_types)
+            seed=self.seed,
+            validator_args=validator_args,
+            )
+
 
         return self._run_fine_tune_stacked_ensemble(
-            dataset=self.dataset,
+            dataset=dataset,
             optimize_metric=optimize_metric,
             budget_type=budget_type,
             min_budget=min_budget,
@@ -665,9 +667,7 @@ class TabularClassificationTask(BaseTask):
             load_models=load_models,
             portfolio_selection=portfolio_selection,
             smbo_class=smbo_class,
-            use_ensemble_opt_loss=use_ensemble_opt_loss,
             posthoc_ensemble_fit=posthoc_ensemble_fit,
-            warmstart=warmstart,
             max_fine_tune_iterations=max_fine_tune_iterations
         )
 

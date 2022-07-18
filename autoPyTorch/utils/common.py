@@ -368,3 +368,15 @@ def delete_runs_except_ensemble(old_ensemble, backend):
 def get_column_data(column, data):
     col_data = data[column] if isinstance(data, pd.DataFrame) else data[:, column]
     return col_data
+
+
+def get_ensemble_identifiers_filename(backend, cur_stacking_layer) -> str:
+    return os.path.join(backend.internals_directory, f'ensemble_identifiers_{cur_stacking_layer}.pkl')
+
+
+def get_ensemble_cutoff_num_run_filename(backend):
+    return os.path.join(backend.internals_directory, 'ensemble_cutoff_run.txt')
+
+
+def get_ensemble_unique_identifier_filename(backend):
+        return os.path.join(backend.internals_directory, 'ensemble_unique_identifier.txt')

@@ -80,7 +80,7 @@ class FineTuneDataset(object):
         self.holdout_validators = HoldOutFuncs.get_holdout_validators(*HoldoutValTypes)
         self.random_state = np.random.RandomState(seed=seed)
         self.shuffle = shuffle
-        splits = self.create_holdout_val_split(holdout_val_type=finetune_resampling_strategy, val_share=finetune_val_share)
+        splits = self.create_holdout_val_split(holdout_val_type=finetune_resampling_strategy, val_share=finetune_val_share, y_train=Y )
 
         self.dataset_paths = dict(train=None, hpo=None)
         self._update_dataset_paths(

@@ -1,5 +1,5 @@
 from cProfile import run
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 import copy
 import json
 import logging.handlers
@@ -37,7 +37,7 @@ from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config_space, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_smac_callback_with_run_history, save_run_history, update_run_history_with_max_config_id
+from autoPyTorch.api.utils import get_autogluon_default_nn_config_space, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_search_space_updates_for_configuraion, get_smac_callback_with_run_history, read_predictions, save_run_history, update_run_history_with_max_config_id
 from autoPyTorch.automl_common.common.utils.backend import Backend, create
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
@@ -64,8 +64,8 @@ from autoPyTorch.ensemble.singlebest_ensemble import SingleBest
 from autoPyTorch.ensemble.autogluon_stacking_ensemble import AutogluonStackingEnsemble
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
-from autoPyTorch.ensemble.train_stacking_finetune_ensemble import StackingTrainFineTuneEnsemble
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, is_stacking
+from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
+from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, get_identifiers_from_num_runs, is_stacking, save_stacking_ensemble
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
@@ -973,8 +973,8 @@ class BaseTask(ABC):
         base_ensemble_method: BaseLayerEnsembleSelectionTypes,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
         func_eval_time_limit_secs: int = 100,
-    ) -> List[Tuple]:\
-        
+    ) -> List[Tuple]:
+
         search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
 
         self._logger.debug(f"base_ensemble_method: {base_ensemble_method}, model_configs {model_configs} ")
@@ -1443,18 +1443,20 @@ class BaseTask(ABC):
         model_descriptions: List[Tuple],
         dataset: BaseDataset,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-        assert_skew_transformer_quantile: bool = False
+        assert_skew_transformer_quantile: bool = False,
+        previous_numerical_columns=None
     ) -> List[Tuple]:
         
         search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
 
+        previous_numerical_columns = previous_numerical_columns if previous_numerical_columns is not None else self.dataset.numerical_columns
         current_search_space = self._get_search_space(
                                                 dataset,
                                                 include_components=self.include_components,
                                                 exclude_components=self.exclude_components,
                                                 search_space_updates=search_space_updates)
         current_dataset_properties = self._get_dataset_properties(dataset)
-        n_numerical_in_incumbent_on_task_id = len(self.dataset.numerical_columns)
+        n_numerical_in_incumbent_on_task_id = len(previous_numerical_columns)
         num_numerical = len(dataset.numerical_columns)
         updated_model_descriptions = []
         for model_description in model_descriptions:
@@ -2134,7 +2136,7 @@ class BaseTask(ABC):
             )
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
 
-        autogluon_nn_search_space = self._train_random_stacked_ensemble(
+        autogluon_nn_search_space_updates, final_trained_configurations = self._train_random_stacked_ensemble(
             optimize_metric,
             dataset,
             budget_type,
@@ -2161,10 +2163,9 @@ class BaseTask(ABC):
         #                         if posthoc_ensemble_fit else total_walltime_limit
 
         time_per_layer_search = math.floor(total_walltime_limit/self.num_stacking_layers)
-        dataset = copy.deepcopy(self.dataset)
-        run_history_pred_path = os.path.join(self._backend.internals_directory, 'run_history_pred_path.pkl')
 
-        train_ensemble: StackingTrainFineTuneEnsemble = self._backend.load_ensemble(self.seed)
+        current_dataset = dataset.get_dataset(mode='hpo')
+        # train_ensemble: StackingFineTuneEnsemble = self._backend.load_ensemble(self.seed)
 
         runcount_limit = None
         if smac_scenario_args is not None:
@@ -2178,17 +2179,17 @@ class BaseTask(ABC):
         for cur_stacking_layer in range(self.num_stacking_layers):
             layer_initial_num_runs = []
             time_per_slot_search = math.floor(time_per_layer_search/self.ensemble_size)
-            layer_run_history_warmstart = OrderedDict()
             layer_run_history_dict = OrderedDict()
             layer_ids_config = dict()
             for ensemble_slot_j in range(self.ensemble_size):
                 iteration = cur_stacking_layer*self.ensemble_size + ensemble_slot_j
                 self._logger.debug(f"search time for smbo = {time_per_slot_search},ensemble_slot_j: "
                                    f"{ensemble_slot_j}, iteration: {iteration}")
-                if cur_stacking_layer > 0 and ensemble_slot_j == 0:
-                    get_smac_object_callback = None
-                    os.remove(run_history_pred_path)
 
+                previous_configuration = final_trained_configurations[cur_stacking_layer][ensemble_slot_j].get_dictionary()
+                search_space_updates = get_search_space_updates_for_configuraion(previous_configuration)
+
+                search_space = self._get_search_space(current_dataset, self.include_components, self.exclude_components, search_space_updates)
                 if runcount_limit is not None:
                     runcount_limit_slot_to_pass = runcount_limit_slot
                     smac_scenario_args.update({'runcount_limit': runcount_limit_slot_to_pass})
@@ -2208,7 +2209,7 @@ class BaseTask(ABC):
                     experiment_task_name=experiment_task_name,
                     proc_ensemble=proc_ensemble,
                     num_stacking_layers=1,
-                    search_space=current_search_space,
+                    search_space=search_space,
                     iteration=iteration
                     )
 
@@ -2238,7 +2239,7 @@ class BaseTask(ABC):
                     run_history=run_history,
                     cur_stacking_layer=cur_stacking_layer,
                     load_models=False,
-                    num_stacking_layers=num_stacking_layers
+                    num_stacking_layers=self.num_stacking_layers
                 )
 
                 # update to adjust run history of the next run, we dont care about config ids as we have num run to identify
@@ -2246,7 +2247,7 @@ class BaseTask(ABC):
                 self._logger.debug(f" for ensemble_slot_j: max_run_history_config_id {max_run_history_config_id}")
 
             # dont append predictions to the dataset if we are running the last layer so post hoc works properly.
-            if cur_stacking_layer != num_stacking_layers-1:
+            if cur_stacking_layer != self.num_stacking_layers-1:
                 layer_ensemble = self._backend.load_ensemble(self.seed)
                 delete_runs_except_ensemble(layer_ensemble, self._backend)
                 layer_identifiers = layer_ensemble.get_selected_model_identifiers()[cur_stacking_layer]
@@ -2319,6 +2320,7 @@ class BaseTask(ABC):
         self._cleanup()
         return self
 
+
     def _train_random_stacked_ensemble(
         self,
         optimize_metric,
@@ -2358,22 +2360,23 @@ class BaseTask(ABC):
                 include_components=self.include_components,
                 exclude_components=self.exclude_components,
                 search_space_updates=autogluon_nn_search_space_updates)
-        
+        final_trained_configurations = []
         model_configs = []
         for _ in range(self.ensemble_size):
             random_config = autogluon_nn_search_space.sample_configuration()
             model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
-
         model_identifiers = []
         stacked_weights = []
         last_successful_smac_initial_num_run = None
         for stacking_layer in range(self.num_stacking_layers):
+            previous_numerical_columns = current_dataset.numerical_columns
             smac_initial_run=self._backend.get_next_num_run()
             if stacking_layer != 0:
                 _, current_search_space = self._update_configs_for_current_config_space(
                     model_descriptions=model_configs,
                     dataset=dataset,
                     search_space_updates=autogluon_nn_search_space_updates,
+                    previous_numerical_columns=previous_numerical_columns
                 )
                 updated_model_configs = []
                 for _ in range(self.ensemble_size):
@@ -2382,7 +2385,7 @@ class BaseTask(ABC):
             else:
                 updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
             self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}")
-
+            final_trained_configurations.append(updated_model_configs)
             layer_model_identifiers = self._fit_models_on_dataset(
                 model_configs=updated_model_configs,
                 func_eval_time_limit_secs=func_eval_time_limit_secs,
@@ -2417,21 +2420,38 @@ class BaseTask(ABC):
             )
             self._reset_datamanager_in_backend(datamanager=dataset)
 
-        ensemble = StackingTrainFineTuneEnsemble()
-        iteration = 0
+        ensemble_predictions = read_predictions(self._backend, self.seed, 0, self.precision)
+        unique_identifiers = []
+        predictions_stacking_ensemble = []
+        for layer_identifiers in model_identifiers:
+            layer_predictions = []
+            unique_identifiers.append(Counter(layer_identifiers))
+            for identifier in layer_identifiers:
+                layer_predictions.append(ensemble_predictions[identifier])
+            predictions_stacking_ensemble.append(layer_predictions)
+
+        self._logger.debug(f"number of layer: {len(predictions_stacking_ensemble)}, number of models: {len(predictions_stacking_ensemble[0])}")
+
+        ensemble = StackingFineTuneEnsemble(
+            metric=self._metric,
+            task_type=STRING_TO_TASK_TYPES[self.task_type],
+            ensemble_size=self.ensemble_size,
+            random_state=np.random.RandomState(self.seed),
+            stacked_ensemble_identifiers=model_identifiers,
+            predictions_stacking_ensemble=predictions_stacking_ensemble,
+            unique_identifiers=unique_identifiers
+        )
+
+        iteration = 1
         time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
-        # final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
-        #     optimize_metric,
-        #     time_left_for_ensemble,
-        #     last_successful_smac_initial_num_run,
-        #     ensemble_size,
-        #     iteration
-        #     )
-        # model_identifiers[-1] = final_model_identifiers
-        # stacked_weights[-1] = final_weights
-        ensemble = ensemble.fit(model_identifiers, stacked_weights)
-        self._backend.save_ensemble(ensemble, iteration+1, self.seed)
-        return autogluon_nn_search_space
+        for cur_stacking_layer in self.num_stacking_layers:
+            _ = save_stacking_ensemble(
+                    iteration=iteration,
+                    ensemble=ensemble,
+                    seed=self.seed,
+                    cur_stacking_layer=cur_stacking_layer,
+                    backend=self._backend)
+        return autogluon_nn_search_space_updates, final_trained_configurations
 
     def _fit_iterative_hpo_ensemble(
         self,

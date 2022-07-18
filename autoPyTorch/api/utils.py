@@ -286,8 +286,8 @@ def get_run_history_warmstart(
     return runhistory
 
 
-def read_predictions(backend, seed, initial_num_run, precision, run_history_pred_path):
-    if os.path.exists(run_history_pred_path):
+def read_predictions(backend, seed, initial_num_run, precision, run_history_pred_path=None):
+    if run_history_pred_path is not None and os.path.exists(run_history_pred_path):
         read_preds = pickle.load(open(run_history_pred_path, 'rb'))
     else:
         read_preds = {}
@@ -329,7 +329,10 @@ def read_predictions(backend, seed, initial_num_run, precision, run_history_pred
 
         if dict_key not in read_preds:
             read_preds[dict_key] = read_np_fn(precision, y_ens_fn)
-    pickle.dump(read_preds, open(run_history_pred_path, 'wb'))
+
+    if run_history_pred_path is not None:
+        pickle.dump(read_preds, open(run_history_pred_path, 'wb'))
+
     return read_preds
 
 def get_incumbent(run_history, ids_config, opt_metric):
@@ -397,3 +400,17 @@ def get_smac_callback_with_run_history(run_history, stats_path, incumbent, cmd_o
             stats=stats
         )
     return get_smac_object
+
+
+def get_search_space_updates_for_configuraion(previous_configuration):
+        fixed_nodes = ['network_backbone', 'network_embedding', 'network_head', 'trainer']
+        search_space_updates = HyperparameterSearchSpaceUpdates()
+        for node in fixed_nodes:
+            for hyperparameter_name in previous_configuration:
+                if node in hyperparameter_name:
+                    hyperparameter_value = previous_configuration[hyperparameter_name]
+                    search_space_updates.append(
+                                node_name=node,
+                                hyperparameter=hyperparameter_name.replace(f'{node}:', ''),
+                                value_range=(hyperparameter_value,),
+                                default_value=hyperparameter_value)

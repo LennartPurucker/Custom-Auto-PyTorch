@@ -2140,7 +2140,8 @@ class BaseTask(ABC):
                                    f"{ensemble_slot_j}, iteration: {iteration}")
                 if cur_stacking_layer > 0 and ensemble_slot_j == 0:
                     get_smac_object_callback = None
-                    os.remove(run_history_pred_path)
+                    if os.path.exists(run_history_pred_path):
+                        os.remove(run_history_pred_path)
 
                 if runcount_limit is not None:
                     runcount_limit_slot_to_pass = runcount_limit_slot

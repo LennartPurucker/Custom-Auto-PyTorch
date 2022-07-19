@@ -107,7 +107,9 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
         # Overwrite the datamanager with the pre-processes data
         datamanager.replace_data(X['X_train'], X['X_test'] if 'X_test' in X else None)
 
-        train_dataset = datamanager.get_dataset(split_id=X['split_id'], train=True)
+        repeat_id = X.get('repeat_id', 0)
+
+        train_dataset = datamanager.get_dataset(split_id=X['split_id'], repeat_id=repeat_id, train=True)
 
         self.batch_size = min(int(2 ** (3 + np.floor(np.log10(len(train_dataset))))), self.max_batch_size)
 
@@ -122,7 +124,7 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
         )
 
         if X.get('val_indices', None) is not None:
-            val_dataset = datamanager.get_dataset(split_id=X['split_id'], train=False)
+            val_dataset = datamanager.get_dataset(split_id=X['split_id'], repeat_id=repeat_id, train=False)
             self.val_data_loader = torch.utils.data.DataLoader(
                 val_dataset,
                 batch_size=min(self.batch_size, len(val_dataset)),

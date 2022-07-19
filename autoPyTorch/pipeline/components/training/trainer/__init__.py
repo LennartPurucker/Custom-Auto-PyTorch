@@ -326,6 +326,12 @@ class TrainerChoice(autoPyTorchChoice):
         if X["torch_num_threads"] > 0:
             torch.set_num_threads(X["torch_num_threads"])
 
+        mode = X.get('mode', None)
+        model_weights_path = X.get('model_weights_path', None)
+
+        if mode == 'hpo':
+            X['network'].load_state_dict(torch.load(model_weights_path))
+
         self.budget_tracker = BudgetTracker(
             budget_type=X['budget_type'],
             max_runtime=X['runtime'] if 'runtime' in X else None,
@@ -453,7 +459,8 @@ class TrainerChoice(autoPyTorchChoice):
             if self.choice.use_snapshot_ensemble:
                 # we update only the last network which pertains to the stochastic weight averaging model
                 snapshot_model = self.choice.model_snapshots[-1].double() if use_double else self.choice.model_snapshots[-1]
-                swa_utils.update_bn(X['train_data_loader'], snapshot_model)  # .double())
+                swa_utils.update_bn(X['train_data_loader'], snapshot_model)
+                update_model_state_dict_from_swa(X['network_snashots'][-1], self.choice.swa_model.state_dict())
 
         # wrap up -- add score if not evaluating every epoch
         if not self.eval_valid_each_epoch(X):

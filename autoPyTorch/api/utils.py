@@ -402,15 +402,28 @@ def get_smac_callback_with_run_history(run_history, stats_path, incumbent, cmd_o
     return get_smac_object
 
 
-def get_search_space_updates_for_configuraion(previous_configuration):
-        fixed_nodes = ['network_backbone', 'network_embedding', 'network_head', 'trainer']
-        search_space_updates = HyperparameterSearchSpaceUpdates()
-        for node in fixed_nodes:
-            for hyperparameter_name in previous_configuration:
-                if node in hyperparameter_name:
-                    hyperparameter_value = previous_configuration[hyperparameter_name]
-                    search_space_updates.append(
-                                node_name=node,
-                                hyperparameter=hyperparameter_name.replace(f'{node}:', ''),
-                                value_range=(hyperparameter_value,),
-                                default_value=hyperparameter_value)
+def get_search_space_updates_for_configuraion(
+    previous_configuration: Configuration
+) -> HyperparameterSearchSpaceUpdates:
+    """
+    creates search space updates such that the architecture of the previous configurations
+    stays the same.
+
+    Args:
+        previous_configuration (Configuration):
+
+    Returns:
+        HyperparameterSearchSpaceUpdates:
+    """
+
+    fixed_nodes = ['network_backbone', 'network_embedding', 'network_head', 'trainer']
+    search_space_updates = HyperparameterSearchSpaceUpdates()
+    for node in fixed_nodes:
+        for hyperparameter_name in previous_configuration:
+            if node in hyperparameter_name:
+                hyperparameter_value = previous_configuration[hyperparameter_name]
+                search_space_updates.append(
+                            node_name=node,
+                            hyperparameter=hyperparameter_name.replace(f'{node}:', ''),
+                            value_range=(hyperparameter_value,),
+                            default_value=hyperparameter_value)

@@ -2186,6 +2186,7 @@ class BaseTask(ABC):
                 self._logger.debug(f"search time for smbo = {time_per_slot_search},ensemble_slot_j: "
                                    f"{ensemble_slot_j}, iteration: {iteration}")
 
+                # get random configuration for the current slot trained previously
                 previous_configuration = final_trained_configurations[cur_stacking_layer][ensemble_slot_j].get_dictionary()
                 search_space_updates = get_search_space_updates_for_configuraion(previous_configuration)
 

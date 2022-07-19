@@ -124,7 +124,10 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
                  logger_port: Optional[int] = None,
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
-                 use_ensemble_opt_loss=False) -> None:
+                 use_ensemble_opt_loss=False,
+                 mode='train',
+                 previous_model_identifier: Optional[Tuple[int, int, float]] = None
+    ) -> None:
         super().__init__(
             backend=backend,
             queue=queue,
@@ -153,6 +156,33 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
             assert isinstance(self.old_ensemble, StackingFineTuneEnsemble)
 
         self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
+        self.mode = mode
+        if self.mode == 'hpo':
+            if previous_model_identifier is None:
+                raise ValueError(f"Expected previous_model_identifier to not be None when the mode is train")
+            model_weights_path = os.path.join(self.backend.get_numrun_directory(*previous_model_identifier), 'trained_model_weights.weights')
+        else:
+            model_weights_path = os.path.join(self.backend.get_numrun_directory(self.seed, self.num_run, float(self.budget)), 'trained_model_weights.weights')
+
+        self.model_weights_path = model_weights_path
+
+    def _init_fit_dictionary(
+        self,
+        logger_port: int,
+        pipeline_config: Dict[str, Any],
+        metrics_dict: Optional[Dict[str, List[str]]] = None,
+    ) -> None:
+        super()._init_fit_dictionary(logger_port=logger_port, pipeline_config=pipeline_config, metrics_dict=metrics_dict)
+        self.fit_dictionary.update({'mode': self.mode, 'model_weights_path': self.model_weights_path})
+
+    def file_output(
+        self,
+        Y_optimization_pred: np.ndarray,
+        Y_valid_pred: np.ndarray,
+        Y_test_pred: np.ndarray,
+    ) -> Tuple[Optional[float], Dict]:
+        output = super().file_output(Y_optimization_pred=Y_optimization_pred, Y_valid_pred=Y_valid_pred, Y_test_pred=Y_test_pred)
+        
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],

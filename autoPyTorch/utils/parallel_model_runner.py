@@ -38,8 +38,38 @@ def run_models_on_dataset(
     multiprocessing_context,
     n_jobs: int,
     current_search_space: ConfigurationSpace,
-    smac_initial_run: int
+    smac_initial_run: int,
+    **kwargs: Any
 ) -> Tuple[RunHistory, List[Tuple]]:
+    """
+    
+
+    Args:
+        time_left (int): _description_
+        func_eval_time_limit_secs (int): _description_
+        model_configs (List[Tuple[Union[str, Configuration]]]): _description_
+        logger (_type_): _description_
+        logger_port (_type_): _description_
+        metric (_type_): _description_
+        dask_client (dask.distributed.Client): _description_
+        backend (Backend): _description_
+        memory_limit (int): _description_
+        disable_file_output (_type_): _description_
+        all_supported_metrics (bool): _description_
+        base_ensemble_method (_type_): _description_
+        include (_type_): _description_
+        exclude (_type_): _description_
+        search_space_updates (_type_): _description_
+        pipeline_options (_type_): _description_
+        seed (int): _description_
+        multiprocessing_context (_type_): _description_
+        n_jobs (int): _description_
+        current_search_space (ConfigurationSpace): _description_
+        smac_initial_run (int): _description_
+
+    Returns:
+        Tuple[RunHistory, List[Tuple]]: _description_
+    """
     starttime = time.time()
     run_history = RunHistory()
     memory_limit = memory_limit
@@ -85,7 +115,8 @@ def run_models_on_dataset(
                 base_ensemble_method=base_ensemble_method,
                 include=include,
                 exclude=exclude,
-                search_space_updates=search_space_updates
+                search_space_updates=search_space_updates,
+                **kwargs
             )
             dask_futures.append([
                 config,

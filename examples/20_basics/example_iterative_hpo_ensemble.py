@@ -24,7 +24,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 from autoPyTorch.optimizer.utils import autoPyTorchSMBO
 
 ############################################################################

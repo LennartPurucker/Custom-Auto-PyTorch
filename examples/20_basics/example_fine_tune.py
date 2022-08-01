@@ -24,7 +24,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import openml
 
 from autoPyTorch.api.tabular_classification import TabularClassificationTask
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 
 ############################################################################
 # Data Loading
@@ -58,19 +58,19 @@ feat_types = ["numerical" if not indicator else "categorical" for indicator in c
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_finetune_tmp_01',
-    output_directory='./tmp/stacking_finetune_out_01',
+    temporary_directory='./tmp/stacking_finetune_tmp_02',
+    output_directory='./tmp/stacking_finetune_out_02',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
     seed=11,
     base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_autogluon,
-    stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_autogluon,
+    stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_fine_tuning,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
         'num_splits': 3,
         'num_repeats': 1
     },
-    ensemble_size=5,
+    ensemble_size=3,
     num_stacking_layers=2,
 )
 

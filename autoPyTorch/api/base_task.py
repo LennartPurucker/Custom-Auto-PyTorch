@@ -45,7 +45,6 @@ from autoPyTorch.constants import (
     STRING_TO_TASK_TYPES,
 )
 from autoPyTorch.data.base_validator import BaseInputValidator
-from autoPyTorch.data.tabular_validator import TabularInputValidator
 from autoPyTorch.data.utils import DatasetCompressionSpec
 from autoPyTorch.datasets.base_dataset import BaseDataset, BaseDatasetPropertiesType
 from autoPyTorch.datasets.resampling_strategy import (
@@ -65,14 +64,14 @@ from autoPyTorch.ensemble.autogluon_stacking_ensemble import AutogluonStackingEn
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, get_identifiers_from_num_runs, is_stacking, save_stacking_ensemble
+from autoPyTorch.ensemble.utils import save_stacking_ensemble
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, is_stacking
 from autoPyTorch.evaluation.abstract_evaluator import fit_and_suppress_warnings
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.evaluation.utils import DisableFileOutputParameters
 from autoPyTorch.optimizer.run_history_callback import RunHistoryUpdaterManager
 from autoPyTorch.optimizer.smbo import AutoMLSMBO
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner import get_available_traditional_learners
 from autoPyTorch.utils.configurations import get_traditional_config_space, get_traditional_learners_configurations, is_configuration_traditional
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
@@ -973,6 +972,7 @@ class BaseTask(ABC):
         base_ensemble_method: BaseLayerEnsembleSelectionTypes,
         search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
         func_eval_time_limit_secs: int = 100,
+        **kwargs: Any
     ) -> List[Tuple]:
 
         search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
@@ -999,7 +999,8 @@ class BaseTask(ABC):
             multiprocessing_context=self._multiprocessing_context,
             n_jobs=self.n_jobs,
             current_search_space=current_search_space,
-            smac_initial_run=smac_initial_run
+            smac_initial_run=smac_initial_run,
+            **kwargs
         )
 
         self._logger.debug("Run history for layer: {}: {}".format(stacking_layer, run_history))
@@ -1029,6 +1030,7 @@ class BaseTask(ABC):
         self.fit_ensemble(
             optimize_metric=optimize_metric,
             precision=self.precision,
+            dataset=self.dataset,
             ensemble_size=ensemble_size,
             ensemble_nbest=self.ensemble_nbest,
             initial_num_run=last_successful_smac_initial_num_run,
@@ -1232,6 +1234,7 @@ class BaseTask(ABC):
             self._logger.info("Not starting ensemble builder as ensemble size is 0")
         else:
             proc_ensemble = self._init_ensemble_builder(time_left_for_ensembles=time_left_for_search_base_models,
+                                                        dataset=self.dataset,
                                                         ensemble_size=self.ensemble_size,
                                                         ensemble_nbest=self.ensemble_nbest,
                                                         precision=precision,
@@ -1519,7 +1522,10 @@ class BaseTask(ABC):
             get_smac_object_callback=get_smac_object_callback,
             tae_func=tae_func,
             smbo_class=smbo_class,
-            search_space=self.search_space)
+            search_space=self.search_space,
+            search_space_updates=self.search_space_updates,
+            include_components=self.include_components,
+            exclude_components=self.exclude_components)
 
         if run_history is not None and trajectory is not None:
             self._results_manager.trajectory = trajectory
@@ -1558,7 +1564,11 @@ class BaseTask(ABC):
         get_smac_object_callback=None,
         tae_func=None,
         smbo_class=None,
-        iteration=0
+        search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
+        include_components: Optional[Dict[str, List[str]]] = None,
+        exclude_components: Optional[Dict[str, List[str]]] = None,
+        iteration=0,
+        **kwargs
     ) -> Tuple[int, RunHistory, List[TrajEntry]]:
 
         smac_initial_num_run = self._backend.get_next_num_run(peek=True)
@@ -1582,7 +1592,7 @@ class BaseTask(ABC):
         run_history: Optional[RunHistory] = None
         trajectory: Optional[List[TrajEntry]] = None
 
-        self._logger.info("Starting SMAC with %5.2f sec time left" % time_left_for_smac)
+        self._logger.info(f"Starting SMAC with {time_left_for_smac} sec time left with search_space: {search_space}")
         if time_left_for_smac <= 0:
             self._logger.warning(" Not starting SMAC because there is no time left")
         else:
@@ -1598,8 +1608,8 @@ class BaseTask(ABC):
                 watcher=self._stopwatch,
                 metric=self._metric,
                 seed=self.seed,
-                include=self.include_components,
-                exclude=self.exclude_components,
+                include=include_components,
+                exclude=exclude_components,
                 disable_file_output=self._disable_file_output,
                 all_supported_metrics=self._all_supported_metrics,
                 smac_scenario_args=smac_scenario_args,
@@ -1616,14 +1626,15 @@ class BaseTask(ABC):
                 # We do not increase the num_run here, this is something
                 # smac does internally
                 start_num_run=smac_initial_num_run,
-                search_space_updates=self.search_space_updates,
+                search_space_updates=search_space_updates,
                 portfolio_selection=portfolio_selection,
                 pynisher_context=self._multiprocessing_context,
                 smbo_class=smbo_class,
                 use_ensemble_opt_loss=self.use_ensemble_opt_loss,
                 other_callbacks=[proc_runhistory_updater] if proc_runhistory_updater is not None else None,
                 num_stacking_layers=num_stacking_layers,
-                iteration=iteration
+                iteration=iteration,
+                **kwargs
             )
             try:
                 run_history, trajectory, budget_type = \
@@ -1919,7 +1930,8 @@ class BaseTask(ABC):
                                                             optimize_metric=self.opt_metric,
                                                             base_ensemble_method=self.base_ensemble_method,
                                                             stacking_ensemble_method=self.stacking_ensemble_method,
-                                                            num_stacking_layers=self.num_stacking_layers
+                                                            num_stacking_layers=self.num_stacking_layers,
+                                                            dataset=self.dataset
                                                             )
 
             self.run_smbo(
@@ -2136,7 +2148,7 @@ class BaseTask(ABC):
             )
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
 
-        autogluon_nn_search_space_updates, final_trained_configurations = self._train_random_stacked_ensemble(
+        previous_model_identifiers, final_trained_configurations = self._train_random_stacked_ensemble(
             optimize_metric,
             dataset,
             budget_type,
@@ -2153,6 +2165,7 @@ class BaseTask(ABC):
         # TODO: update following code to run for hpo finetune ensemble.
         proc_ensemble = None
 
+        self.precision = precision
         initial_num_runs = []
         # if enable_traditional_pipeline:
         #     TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE
@@ -2167,15 +2180,19 @@ class BaseTask(ABC):
         current_dataset = dataset.get_dataset(mode='hpo')
         # train_ensemble: StackingFineTuneEnsemble = self._backend.load_ensemble(self.seed)
 
+        self._reset_datamanager_in_backend(current_dataset)
+
         runcount_limit = None
         if smac_scenario_args is not None:
             runcount_limit = smac_scenario_args.pop('runcount_limit', None)
             if runcount_limit is not None:
                 runcount_limit_slot = math.floor(runcount_limit/self.ensemble_size)
 
+        # needed to update the run history for the entire run. Otherwise its overwritten
         max_run_history_config_id = 0
         full_run_history = OrderedDict()
         full_ids_config = dict()
+
         for cur_stacking_layer in range(self.num_stacking_layers):
             layer_initial_num_runs = []
             time_per_slot_search = math.floor(time_per_layer_search/self.ensemble_size)
@@ -2187,9 +2204,9 @@ class BaseTask(ABC):
                                    f"{ensemble_slot_j}, iteration: {iteration}")
 
                 # get random configuration for the current slot trained previously
-                previous_configuration = final_trained_configurations[cur_stacking_layer][ensemble_slot_j].get_dictionary()
-                search_space_updates = get_search_space_updates_for_configuraion(previous_configuration)
-
+                previous_configuration = final_trained_configurations[cur_stacking_layer][ensemble_slot_j][0].get_dictionary()
+                search_space_updates = get_search_space_updates_for_configuraion(previous_configuration, self.feat_types)
+                previous_model_identifier = previous_model_identifiers[cur_stacking_layer][ensemble_slot_j]
                 search_space = self._get_search_space(current_dataset, self.include_components, self.exclude_components, search_space_updates)
                 if runcount_limit is not None:
                     runcount_limit_slot_to_pass = runcount_limit_slot
@@ -2211,8 +2228,11 @@ class BaseTask(ABC):
                     proc_ensemble=proc_ensemble,
                     num_stacking_layers=1,
                     search_space=search_space,
-                    iteration=iteration
-                    )
+                    iteration=iteration,
+                    search_space_updates=search_space_updates,
+                    previous_model_identifier=previous_model_identifier,
+                    mode="hpo"
+                )
 
                 updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
 
@@ -2224,6 +2244,7 @@ class BaseTask(ABC):
                 time_left_for_ensemble = 0.15 * time_per_slot_search #  - (time.time() - start_time)
                 self._logger.debug(f"starting iterative ensemble fit for iteration: {iteration} and time_left_for_ensemble: {time_left_for_ensemble}")
                 self.fit_ensemble(
+                    dataset=current_dataset,
                     optimize_metric=optimize_metric,
                     precision=self.precision,
                     ensemble_size=self.ensemble_size,
@@ -2240,8 +2261,8 @@ class BaseTask(ABC):
                     run_history=run_history,
                     cur_stacking_layer=cur_stacking_layer,
                     load_models=False,
-                    num_stacking_layers=self.num_stacking_layers
-                )
+                    num_stacking_layers=self.num_stacking_layers,
+                    )
 
                 # update to adjust run history of the next run, we dont care about config ids as we have num run to identify
                 max_run_history_config_id = max(updated_ids_config.keys())
@@ -2294,7 +2315,7 @@ class BaseTask(ABC):
             self._logger.debug(f"Starting post hoc ensemble fitting with iteration: {iteration}, ensemble.stacked_ensemble_identifiers: {ensemble.stacked_ensemble_identifiers}")
             final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
                 optimize_metric=self.opt_metric,
-                time_left_for_ensemble=time_for_post_fit_ensemble,
+                time_left_for_ensemble=1,
                 last_successful_smac_initial_num_run=initial_num_run,
                 ensemble_size=self.ensemble_size,
                 iteration=iteration,
@@ -2336,7 +2357,30 @@ class BaseTask(ABC):
         disable_file_output,
         dask_client,
         experiment_task_name
-    ):
+    ) -> Tuple[List[Tuple[int, int, float]], List[List[Configuration]]]:
+        """
+        
+
+        Args:
+            optimize_metric (_type_): _description_
+            dataset (_type_): _description_
+            budget_type (_type_): _description_
+            max_budget (_type_): _description_
+            total_walltime_limit (_type_): _description_
+            func_eval_time_limit_secs (_type_): _description_
+            memory_limit (_type_): _description_
+            all_supported_metrics (_type_): _description_
+            precision (_type_): _description_
+            disable_file_output (_type_): _description_
+            dask_client (_type_): _description_
+            experiment_task_name (_type_): _description_
+
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            _type_: _description_
+        """
         current_dataset = dataset.get_dataset(mode='train')
 
         self._init_required_args(
@@ -2395,7 +2439,8 @@ class BaseTask(ABC):
                 current_search_space=current_search_space,
                 smac_initial_run=smac_initial_run,
                 search_space_updates=autogluon_nn_search_space_updates,
-                base_ensemble_method=self.base_ensemble_method
+                base_ensemble_method=self.base_ensemble_method,
+                mode="train"
             )
             nonnull_identifiers = [identifier for identifier in layer_model_identifiers if identifier is not None]
             if len(nonnull_identifiers) > 0:
@@ -2445,14 +2490,15 @@ class BaseTask(ABC):
 
         iteration = 1
         time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
-        for cur_stacking_layer in self.num_stacking_layers:
+        for cur_stacking_layer in range(self.num_stacking_layers):
             _ = save_stacking_ensemble(
                     iteration=iteration,
                     ensemble=ensemble,
                     seed=self.seed,
                     cur_stacking_layer=cur_stacking_layer,
-                    backend=self._backend)
-        return autogluon_nn_search_space_updates, final_trained_configurations
+                    backend=self._backend
+                )
+        return model_identifiers, final_trained_configurations
 
     def _fit_iterative_hpo_ensemble(
         self,
@@ -2537,7 +2583,10 @@ class BaseTask(ABC):
                     proc_ensemble=proc_ensemble,
                     num_stacking_layers=1,
                     search_space=current_search_space,
-                    iteration=iteration
+                    iteration=iteration,
+                    include_components=self.include_components,
+                    exclude_components=self.exclude_components,
+                    search_space_updates=self.search_space_updates
                     )
 
                 if not warmstart:
@@ -2570,7 +2619,8 @@ class BaseTask(ABC):
                     run_history=run_history,
                     cur_stacking_layer=cur_stacking_layer,
                     load_models=False,
-                    num_stacking_layers=num_stacking_layers
+                    num_stacking_layers=num_stacking_layers,
+                    dataset=self.dataset
                 )
 
                 if warmstart:
@@ -3142,6 +3192,7 @@ class BaseTask(ABC):
 
     def fit_ensemble(
         self,
+        dataset: BaseDataset,
         optimize_metric: Optional[str] = None,
         precision: Optional[int] = None,
         ensemble_nbest: int = 50,
@@ -3206,17 +3257,13 @@ class BaseTask(ABC):
             self
         """
         # Make sure that input is valid
-        if self.dataset is None:
-            raise ValueError("fit_ensemble() can only be called after `search()`. "
-                             "Please call the `search()` method of {} prior to "
-                             "fit_ensemble().".format(self.__class__.__name__))
 
         precision = precision if precision is not None else self.precision
         if precision not in [16, 32, 64]:
             raise ValueError("precision must be one of 16, 32, 64 but got {}".format(precision))
 
         if self._logger is None:
-            self._logger = self._get_logger(self.dataset.dataset_name)
+            self._logger = self._get_logger(self.dataset_name)
 
         # Create a client if needed
         if self._dask_client is None:
@@ -3246,7 +3293,10 @@ class BaseTask(ABC):
                     )
                 )
         # ============> Run Dummy predictions
-        if self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
+        if (
+            base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
+            and stacking_ensemble_method != StackingEnsembleSelectionTypes.stacking_fine_tuning
+        ):
             dummy_task_name = 'runDummy'
             self._stopwatch.start_task(dummy_task_name)
             self._do_dummy_prediction()
@@ -3273,10 +3323,14 @@ class BaseTask(ABC):
             initial_num_run=initial_num_run,
             iteration=iteration,
             ensemble_slot_j=ensemble_slot_j,
-            run_history=run_history
+            run_history=run_history,
+            dataset=dataset
         )
 
-        if self.base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
+        if (
+            base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
+            or stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning
+        ):
             manager.update_for_new_stacking_layer(cur_stacking_layer=cur_stacking_layer, initial_num_run=initial_num_run, is_iterative_hpo=True)
         manager.build_ensemble(self._dask_client)
         if manager is not None:
@@ -3296,6 +3350,7 @@ class BaseTask(ABC):
 
     def _init_ensemble_builder(
         self,
+        dataset: BaseDataset,
         time_left_for_ensembles: float,
         optimize_metric: str,
         base_ensemble_method: int,
@@ -3330,7 +3385,7 @@ class BaseTask(ABC):
         """
         if self._logger is None:
             raise ValueError("logger should be initialized to fit ensemble")
-        if self.dataset is None:
+        if dataset is None:
             raise ValueError("ensemble can only be initialised after or during `search()`. "
                              "Please call the `search()` method of {}.".format(self.__class__.__name__))
 
@@ -3343,14 +3398,14 @@ class BaseTask(ABC):
         # The function ensemble_builder_process will internally create a ensemble
         # builder in the provide dask client
         required_dataset_properties = {'task_type': self.task_type,
-                                       'output_type': self.dataset.output_type}
+                                       'output_type': dataset.output_type}
 
         proc_ensemble = EnsembleBuilderManager(
             start_time=time.time(),
             time_left_for_ensembles=time_left_for_ensembles,
             backend=copy.deepcopy(self._backend),
-            dataset_name=str(self.dataset.dataset_name),
-            output_type=STRING_TO_OUTPUT_TYPES[self.dataset.output_type],
+            dataset_name=str(dataset.dataset_name),
+            output_type=STRING_TO_OUTPUT_TYPES[dataset.output_type],
             task_type=STRING_TO_TASK_TYPES[self.task_type],
             metrics=get_metrics(
                 dataset_properties=required_dataset_properties, names=[optimize_metric]),

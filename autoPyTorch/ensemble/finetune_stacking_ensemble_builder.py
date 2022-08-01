@@ -29,6 +29,7 @@ from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble_builder import IterativeHPOStackingEnsembleBuilder
+from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
 from autoPyTorch.utils.common import read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
@@ -196,7 +197,7 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
             for layer_identifiers in stacked_ensemble_identifiers
         ]
         unique_identifiers = self._load_ensemble_unique_identifier()
-        ensemble = IterativeHPOStackingEnsemble(
+        ensemble = StackingFineTuneEnsemble(
             ensemble_size=self.ensemble_size,
             metric=self.metric,
             random_state=self.random_state,

@@ -123,6 +123,9 @@ class HyperparameterSearchSpaceUpdates:
                                                             default_value=default_value,
                                                             log=log))
 
+    def __str__(self) -> str:
+        return "\n".join([str(update) for update in self.updates])
+
     def save_as_file(self, path: str) -> None:
         """
         Save the updates as a file to reuse later

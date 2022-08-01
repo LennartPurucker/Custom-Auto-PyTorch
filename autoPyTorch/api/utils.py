@@ -403,7 +403,8 @@ def get_smac_callback_with_run_history(run_history, stats_path, incumbent, cmd_o
 
 
 def get_search_space_updates_for_configuraion(
-    previous_configuration: Configuration
+    previous_configuration: Configuration,
+    feat_types: List
 ) -> HyperparameterSearchSpaceUpdates:
     """
     creates search space updates such that the architecture of the previous configurations
@@ -418,6 +419,8 @@ def get_search_space_updates_for_configuraion(
 
     fixed_nodes = ['network_backbone', 'network_embedding', 'network_head', 'trainer']
     search_space_updates = HyperparameterSearchSpaceUpdates()
+    autogluon_updates = get_autogluon_default_nn_config_space(feat_types)
+    autogluon_updates_to_keep = []
     for node in fixed_nodes:
         for hyperparameter_name in previous_configuration:
             if node in hyperparameter_name:
@@ -427,3 +430,7 @@ def get_search_space_updates_for_configuraion(
                             hyperparameter=hyperparameter_name.replace(f'{node}:', ''),
                             value_range=(hyperparameter_value,),
                             default_value=hyperparameter_value)
+        autogluon_updates_to_keep.extend([update for update in autogluon_updates.updates if node not in update.node_name])
+
+
+    search_space_updates.updates.extend(autogluon_updates_to_keep)

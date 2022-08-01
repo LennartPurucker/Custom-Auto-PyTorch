@@ -128,6 +128,23 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
                  mode='train',
                  previous_model_identifier: Optional[Tuple[int, int, float]] = None
     ) -> None:
+
+        self.mode = mode
+        if self.mode == 'hpo':
+            # previous model indentifier allows us to restore the weights of the
+            # random configuration model trained in the training phase of fine tune
+            # stacking.
+            if previous_model_identifier is None:
+                raise ValueError(f"Expected previous_model_identifier when the mode is hpo")
+            model_weights_path = os.path.join(backend.internals_directory, "pretrained_weights", f"{previous_model_identifier[0]}_{previous_model_identifier[1]}_{float(previous_model_identifier[2])}")
+            # backend.get_numrun_directory(*previous_model_identifier)
+        else:
+            model_weights_path = os.path.join(backend.internals_directory, "pretrained_weights", f"{seed}_{num_run}_{float(budget)}")
+            if not os.path.exists(model_weights_path):
+                os.makedirs(model_weights_path)
+
+        self.model_weights_path = model_weights_path
+
         super().__init__(
             backend=backend,
             queue=queue,
@@ -156,15 +173,7 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
             assert isinstance(self.old_ensemble, StackingFineTuneEnsemble)
 
         self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
-        self.mode = mode
-        if self.mode == 'hpo':
-            if previous_model_identifier is None:
-                raise ValueError(f"Expected previous_model_identifier to not be None when the mode is train")
-            model_weights_path = os.path.join(self.backend.get_numrun_directory(*previous_model_identifier), 'trained_model_weights.weights')
-        else:
-            model_weights_path = os.path.join(self.backend.get_numrun_directory(self.seed, self.num_run, float(self.budget)), 'trained_model_weights.weights')
 
-        self.model_weights_path = model_weights_path
 
     def _init_fit_dictionary(
         self,
@@ -182,7 +191,7 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
         Y_test_pred: np.ndarray,
     ) -> Tuple[Optional[float], Dict]:
         output = super().file_output(Y_optimization_pred=Y_optimization_pred, Y_valid_pred=Y_valid_pred, Y_test_pred=Y_test_pred)
-        
+        return output
 
     def finish_up(self, loss: Dict[str, float], train_loss: Dict[str, float],
                   valid_pred: Optional[np.ndarray],
@@ -312,6 +321,8 @@ def eval_stacking_finetune_function(
     all_supported_metrics: bool = True,
     search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
     use_ensemble_opt_loss=False,
+    mode='train',
+    previous_model_identifier: Optional[Tuple[int, int, float]] = None,
     instance: str = None,
 ) -> None:
     """
@@ -395,5 +406,7 @@ def eval_stacking_finetune_function(
         pipeline_config=pipeline_config,
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
+        mode=mode,
+        previous_model_identifier=previous_model_identifier
     )
     evaluator.fit_predict_and_loss()

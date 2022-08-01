@@ -21,7 +21,7 @@ from smac.runhistory.runhistory import RunInfo, RunValue
 from smac.stats.stats import Stats
 from smac.tae import StatusType, TAEAbortException
 from smac.tae.execute_func import AbstractTAFunc
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.datasets.resampling_strategy import (
@@ -32,6 +32,7 @@ from autoPyTorch.datasets.resampling_strategy import (
 )
 from autoPyTorch.evaluation.ensemble_optimisation_evaluator import eval_ensemble_optimise_function
 from autoPyTorch.evaluation.repeated_crossval_evaluator import eval_repeated_cv_function
+from autoPyTorch.evaluation.stacking_finetune_evaluator import eval_stacking_finetune_function
 from autoPyTorch.evaluation.test_evaluator import eval_test_function
 from autoPyTorch.evaluation.train_evaluator import eval_train_function
 from autoPyTorch.evaluation.utils import (
@@ -136,6 +137,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         base_ensemble_method: BaseLayerEnsembleSelectionTypes = BaseLayerEnsembleSelectionTypes.ensemble_selection,
         stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
         use_ensemble_opt_loss=False,
+        mode=None,
+        previous_model_identifier=None
     ):
 
         self.backend = backend
@@ -165,6 +168,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
             if base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation, BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo):
                 eval_function = eval_ensemble_optimise_function
+            elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_autogluon and stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
+                eval_function = eval_stacking_finetune_function
             elif (
                 stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer
                 or base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_autogluon
@@ -193,6 +198,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             abort_on_first_run_crash=abort_on_first_run_crash,
         )
 
+        self.stacking_ensemble_method = stacking_ensemble_method
         self.pynisher_context = pynisher_context
         self.seed = seed
         self.initial_num_run = initial_num_run
@@ -226,6 +232,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
 
         self.search_space_updates = search_space_updates
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
+        self.mode = mode
+        self.previous_model_identifier = previous_model_identifier
 
     def _check_and_get_default_budget(self) -> float:
         budget_type_choices = ('epochs', 'runtime')
@@ -369,7 +377,8 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             search_space_updates=self.search_space_updates,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
         )
-
+        if self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
+            obj_kwargs = {**obj_kwargs, **{'mode': self.mode, 'previous_model_identifier': self.previous_model_identifier}}
         info: Optional[List[RunValue]]
         additional_run_info: Dict[str, Any]
         try:

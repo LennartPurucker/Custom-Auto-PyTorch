@@ -1,63 +1,12 @@
-from enum import IntEnum
-import gzip
 import os
 import pickle
 from typing import List, Optional, Tuple
 
-import numpy as np
-
-from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
-from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
-from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble_builder import EnsembleOptimisationStackingEnsembleBuilder
-from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
-from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble_builder import EnsembleSelectionPerLayerStackingEnsembleBuilder
-from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble_builder import IterativeHPOStackingEnsembleBuilder
 from autoPyTorch.utils.common import (
     get_ensemble_cutoff_num_run_filename,
     get_ensemble_identifiers_filename,
     get_ensemble_unique_identifier_filename
 )
-
-class BaseLayerEnsembleSelectionTypes(IntEnum):
-    ensemble_selection = 1
-    ensemble_bayesian_optimisation = 2
-    ensemble_autogluon = 3
-    ensemble_iterative_hpo = 4
-
-    def is_stacking_ensemble(self) -> bool:
-        return getattr(self, self.name) in (self.ensemble_bayesian_optimisation, self.ensemble_iterative_hpo)
-
-
-class StackingEnsembleSelectionTypes(IntEnum):
-    stacking_ensemble_bayesian_optimisation = 1
-    stacking_ensemble_selection_per_layer = 2
-    stacking_repeat_models = 3
-    stacking_autogluon = 4
-    stacking_ensemble_iterative_hpo = 5
-
-
-def is_stacking(base_ensemble_method: BaseLayerEnsembleSelectionTypes, stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None) -> bool:
-    is_base_ensemble_method_stacking = base_ensemble_method.is_stacking_ensemble()
-    is_stacking_ensemble_method_stacking = stacking_ensemble_method is not None
-    return is_base_ensemble_method_stacking or is_stacking_ensemble_method_stacking
-
-
-def get_ensemble_builder_class(base_ensemble_method: int, stacking_ensemble_method: Optional[int] = None):
-    if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_selection:
-        if stacking_ensemble_method is None or stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models:
-            return EnsembleBuilder
-        elif stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
-            return EnsembleSelectionPerLayerStackingEnsembleBuilder
-        else:
-            raise ValueError(f"Expected stacking_ensemble_method: {stacking_ensemble_method} to be in "
-                             f"[StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer"
-                             f" None]")
-    elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation:
-        if stacking_ensemble_method is None or stacking_ensemble_method in (StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_bayesian_optimisation):
-            return EnsembleOptimisationStackingEnsembleBuilder
-    elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
-        if stacking_ensemble_method is None or stacking_ensemble_method in (StackingEnsembleSelectionTypes.stacking_repeat_models, StackingEnsembleSelectionTypes.stacking_ensemble_iterative_hpo):
-            return IterativeHPOStackingEnsembleBuilder
 
 
 def get_identifiers_from_num_runs(backend, num_runs, subset='ensemble') -> List[Optional[str]]:
@@ -132,7 +81,7 @@ def load_stacked_ensemble_identifiers(num_stacking_layers) -> List[List[Optional
     return ensemble_identifiers
 
 
-def save_stacking_ensemble(iteration, ensemble, seed, cur_stacking_layer, backend):
+def save_stacking_ensemble(iteration, ensemble, seed, cur_stacking_layer, backend, initial_num_run=None):
     backend.save_ensemble(ensemble, iteration, seed)
     ensemble_identifiers = get_identifiers_from_num_runs(backend, ensemble.stacked_ensemble_identifiers[cur_stacking_layer])
     save_current_ensemble_identifiers(
@@ -140,6 +89,7 @@ def save_stacking_ensemble(iteration, ensemble, seed, cur_stacking_layer, backen
             ensemble_identifiers=ensemble_identifiers,
             cur_stacking_layer=cur_stacking_layer
             )
-    save_ensemble_cutoff_num_run(backend=backend, cutoff_num_run=self.initial_num_run)
-    save_ensemble_unique_identifier(backend=backend, ensemble_unique_identifiers=ensemble.unique_identifiers)
+    if initial_num_run is not None:
+        save_ensemble_cutoff_num_run(backend=backend, cutoff_num_run=initial_num_run)
+    save_ensemble_unique_identifier(backend=backend, ensemble_unique_identifier=ensemble.unique_identifiers)
     return ensemble_identifiers

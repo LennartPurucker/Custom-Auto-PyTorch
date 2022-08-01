@@ -23,6 +23,9 @@ __all__ = [
 ]
 
 
+TRAINED_MODEL_WEIGHTS_FILE_NAME = 'trained_model_weights.weights'
+
+
 def check_pipeline_is_fitted(pipeline, configuration):
     if isinstance(configuration, Configuration) and not is_configuration_traditional(configuration):
         return hasattr(pipeline.named_steps['network'], 'is_fitted_') and pipeline.named_steps['network'].is_fitted_

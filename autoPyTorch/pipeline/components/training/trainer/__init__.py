@@ -20,6 +20,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from autoPyTorch.constants import CLASSIFICATION_TASKS, STRING_TO_TASK_TYPES
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
+from autoPyTorch.evaluation.utils import TRAINED_MODEL_WEIGHTS_FILE_NAME
 from autoPyTorch.pipeline.components.base_choice import autoPyTorchChoice
 from autoPyTorch.pipeline.components.base_component import (
     ThirdPartyComponents,
@@ -329,7 +330,13 @@ class TrainerChoice(autoPyTorchChoice):
         mode = X.get('mode', None)
         model_weights_path = X.get('model_weights_path', None)
 
-        if mode == 'hpo':
+        if model_weights_path is not None:
+            model_weights_path = os.path.join(model_weights_path, f"repeat_{X['repeat_id']}", f"split_{X['split_id']}", TRAINED_MODEL_WEIGHTS_FILE_NAME)
+        else:
+            if mode is not None:
+                raise ValueError(f"Expected model_weights_path to be passed to the fit dictionary to run different modes (currently{mode}) of finetuned stacked ensemble")
+
+        if mode == 'hpo' and model_weights_path is not None:
             X['network'].load_state_dict(torch.load(model_weights_path))
 
         self.budget_tracker = BudgetTracker(
@@ -460,7 +467,7 @@ class TrainerChoice(autoPyTorchChoice):
                 # we update only the last network which pertains to the stochastic weight averaging model
                 snapshot_model = self.choice.model_snapshots[-1].double() if use_double else self.choice.model_snapshots[-1]
                 swa_utils.update_bn(X['train_data_loader'], snapshot_model)
-                update_model_state_dict_from_swa(X['network_snashots'][-1], self.choice.swa_model.state_dict())
+                update_model_state_dict_from_swa(X['network_snapshots'][-1], self.choice.swa_model.state_dict())
 
         # wrap up -- add score if not evaluating every epoch
         if not self.eval_valid_each_epoch(X):
@@ -480,6 +487,9 @@ class TrainerChoice(autoPyTorchChoice):
                 test_metrics=test_metrics,
             )
             self.save_model_for_ensemble()
+
+        if mode == 'train' and model_weights_path is not None:
+            torch.save(X['network'].state_dict(), model_weights_path)
 
         # As training have finished, load the best weight
         if self.checkpoint_dir is not None:

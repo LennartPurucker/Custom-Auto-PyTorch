@@ -16,7 +16,7 @@ from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_builder import EnsembleBuilder
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
-from autoPyTorch.ensemble.utils import get_identifiers_from_num_runs, get_num_runs_from_identifiers, load_current_ensemble_identifiers, load_ensemble_unique_identifier, load_stacked_ensemble_identifiers, save_current_ensemble_identifiers, save_ensemble_cutoff_num_run, save_ensemble_unique_identifier, save_stacking_ensemble
+from autoPyTorch.ensemble.utils import get_num_runs_from_identifiers, load_current_ensemble_identifiers, load_ensemble_unique_identifier, load_stacked_ensemble_identifiers, save_stacking_ensemble
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss
 from autoPyTorch.utils.logging_ import get_named_client_logger
@@ -45,7 +45,6 @@ def calculate_nomalised_margin_loss(ensemble_predictions, y_true) -> float:
     margin = np.power(1-loss, 2)/4
     return np.mean(margin)
 
-# TODO: make functions to support stacking.
 class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
     def __init__(
         self,
@@ -279,7 +278,8 @@ class EnsembleOptimisationStackingEnsembleBuilder(EnsembleBuilder):
                 ensemble=ensemble,
                 seed=self.seed,
                 cur_stacking_layer=self.cur_stacking_layer,
-                backend=self.backend)
+                backend=self.backend,
+                initial_num_run=self.initial_num_run)
         # Delete files of non-candidate models - can only be done after fitting the ensemble and
         # saving it to disc so we do not accidentally delete models in the previous ensemble
         if self.max_resident_models is not None:

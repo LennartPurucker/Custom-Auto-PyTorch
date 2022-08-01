@@ -16,7 +16,7 @@ from smac.optimizer.smbo import SMBO
 from smac.runhistory.runhistory import RunInfo, RunValue, RunHistory
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
-from autoPyTorch.ensemble.utils import (
+from autoPyTorch.ensemble.ensemble_selection_types import (
     BaseLayerEnsembleSelectionTypes,
     StackingEnsembleSelectionTypes,
     get_ensemble_builder_class,
@@ -402,7 +402,7 @@ def fit_and_return_ensemble(
     if stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer:
         ensemble_builder_run_kwargs.update({'is_new_layer': is_new_layer})
 
-    if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo:
+    if base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo or stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
         ensemble_builder_run_kwargs.update({'ensemble_slot_j': ensemble_slot_j})
 
     result = ensemble_builder(

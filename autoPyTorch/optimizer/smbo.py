@@ -31,7 +31,7 @@ from autoPyTorch.datasets.utils import get_appended_dataset
 from autoPyTorch.ensemble.ensemble_builder_manager import EnsembleBuilderManager
 from autoPyTorch.ensemble.ensemble_optimisation_stacking_ensemble import EnsembleOptimisationStackingEnsemble
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
-from autoPyTorch.ensemble.utils import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, is_stacking
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes, is_stacking
 from autoPyTorch.evaluation.tae import ExecuteTaFuncWithQueue, get_cost_of_crash
 from autoPyTorch.optimizer.utils import read_return_initial_configurations
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
@@ -130,7 +130,8 @@ class AutoMLSMBO(object):
                  other_callbacks: Optional[List] = None,
                  smbo_class: Optional[SMBO] = None,
                  use_ensemble_opt_loss: bool = False,
-                 iteration: int = 0
+                 iteration: int = 0,
+                 **kwargs
                  ):
         """
         Interface to SMAC. This method calls the SMAC optimize method, and allows
@@ -282,6 +283,7 @@ class AutoMLSMBO(object):
                 self.initial_configurations = None
                 self.logger.warning("None of the portfolio configurations are compatible"
                                     " with the current search space. Skipping initial configuration...")
+        self.special_kwargs = kwargs if self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning else {}
 
     def reset_data_manager(self) -> None:
         if self.datamanager is not None:
@@ -357,8 +359,10 @@ class AutoMLSMBO(object):
             stacking_ensemble_method=self.stacking_ensemble_method,
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
         )
+
+        ta_kwargs = {**ta_kwargs, **self.special_kwargs}
         ta = ExecuteTaFuncWithQueue
-        self.logger.info("Finish creating Target Algorithm (TA) function")
+        self.logger.info(f"Finish creating Target Algorithm (TA) function with ta_kwargs: {ta_kwargs}")
 
         startup_time = self.watcher.wall_elapsed(current_task_name)
         walltime_limit = walltime_limit - startup_time - 5
@@ -462,7 +466,7 @@ class AutoMLSMBO(object):
         self.reset_data_manager()
         for cur_stacking_layer in range(self.num_stacking_layers):
             if cur_stacking_layer == 0:
-                self.logger.debug(f"Initial feat_types = {self.datamanager.feat_types}")
+                self.logger.debug(f"Initial feat_types = {self.datamanager.feat_types}, special_kwargs: {self.special_kwargs}")
             run_history, trajectory, _ = self._run_smbo(
                 walltime_limit=individual_wall_times,
                 cur_stacking_layer=cur_stacking_layer,

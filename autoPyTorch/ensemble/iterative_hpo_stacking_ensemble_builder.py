@@ -464,7 +464,8 @@ class IterativeHPOStackingEnsembleBuilder(object):
                 ensemble=ensemble,
                 seed=self.seed,
                 cur_stacking_layer=self.cur_stacking_layer,
-                backend=self.backend)
+                backend=self.backend,
+                initial_num_run=self.initial_num_run)
             self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
 
         # Save the read losses status for the next iteration

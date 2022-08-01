@@ -389,6 +389,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         additional_run_info = {}
 
         total_repeats = self.num_repeats
+
         for repeat_id, folds in enumerate(self.splits):
             if repeat_id >= total_repeats:
                 break
@@ -401,40 +402,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
             # y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
             for i, (train_split, test_split) in enumerate(folds):
-                starttime = time.time()
-                self.logger.info(f"Starting fit for repeat: {repeat_id} and fold: {i}")
-                pipeline = self.pipelines[repeat_id][i]
-                (
-                    y_train_pred,
-                    y_opt_pred,
-                    y_valid_pred,
-                    y_test_pred,
-                ) = self._fit_and_predict(pipeline, i, repeat_id,
-                                        train_indices=train_split,
-                                        test_indices=test_split)
-                # y_train_pred_folds[i] = y_train_pred
-                y_optimization_pred_folds[i] = y_opt_pred
-                if y_valid_pred is not None:
-                    y_valid_pred_folds[i] = y_valid_pred
-                if y_test_pred is not None:
-                    y_test_pred_folds[i] = y_test_pred
-
-                # y_train_targets[i] = self.y_train[train_split]
-                # y_targets[i] = self.y_train[test_split]
-                
-                additional_run_info.update(pipeline.get_additional_run_info() if hasattr(
-                    pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
-                duration_fit_single = time.time() - starttime
-                if repeat_id == 0 and i == 0:
-                    expected_num_folds = floor(self.cutoff/(1.15*duration_fit_single))
-                    self.logger.debug(f"cutoff :{self.cutoff}, expected num folds: {expected_num_folds}, duration_fit_single: {duration_fit_single}")
-                    expected_total_repeats = floor(expected_num_folds/self.num_folds)
-                    if expected_total_repeats < total_repeats:
-                        self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
-                                          f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
-                        total_repeats = expected_total_repeats
-                        if total_repeats <= repeat_id:
-                            raise ValueError("Not expected to complete first repeat, terminating configuration")
+                total_repeats = self._fit_predict_one_fold(additional_run_info, total_repeats, repeat_id, y_optimization_pred_folds, y_valid_pred_folds, y_test_pred_folds, i, train_split, test_split)
 
             # Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_optimization_pred[repeat_id] = self.get_sorted_preds(y_optimization_pred_folds, repeat_id)
@@ -469,6 +437,58 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
 
         self.pipeline = self._get_pipeline()
         return Y_train_pred,Y_optimization_pred,Y_valid_pred,Y_test_pred,additional_run_info
+
+    def _fit_predict_one_fold(
+        self,
+        additional_run_info,
+        total_repeats,
+        repeat_id,
+        y_optimization_pred_folds,
+        y_valid_pred_folds,
+        y_test_pred_folds,
+        i,
+        train_split,
+        test_split
+    ):
+        starttime = time.time()
+        self.logger.info(f"Starting fit for repeat: {repeat_id} and fold: {i}")
+        pipeline = self.pipelines[repeat_id][i]
+        (
+            y_train_pred,
+            y_opt_pred,
+            y_valid_pred,
+            y_test_pred,
+        ) = self._fit_and_predict(pipeline, i, repeat_id,
+                                train_indices=train_split,
+                                test_indices=test_split)
+                # y_train_pred_folds[i] = y_train_pred
+        y_optimization_pred_folds[i] = y_opt_pred
+        if y_valid_pred is not None:
+            y_valid_pred_folds[i] = y_valid_pred
+        if y_test_pred is not None:
+            y_test_pred_folds[i] = y_test_pred
+
+                # y_train_targets[i] = self.y_train[train_split]
+                # y_targets[i] = self.y_train[test_split]
+                
+        additional_run_info.update(pipeline.get_additional_run_info() if hasattr(
+                    pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
+        duration_fit_single = time.time() - starttime
+        total_repeats = self._check_early_stop(total_repeats, repeat_id, i, duration_fit_single)
+        return total_repeats
+
+    def _check_early_stop(self, total_repeats, repeat_id, i, duration_fit_single):
+        if repeat_id == 0 and i == 0:
+            expected_num_folds = floor(self.cutoff/(1.15*duration_fit_single))
+            self.logger.debug(f"cutoff :{self.cutoff}, expected num folds: {expected_num_folds}, duration_fit_single: {duration_fit_single}")
+            expected_total_repeats = floor(expected_num_folds/self.num_folds)
+            if expected_total_repeats < total_repeats:
+                self.logger.debug(f"For num_run: {self.num_run}, expected repeats of cross validation: {expected_total_repeats} "
+                                          f"is less than the given value: {total_repeats}. Will only run for {expected_total_repeats}")
+                total_repeats = expected_total_repeats
+                if total_repeats <= repeat_id:
+                    raise ValueError("Not expected to complete first repeat, terminating configuration")
+        return total_repeats
 
     def _fit_and_predict(
         self,

@@ -417,7 +417,17 @@ def get_search_space_updates_for_configuraion(
         HyperparameterSearchSpaceUpdates:
     """
 
-    fixed_nodes = ['network_backbone', 'network_embedding', 'network_head', 'trainer']
+    fixed_nodes = [
+        'column_splitter',
+        'data_loader',
+        'encoder',
+        'scaler',
+        'skew_transformer',
+        'network_backbone',
+        'network_embedding',
+        'network_head',
+        'trainer'
+    ]
     search_space_updates = HyperparameterSearchSpaceUpdates()
     autogluon_updates = get_autogluon_default_nn_config_space(feat_types)
     autogluon_updates_to_keep = []
@@ -430,7 +440,8 @@ def get_search_space_updates_for_configuraion(
                             hyperparameter=hyperparameter_name.replace(f'{node}:', ''),
                             value_range=(hyperparameter_value,),
                             default_value=hyperparameter_value)
-        autogluon_updates_to_keep.extend([update for update in autogluon_updates.updates if node not in update.node_name])
 
+    autogluon_updates_to_keep.extend([update for update in autogluon_updates.updates if update.node_name not in fixed_nodes])
 
     search_space_updates.updates.extend(autogluon_updates_to_keep)
+    return search_space_updates

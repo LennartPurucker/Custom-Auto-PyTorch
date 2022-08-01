@@ -167,10 +167,10 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
         )
         self.logger.debug("use_ensemble_loss :{}".format(self.use_ensemble_opt_loss))
         self.old_ensemble: Optional[StackingFineTuneEnsemble] = None
-        ensemble_dir = self.backend.get_ensemble_dir()
-        if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
-            self.old_ensemble = self.backend.load_ensemble(self.seed)
-            assert isinstance(self.old_ensemble, StackingFineTuneEnsemble)
+        # ensemble_dir = self.backend.get_ensemble_dir()
+        # if os.path.exists(ensemble_dir) and len(os.listdir(ensemble_dir)) >= 1:
+        #     self.old_ensemble = self.backend.load_ensemble(self.seed)
+        #     assert isinstance(self.old_ensemble, StackingFineTuneEnsemble)
 
         self.logger.debug(f"for num run: {num_run}, X_train.shape: {self.X_train.shape} and X_test.shape: {self.X_test.shape}")
 
@@ -293,6 +293,33 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
             file_output=True,
             status=status,
             pipeline_opt_pred=Y_pipeline_optimization_pred
+        )
+
+    def _fit_predict_one_fold(
+        self,
+        additional_run_info,
+        total_repeats,
+        repeat_id,
+        y_optimization_pred_folds,
+        y_valid_pred_folds,
+        y_test_pred_folds,
+        i,
+        train_split,
+        test_split
+    ):
+        fold_model_weights_path = os.path.join(self.model_weights_path, f"repeat_{repeat_id}", f"split_{i}")
+        if not os.path.exists(fold_model_weights_path):
+            os.makedirs(fold_model_weights_path)
+        return super()._fit_predict_one_fold(
+            additional_run_info=additional_run_info,
+            total_repeats=total_repeats,
+            repeat_id=repeat_id,
+            y_optimization_pred_folds=y_optimization_pred_folds,
+            y_valid_pred_folds=y_valid_pred_folds,
+            y_test_pred_folds=y_test_pred_folds,
+            i=i,
+            train_split=train_split,
+            test_split=test_split
         )
 
     def _predict_with_stacked_ensemble(self, X, Y_pipeline_optimization_pred):

@@ -16,6 +16,20 @@ from autoPyTorch.pipeline.components.setup.network_backbone.utils import _activa
 from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter, get_hyperparameter
 
 
+def get_search_space_from_kwargs(original_search_Space, kwargs, hp_name):
+        update = kwargs.get(hp_name, None)
+        if update is not None:
+            updated_search_space = HyperparameterSearchSpace(hyperparameter=hp_name,
+                    value_range=update.value_range, default_value=update.default_value)
+        else:
+            updated_search_space = HyperparameterSearchSpace(hyperparameter=hp_name,
+                                                                value_range=original_search_Space.value_range,
+                                                                default_value=original_search_Space.default_value,
+                                                                log=original_search_Space.log)
+                                                            
+        return updated_search_space
+
+
 class MLPBackbone(NetworkBackboneComponent):
     """
     This component automatically creates a Multi Layer Perceptron based on a given config.
@@ -100,13 +114,19 @@ class MLPBackbone(NetworkBackboneComponent):
                                                                        value_range=(0, 0.8),
                                                                        default_value=0.5,
                                                                        ),
+        **kwargs
     ) -> ConfigurationSpace:
         cs = ConfigurationSpace()
 
         # The number of hidden layers the network will have.
         # Layer blocks are meant to have the same architecture, differing only
         # by the number of units
-        min_mlp_layers, max_mlp_layers = num_groups.value_range
+        if len(num_groups.value_range) > 1:
+            min_mlp_layers, max_mlp_layers = num_groups.value_range
+        else:
+            min_mlp_layers = num_groups.value_range[-1]
+            max_mlp_layers = num_groups.value_range[-1]
+
         num_groups = get_hyperparameter(num_groups, UniformIntegerHyperparameter)
         add_hyperparameter(cs, activation, CategoricalHyperparameter)
 
@@ -123,10 +143,8 @@ class MLPBackbone(NetworkBackboneComponent):
         cs.add_hyperparameters([num_groups, use_dropout])
 
         for i in range(1, int(max_mlp_layers) + 1):
-            n_units_search_space = HyperparameterSearchSpace(hyperparameter='num_units_%d' % i,
-                                                             value_range=num_units.value_range,
-                                                             default_value=num_units.default_value,
-                                                             log=num_units.log)
+            n_units_hp_name = 'num_units_%d' % i
+            n_units_search_space = get_search_space_from_kwargs(num_units, kwargs, n_units_hp_name)
             n_units_hp = get_hyperparameter(n_units_search_space, UniformIntegerHyperparameter)
 
             cs.add_hyperparameter(n_units_hp)
@@ -140,10 +158,8 @@ class MLPBackbone(NetworkBackboneComponent):
                     )
                 )
             if dropout_flag:
-                dropout_search_space = HyperparameterSearchSpace(hyperparameter='dropout_%d' % i,
-                                                                 value_range=dropout.value_range,
-                                                                 default_value=dropout.default_value,
-                                                                 log=dropout.log)
+                dropout_search_space = get_search_space_from_kwargs(dropout, kwargs, 'dropout_%d' % i)
+
                 dropout_hp = get_hyperparameter(dropout_search_space, UniformFloatHyperparameter)
                 cs.add_hyperparameter(dropout_hp)
 

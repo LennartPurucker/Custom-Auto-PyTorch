@@ -143,6 +143,17 @@ class HyperparameterSearchSpaceUpdates:
                       if isinstance(update.default_value, str) else update.default_value,
                       (" log" if update.log else ""), file=f)
 
+    def __contains__(self, m: str):
+        """
+        checks if update with the same hyperparameter name as the passed `m` exists
+
+        Args:
+            m (str): _description_
+        """
+        if any([m in update.hyperparameter_name for update in self.updates]):
+            return True
+        else:
+            return False
 
 def parse_hyperparameter_search_space_updates(updates_file: Optional[str]
                                               ) -> Optional[HyperparameterSearchSpaceUpdates]:

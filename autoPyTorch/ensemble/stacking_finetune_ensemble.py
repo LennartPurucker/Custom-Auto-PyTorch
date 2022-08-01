@@ -87,17 +87,20 @@ class StackingFineTuneEnsemble(EnsembleOptimisationStackingEnsemble):
         """
         predictions_ensemble[self.ensemble_slot_j] = best_model_predictions_ensemble
         ensemble_identifiers[self.ensemble_slot_j] = best_model_identifier
-        self._fit(predictions_ensemble, labels)
         nonnull_ensemble_identifiers = [identifier for identifier in ensemble_identifiers if identifier is not None]
         self.unique_identifiers[self.cur_stacking_layer] = Counter(nonnull_ensemble_identifiers)
-        self.identifiers_ = ensemble_identifiers
         self.stacked_ensemble_identifiers[self.cur_stacking_layer] = ensemble_identifiers
         self.predictions_stacking_ensemble[self.cur_stacking_layer][self.ensemble_slot_j] =  {
             'ensemble': best_model_predictions_ensemble,
             'test': best_model_predictions_test
         }
-        self._calculate_weights()
+        self._post_fit(predictions_ensemble, labels, ensemble_identifiers)
         return self
+
+    def _post_fit(self, predictions_ensemble, labels, ensemble_identifiers):
+        self._fit(predictions_ensemble, labels)
+        self.identifiers_ = ensemble_identifiers
+        self._calculate_weights()
 
     def _fit(
         self,

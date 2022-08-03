@@ -5,7 +5,9 @@ import json
 import logging.handlers
 import math
 import multiprocessing
+from optparse import Option
 import os
+import pickle
 import platform
 import sys
 import tempfile
@@ -54,7 +56,7 @@ from autoPyTorch.datasets.resampling_strategy import (
     ResamplingStrategies,
     RepeatedCrossValTypes
 )
-from autoPyTorch.datasets.utils import get_appended_dataset
+from autoPyTorch.datasets.utils import FineTuneDataset, get_appended_dataset
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
 from autoPyTorch.ensemble.repeat_models_stacking_ensemble import RepeatModelsStackingEnsemble
@@ -1411,7 +1413,10 @@ class BaseTask(ABC):
         model_identifiers: List[Tuple[int, int, float]],
         weights: List[float],
         ensemble_size: int,
-        run_history: Optional[Union[RunHistory, OrderedDict]] = None
+        run_history: Optional[Union[RunHistory, OrderedDict]] = None,
+        initial_num_run_hpo: Optional[int] = None,
+        ensemble_predictions: Optional[Dict[Tuple[int, int, float], np.ndarray]] = None,
+        test_predictions: Optional[Dict[Tuple[int, int, float], np.ndarray]] = None
     ):
         run_history = run_history if run_history is not None else self.run_history
         model_configs = []
@@ -1432,15 +1437,21 @@ class BaseTask(ABC):
             config = get_config_from_run_history(run_history, num_run=num_run)
             self._logger.debug(f'Configuration from previous layer: {config}')
             model_configs.append((config, budget))
-            previous_layer_predictions_train.extend(
-                [np.load(os.path.join(
+            if initial_num_run_hpo is not None and ensemble_predictions is not None and num_run < initial_num_run_hpo:
+                ensemble_model_preds = ensemble_predictions[model_identifier]
+                test_model_preds = test_predictions[model_identifier]
+            else:
+                ensemble_model_preds = np.load(os.path.join(
                     self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget),
                     self._backend.get_prediction_filename('ensemble', seed, num_run, budget)
-                    ), allow_pickle=True)] * int(weight * ensemble_size))
-            previous_layer_predictions_test.extend([np.load(os.path.join(
-                self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget),
-                self._backend.get_prediction_filename('test', seed, num_run, budget)
-                ), allow_pickle=True)] * int(weight * ensemble_size))
+                    ), allow_pickle=True)
+                test_model_preds = np.load(os.path.join(
+                    self._backend.get_numrun_directory(seed=seed, num_run=num_run, budget=budget),
+                    self._backend.get_prediction_filename('test', seed, num_run, budget)
+                    ), allow_pickle=True)
+            previous_layer_predictions_train.extend(
+                [ensemble_model_preds] * int(weight * ensemble_size))
+            previous_layer_predictions_test.extend([test_model_preds] * int(weight * ensemble_size))
         return model_configs,previous_layer_predictions_train,previous_layer_predictions_test
 
     def _update_configs_for_current_config_space(
@@ -2107,7 +2118,7 @@ class BaseTask(ABC):
     def _run_fine_tune_stacked_ensemble(
         self,
         optimize_metric: str,
-        dataset: BaseDataset,
+        dataset: FineTuneDataset,
         budget_type: str = 'epochs',
         min_budget: int = 5,
         max_budget: int = 50,
@@ -2153,7 +2164,7 @@ class BaseTask(ABC):
             )
         self.pipeline_options['func_eval_time_limit_secs'] = func_eval_time_limit_secs
 
-        previous_model_identifiers, final_trained_configurations = self._train_random_stacked_ensemble(
+        previous_model_identifiers, final_trained_configurations, ensemble_predictions, test_predictions = self._train_random_stacked_ensemble(
             optimize_metric,
             dataset,
             budget_type,
@@ -2167,11 +2178,12 @@ class BaseTask(ABC):
             dask_client,
             experiment_task_name
         )
-        # TODO: update following code to run for hpo finetune ensemble.
+
         proc_ensemble = None
 
         self.precision = precision
         initial_num_runs = []
+
         # if enable_traditional_pipeline:
         #     TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE
         # else:
@@ -2183,7 +2195,6 @@ class BaseTask(ABC):
         time_per_layer_search = math.floor(total_walltime_limit/self.num_stacking_layers)
 
         current_dataset = dataset.get_dataset(mode='hpo')
-        # train_ensemble: StackingFineTuneEnsemble = self._backend.load_ensemble(self.seed)
 
         self._reset_datamanager_in_backend(current_dataset)
 
@@ -2198,6 +2209,7 @@ class BaseTask(ABC):
         full_run_history = OrderedDict()
         full_ids_config = dict()
 
+        hpo_first_num_run = None
         for cur_stacking_layer in range(self.num_stacking_layers):
             layer_initial_num_runs = []
             time_per_slot_search = math.floor(time_per_layer_search/self.ensemble_size)
@@ -2206,6 +2218,9 @@ class BaseTask(ABC):
             for ensemble_slot_j in range(self.ensemble_size):
                 iteration = cur_stacking_layer*self.ensemble_size + ensemble_slot_j
 
+                # In case of failure, the previous model identifier is missing a spot.
+                if ensemble_slot_j >= len(previous_model_identifiers[cur_stacking_layer]):
+                    continue
                 # get random configuration for the current slot trained previously
                 previous_configuration = final_trained_configurations[cur_stacking_layer][ensemble_slot_j][0].get_dictionary()
                 search_space_updates = get_search_space_updates_for_configuraion(previous_configuration, current_dataset.feat_types)
@@ -2239,6 +2254,9 @@ class BaseTask(ABC):
                     mode="hpo"
                 )
 
+                if cur_stacking_layer == 0 and ensemble_slot_j == 0:
+                    hpo_first_num_run = smac_initial_num_run
+
                 updated_run_history_data, updated_ids_config = update_run_history_with_max_config_id(run_history.data, ids_config=run_history.ids_config, max_run_history_config_id=max_run_history_config_id)
 
                 layer_run_history_dict.update(updated_run_history_data)
@@ -2248,30 +2266,30 @@ class BaseTask(ABC):
                 layer_initial_num_runs.append(smac_initial_num_run+1)
                 time_left_for_ensemble = 0.15 * time_per_slot_search #  - (time.time() - start_time)
                 self._logger.debug(f"starting iterative ensemble fit for iteration: {iteration} and time_left_for_ensemble: {time_left_for_ensemble}")
-                # self.fit_ensemble(
-                #     dataset=current_dataset,
-                #     optimize_metric=optimize_metric,
-                #     precision=self.precision,
-                #     ensemble_size=self.ensemble_size,
-                #     ensemble_nbest=self.ensemble_nbest,
-                #     initial_num_run=0,
-                #     time_for_task=time_left_for_ensemble,
-                #     enable_traditional_pipeline=False,
-                #     func_eval_time_limit_secs=func_eval_time_limit_secs,
-                #     iteration=iteration,
-                #     cleanup=False,
-                #     base_ensemble_method=self.base_ensemble_method,
-                #     stacking_ensemble_method=self.stacking_ensemble_method,
-                #     ensemble_slot_j=ensemble_slot_j,
-                #     run_history=run_history,
-                #     cur_stacking_layer=cur_stacking_layer,
-                #     load_models=False,
-                #     num_stacking_layers=self.num_stacking_layers,
-                #     )
+                self.fit_ensemble(
+                    dataset=current_dataset,
+                    optimize_metric=optimize_metric,
+                    precision=self.precision,
+                    ensemble_size=self.ensemble_size,
+                    ensemble_nbest=self.ensemble_nbest,
+                    initial_num_run=smac_initial_num_run,
+                    time_for_task=time_left_for_ensemble,
+                    enable_traditional_pipeline=False,
+                    func_eval_time_limit_secs=func_eval_time_limit_secs,
+                    iteration=iteration,
+                    cleanup=False,
+                    base_ensemble_method=self.base_ensemble_method,
+                    stacking_ensemble_method=self.stacking_ensemble_method,
+                    ensemble_slot_j=ensemble_slot_j,
+                    run_history=run_history,
+                    cur_stacking_layer=cur_stacking_layer,
+                    load_models=False,
+                    num_stacking_layers=self.num_stacking_layers,
+                    )
 
                 # update to adjust run history of the next run, we dont care about config ids as we have num run to identify
                 max_run_history_config_id = max(updated_ids_config.keys())
-                self._logger.debug(f" for ensemble_slot_j: max_run_history_config_id {max_run_history_config_id}")
+                self._logger.debug(f"for ensemble_slot_j: max_run_history_config_id {max_run_history_config_id}")
 
             # dont append predictions to the dataset if we are running the last layer so post hoc works properly.
             if cur_stacking_layer != self.num_stacking_layers-1:
@@ -2282,7 +2300,10 @@ class BaseTask(ABC):
                     model_identifiers=layer_identifiers,
                     weights=layer_ensemble.weights_,
                     ensemble_size=self.ensemble_size,
-                    run_history=layer_run_history_dict
+                    run_history=layer_run_history_dict,
+                    initial_num_run_hpo=hpo_first_num_run,
+                    ensemble_predictions=ensemble_predictions,
+                    test_predictions=test_predictions
                 )
 
                 self._logger.debug(f"Original feat types len: {len(current_dataset.feat_types)}")
@@ -2298,7 +2319,7 @@ class BaseTask(ABC):
                     resampling_strategy_args=self.resampling_strategy_args,
                 )
                 self._logger.debug(f"new feat_types len: {len(current_dataset.feat_types)}")
-                self._reset_datamanager_in_backend(datamanager=dataset)
+                self._reset_datamanager_in_backend(datamanager=current_dataset)
 
             initial_num_runs.append(layer_initial_num_runs)
             full_run_history.update(layer_run_history_dict)
@@ -2345,7 +2366,7 @@ class BaseTask(ABC):
     def _train_random_stacked_ensemble(
         self,
         optimize_metric,
-        dataset,
+        dataset: FineTuneDataset,
         budget_type,
         max_budget,
         total_walltime_limit,
@@ -2418,7 +2439,7 @@ class BaseTask(ABC):
             if stacking_layer != 0:
                 _, current_search_space = self._update_configs_for_current_config_space(
                     model_descriptions=model_configs,
-                    dataset=dataset,
+                    dataset=current_dataset,
                     search_space_updates=autogluon_nn_search_space_updates,
                     previous_numerical_columns=previous_numerical_columns
                 )
@@ -2457,23 +2478,57 @@ class BaseTask(ABC):
                 ensemble_size=ensemble_size
             )
             self._logger.info(f"stacking_layer: {stacking_layer}, nonnull_identifiers: {nonnull_identifiers}")
-            dataset = get_appended_dataset(
+            current_dataset = get_appended_dataset(
                 original_dataset=current_dataset,
                 previous_layer_predictions_train=previous_layer_predictions_train,
                 previous_layer_predictions_test=previous_layer_predictions_test,
                 resampling_strategy=self.resampling_strategy,
                 resampling_strategy_args=self.resampling_strategy_args,
             )
-            self._reset_datamanager_in_backend(datamanager=dataset)
+            self._reset_datamanager_in_backend(datamanager=current_dataset)
 
-        ensemble_predictions = read_predictions(self._backend, self.seed, 0, self.precision)
+        # ensemble_predictions = read_predictions(self._backend, self.seed, 0, self.precision)
+        # test_predictions = read_predictions(self._backend, self.seed, 0, self.precision, data_set='test')
+        # TODO: Run inference on HPO dataset for the trained ensemble allows us to run ensemble builder.
+
+        cv_models = []
+        for identifiers in model_identifiers:
+            nonnull_identifiers = [i for i in identifiers if i is not None]
+            cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
+
+        train_hpo_dataset = dataset.get_dataset("hpo")
+        ensemble_predictions, _ = self._predict_with_stacked_ensemble(
+            X_test=train_hpo_dataset.train_tensors[0],
+            batch_size=100,
+            n_jobs=self.n_jobs,
+            models=cv_models,
+            ensemble_identifiers=model_identifiers
+        )
+        test_predictions, _ = self._predict_with_stacked_ensemble(
+            X_test=train_hpo_dataset.test_tensors[0],
+            batch_size=100,
+            n_jobs=self.n_jobs,
+            models=cv_models,
+            ensemble_identifiers=model_identifiers
+        )
+
         unique_identifiers = []
         predictions_stacking_ensemble = []
-        for layer_identifiers in model_identifiers:
+        predictions_ensemble = []
+        for i, layer_identifiers in enumerate(model_identifiers):
             layer_predictions = []
             unique_identifiers.append(Counter(layer_identifiers))
             for identifier in layer_identifiers:
-                layer_predictions.append(ensemble_predictions[identifier])
+                if identifier is not None:
+                    # num_run_dir = self._backend.get_numrun_directory(*identifier)
+                    pred = {'ensemble': ensemble_predictions[identifier], 'test': test_predictions[identifier]}
+                    # for subset in ['ensemble', 'test']:
+                    #     file_path = os.path.join(num_run_dir, self._backend.get_prediction_filename(subset, *identifier))
+                    #     with open(file_path, "wb") as fh:
+                    #         pickle.dump(pred[subset].astype(np.float32), fh, -1)
+                    if i == self.num_stacking_layers - 1:
+                        predictions_ensemble.append(pred['ensemble'])
+                    layer_predictions.append(pred)
             predictions_stacking_ensemble.append(layer_predictions)
 
         self._logger.debug(f"number of layer: {len(predictions_stacking_ensemble)}, number of models: {len(predictions_stacking_ensemble[0])}")
@@ -2488,10 +2543,12 @@ class BaseTask(ABC):
             unique_identifiers=unique_identifiers
         )
         ensemble._post_fit(
-            predictions_ensemble=predictions_stacking_ensemble[-1],
-            labels=self._backend.load_targets_ensemble(),
+            predictions_ensemble=predictions_ensemble,
+            labels=train_hpo_dataset.train_tensors[1], #  self._backend.load_targets_ensemble()
             ensemble_identifiers=model_identifiers[-1]
         )
+
+        self._logger.debug(f"number of layer: {len(ensemble.predictions_stacking_ensemble)}, number of models: {len(ensemble.predictions_stacking_ensemble[0])}")
 
         iteration = 1
         time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
@@ -2503,7 +2560,7 @@ class BaseTask(ABC):
                     cur_stacking_layer=cur_stacking_layer,
                     backend=self._backend
                 )
-        return model_identifiers, final_trained_configurations
+        return model_identifiers, final_trained_configurations, ensemble_predictions, test_predictions
 
     def _fit_iterative_hpo_ensemble(
         self,
@@ -3513,47 +3570,27 @@ class BaseTask(ABC):
 
         # Mypy assert
         assert self.ensemble_ is not None, "Load models should error out if no ensemble"
-        predictions = self._predict_with_ensemble(X_test=X_test, batch_size=batch_size, n_jobs=n_jobs)        
+        predictions = self._predict(X_test=X_test, batch_size=batch_size, n_jobs=n_jobs)        
 
         self._cleanup()
 
         return predictions
 
-    def _predict_with_ensemble(self, X_test, batch_size, n_jobs) -> np.ndarray:
+    def _predict(self, X_test, batch_size, n_jobs) -> np.ndarray:
 
         assert self.ensemble_ is not None, "Load models should error out if no ensemble"
+        
         if isinstance(self.resampling_strategy, (HoldoutValTypes, NoResamplingStrategyTypes)):
             models = self.models_
         elif isinstance(self.resampling_strategy, (CrossValTypes, RepeatedCrossValTypes)):
             models = self.cv_models_
 
-        X_test_copy = X_test.copy()
         if is_stacking(self.base_ensemble_method, self.stacking_ensemble_method):
             ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
             self._logger.debug(f"ensemble identifiers: {ensemble_identifiers}")
-            for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
-                if all([identifier is None for identifier in layer_identifiers]):
-                    break
-                self._logger.debug(f"layer : {i} of stacking ensemble,\n layer identifiers: {layer_identifiers},\n model: {model}")
-                all_predictions = joblib.Parallel(n_jobs=n_jobs)(
-                    joblib.delayed(_pipeline_predict)(
-                        model[identifier], X_test_copy, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
-                    )
-                    for identifier in layer_identifiers if identifier is not None
-                )
-                if (
-                    self.base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_autogluon, BaseLayerEnsembleSelectionTypes.ensemble_selection)
-                    or self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
-                ):
-                    self._logger.debug(f"Yes, it is updating the predictions with more data")
-                    concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
-                        stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
-                else:
-                    concat_all_predictions = all_predictions
-
-                X_test_copy = np.concatenate([X_test, *concat_all_predictions], axis=1)
-                self._logger.debug(f"shap of X_test after predict with layer : {i} = {X_test_copy.shape}")
+            _, all_predictions = self._predict_with_stacked_ensemble(X_test, batch_size, n_jobs, models, ensemble_identifiers)
         else:
+            X_test_copy = X_test.copy()
             all_predictions = joblib.Parallel(n_jobs=n_jobs)(
                     joblib.delayed(_pipeline_predict)(
                         models[identifier], X_test_copy, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
@@ -3573,6 +3610,51 @@ class BaseTask(ABC):
         self._cleanup()
 
         return predictions
+
+    def _predict_with_stacked_ensemble(
+        self,
+        X_test,
+        batch_size,
+        n_jobs,
+        models,
+        ensemble_identifiers
+    ):
+        X_test_copy = X_test.copy()
+
+        stacked_ensemble_predictions = []
+        for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
+            nonnull_identifiers = [identifier for identifier in layer_identifiers if identifier is not None]
+            if len(nonnull_identifiers) == 0:
+                break
+
+            self._logger.debug(f"layer : {i} of stacking ensemble,\n layer identifiers: {layer_identifiers},\n model: {model}")
+            all_predictions = joblib.Parallel(n_jobs=n_jobs)(
+                    joblib.delayed(_pipeline_predict)(
+                        model[identifier], X_test_copy, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
+                    )
+                    for identifier in nonnull_identifiers
+                )
+            if (
+                self.base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_autogluon, BaseLayerEnsembleSelectionTypes.ensemble_selection)
+                    or self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
+            ):
+                self._logger.debug(f"Yes, it is updating the predictions with more data")
+                concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
+                        stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
+            else:
+                concat_all_predictions = all_predictions
+
+            stacked_ensemble_predictions.append(all_predictions)
+
+            X_test_copy = np.concatenate([X_test, *concat_all_predictions], axis=1)
+            self._logger.debug(f"shap of X_test after predict with layer : {i} = {X_test_copy.shape}")
+
+        identifier_to_predictions = {}
+        for layer_identifiers, layer_predictions in zip(ensemble_identifiers, stacked_ensemble_predictions):
+            for identifier, pred in zip(layer_identifiers, layer_predictions):
+                identifier_to_predictions[identifier] = pred
+
+        return identifier_to_predictions, all_predictions
 
     def score(
         self,

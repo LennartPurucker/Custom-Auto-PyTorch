@@ -1,24 +1,15 @@
 from collections import OrderedDict
-import glob
-import gzip
 import logging
 import logging.handlers
-import multiprocessing
-import numbers
 import os
 import pickle
-import re
 import time
 import traceback
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
 import pandas as pd
-
-import pynisher
-
-from sklearn.utils.validation import check_random_state
 
 from smac.runhistory.runhistory import RunHistory
 from smac.tae import StatusType
@@ -27,20 +18,16 @@ from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
-from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble import IterativeHPOStackingEnsemble
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble_builder import IterativeHPOStackingEnsembleBuilder
 from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
 from autoPyTorch.utils.common import read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
 from autoPyTorch.utils.common import (
-    ENSEMBLE_ITERATION_MULTIPLIER,
     get_ensemble_cutoff_num_run_filename,
     get_ensemble_identifiers_filename,
     get_ensemble_unique_identifier_filename
 )
-from autoPyTorch.utils.logging_ import get_named_client_logger
-from autoPyTorch.utils.parallel import preload_modules
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
@@ -171,7 +158,19 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
 
         best_model_identifier = selected_keys[0]
 
-        predictions_train = [self.read_preds[k][Y_ENSEMBLE] if k is not None else None for k in self.current_ensemble_identifiers]
+        predictions_train = []
+        for (_seed, _num_run, _budget) in self._get_num_runs_from_identifiers(self.current_ensemble_identifiers):
+            y_ens_fn = self._get_identifiers_from_num_runs([(_seed, _num_run, _budget)])[0]
+            if _num_run < self.initial_num_run:
+                ensemble_preds = self._read_np_fn(y_ens_fn)
+                test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_test'))
+                predictions_train.append(ensemble_preds)
+                self.logger.debug(f"adding num_run: {_num_run} to self.read_preds")
+                self.read_preds[y_ens_fn] = {Y_ENSEMBLE: None, Y_TEST: None}
+                self.read_preds[y_ens_fn][Y_ENSEMBLE] =  ensemble_preds
+                self.read_preds[y_ens_fn][Y_TEST] =  test_preds
+            else:
+                predictions_train.append(self.read_preds[y_ens_fn][Y_ENSEMBLE])
 
         best_model_predictions_ensemble = self.read_preds[best_model_identifier][Y_ENSEMBLE]
         best_model_predictions_test = self.read_preds[best_model_identifier][Y_TEST]
@@ -184,18 +183,30 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
                             self.read_losses[best_model_identifier]["budget"],
                             )
         stacked_ensemble_identifiers = self._load_stacked_ensemble_identifiers()
-        self.logger.debug(f"Stacked ensemble identifiers: {stacked_ensemble_identifiers}")
+        self.logger.debug(f"Stacked ensemble identifiers: {stacked_ensemble_identifiers}, predictions_train shape: {predictions_train[0].shape}")
         stacked_ensemble_num_runs = [
             self._get_num_runs_from_identifiers(layer_identifiers)
             for layer_identifiers in stacked_ensemble_identifiers
         ]
 
-        predictions_stacking_ensemble = [
-            [
-                {'ensemble': self.read_preds[k][Y_ENSEMBLE], 'test': self.read_preds[k][Y_TEST]} if k is not None else None for k in layer_identifiers
-            ]
-            for layer_identifiers in stacked_ensemble_identifiers
-        ]
+        predictions_stacking_ensemble = []
+        for layer_identifiers in stacked_ensemble_identifiers:
+            predictions_layer = []
+            for y_ens_fn in layer_identifiers:
+                if y_ens_fn is not None:
+                    if y_ens_fn not in self.read_preds:
+                        ensemble_preds = self._read_np_fn(y_ens_fn)
+                        test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_test'))
+                        self.read_preds[y_ens_fn] = {Y_ENSEMBLE: None, Y_TEST: None}
+                        self.read_preds[y_ens_fn][Y_ENSEMBLE] =  ensemble_preds
+                        self.read_preds[y_ens_fn][Y_TEST] =  test_preds
+
+                    predictions_layer.append({'ensemble': self.read_preds[y_ens_fn][Y_ENSEMBLE], 'test': self.read_preds[y_ens_fn][Y_TEST]})
+                else:
+                    predictions_layer.append(None)
+            predictions_stacking_ensemble.append(predictions_layer)
+
+        self.logger.debug(f"in fine tune stacked builder, predictions_stacking_ensemble: {predictions_stacking_ensemble}")
         unique_identifiers = self._load_ensemble_unique_identifier()
         ensemble = StackingFineTuneEnsemble(
             ensemble_size=self.ensemble_size,

@@ -402,7 +402,9 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
             # y_targets: List[Optional[np.ndarray]] = [None] * self.num_folds
 
             for i, (train_split, test_split) in enumerate(folds):
-                total_repeats = self._fit_predict_one_fold(additional_run_info, total_repeats, repeat_id, y_optimization_pred_folds, y_valid_pred_folds, y_test_pred_folds, i, train_split, test_split)
+                (
+                    total_repeats, y_optimization_pred_folds, y_valid_pred_folds, y_test_pred_folds
+                ) = self._fit_predict_one_fold(additional_run_info, total_repeats, repeat_id, y_optimization_pred_folds, y_valid_pred_folds, y_test_pred_folds, i, train_split, test_split)
 
             # Y_train_pred[repeat_id] = self.get_sorted_train_preds(y_train_pred_folds, repeat_id)
             Y_optimization_pred[repeat_id] = self.get_sorted_preds(y_optimization_pred_folds, repeat_id)
@@ -475,7 +477,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
                     pipeline, 'get_additional_run_info') and pipeline.get_additional_run_info() is not None else {})
         duration_fit_single = time.time() - starttime
         total_repeats = self._check_early_stop(total_repeats, repeat_id, i, duration_fit_single)
-        return total_repeats
+        return total_repeats, y_optimization_pred_folds, y_valid_pred_folds, y_test_pred_folds
 
     def _check_early_stop(self, total_repeats, repeat_id, i, duration_fit_single):
         if repeat_id == 0 and i == 0:
@@ -508,6 +510,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
              'num_run': self.num_run,
              **self.fit_dictionary}  # fit dictionary
         y = None
+        self.logger.info("Starting model fit in _fit_and_predict")
         fit_and_suppress_warnings(self.logger, pipeline, X, y)
         self.logger.info("Model fitted, now predicting")
         (

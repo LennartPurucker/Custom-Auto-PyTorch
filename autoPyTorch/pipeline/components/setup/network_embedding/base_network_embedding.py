@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -8,6 +9,7 @@ from torch import nn
 
 from autoPyTorch.pipeline.components.setup.base_setup import autoPyTorchSetupComponent
 from autoPyTorch.utils.common import FitRequirement
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 
 class NetworkEmbeddingComponent(autoPyTorchSetupComponent):
@@ -20,7 +22,13 @@ class NetworkEmbeddingComponent(autoPyTorchSetupComponent):
         self.embedding: Optional[nn.Module] = None
 
     def fit(self, X: Dict[str, Any], y: Any = None) -> BaseEstimator:
-
+        self.logger = get_named_client_logger(
+            name=f"{self.__class__.__name__}_{X['num_run']}",
+            # Log to a user provided port else to the default logging port
+            port=X['logger_port'
+                   ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
+        )
+        self.logger.debug(f"in fit for network.")
         num_features_excl_embed, num_categories_per_col = self._get_required_info_from_data(X)
 
         self.embedding = self.build_embedding(

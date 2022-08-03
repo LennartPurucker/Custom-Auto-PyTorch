@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace
@@ -11,6 +12,7 @@ from autoPyTorch.constants import CLASSIFICATION_TASKS, STRING_TO_TASK_TYPES
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.training.base_training import autoPyTorchTrainingComponent
 from autoPyTorch.utils.common import FitRequirement, get_device_from_fit_dictionary
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 
 class NetworkComponent(autoPyTorchTrainingComponent):
@@ -52,6 +54,13 @@ class NetworkComponent(autoPyTorchTrainingComponent):
         # Make sure that input dictionary X has the required
         # information to fit this stage
         self.check_requirements(X, y)
+        self.logger = get_named_client_logger(
+            name=f"{self.__class__.__name__}_{X['num_run']}",
+            # Log to a user provided port else to the default logging port
+            port=X['logger_port'
+                   ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
+        )
+        self.logger.debug(f"in fit for network.")
 
         self.network = torch.nn.Sequential(X['network_embedding'], X['network_backbone'], X['network_head'])
 
@@ -66,6 +75,7 @@ class NetworkComponent(autoPyTorchTrainingComponent):
 
         self.is_fitted_ = True
 
+        self.logger.debug(f"finished fit for network.")
         return self
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:

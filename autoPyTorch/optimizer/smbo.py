@@ -362,7 +362,6 @@ class AutoMLSMBO(object):
 
         ta_kwargs = {**ta_kwargs, **self.special_kwargs}
         ta = ExecuteTaFuncWithQueue
-        self.logger.info(f"Finish creating Target Algorithm (TA) function with ta_kwargs: {ta_kwargs}")
 
         startup_time = self.watcher.wall_elapsed(current_task_name)
         walltime_limit = walltime_limit - startup_time - 5

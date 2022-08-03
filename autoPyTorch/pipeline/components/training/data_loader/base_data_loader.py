@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, Optional
 
 from ConfigSpace.configuration_space import ConfigurationSpace
@@ -22,6 +23,7 @@ from autoPyTorch.utils.common import (
     custom_collate_fn
 )
 
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
     """This class is an interface to the PyTorch Dataloader.
@@ -89,6 +91,13 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
 
         # Make sure there is an optimizer
         self.check_requirements(X, y)
+        self.logger = get_named_client_logger(
+            name=f"{self.__class__.__name__}_{X['num_run']}",
+            # Log to a user provided port else to the default logging port
+            port=X['logger_port'
+                   ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
+        )
+        self.logger.debug(f"in fit for dataloader.")
 
         # Incorporate the transform to the dataset
         datamanager = X['backend'].load_datamanager()
@@ -139,6 +148,7 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
             self.test_data_loader = self.get_loader(X=X['X_test'],
                                                     y=X['y_test'],
                                                     batch_size=self.batch_size)
+        self.logger.debug(f"done with fit for dataloader.")
 
         return self
 

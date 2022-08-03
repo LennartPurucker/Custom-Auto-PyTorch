@@ -280,6 +280,7 @@ class TrainerChoice(autoPyTorchChoice):
             port=X['logger_port'
                    ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
         )
+        self.logger.debug(f"in fit for trainer.")
 
         # Call the actual fit function.
         self._fit(
@@ -327,6 +328,8 @@ class TrainerChoice(autoPyTorchChoice):
         if X["torch_num_threads"] > 0:
             torch.set_num_threads(X["torch_num_threads"])
 
+        self.logger.debug(f"in _fit for trainer.")
+
         mode = X.get('mode', None)
         model_weights_path = X.get('model_weights_path', None)
 
@@ -337,8 +340,10 @@ class TrainerChoice(autoPyTorchChoice):
                 raise ValueError(f"Expected model_weights_path to be passed to the fit dictionary to run different modes (currently{mode}) of finetuned stacked ensemble")
 
         if mode == 'hpo' and model_weights_path is not None:
+            self.logger.debug(f"model_weights loading from disk.")
             X['network'].load_state_dict(torch.load(model_weights_path))
 
+            self.logger.debug(f"model_weights loaded from disk.")
         self.budget_tracker = BudgetTracker(
             budget_type=X['budget_type'],
             max_runtime=X['runtime'] if 'runtime' in X else None,

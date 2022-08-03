@@ -65,8 +65,8 @@ class FineTuneDataset(object):
                  train_transforms: Optional[torchvision.transforms.Compose] = None,
                  val_transforms: Optional[torchvision.transforms.Compose] = None,
                  dataset_name: Optional[str] = None,
-                 finetune_resampling_strategy: HoldoutValTypes =  HoldoutValTypes.stratified_holdout_validation,
-                 finetune_val_share: float = 0.2,
+                 finetune_split_resampling_strategy: HoldoutValTypes =  HoldoutValTypes.stratified_holdout_validation,
+                 finetune_split_val_share: float = 0.2,
                  validator_args: Optional[Dict] = None,
                  ):
         validator_args = validator_args if validator_args is not None else dict()
@@ -80,7 +80,7 @@ class FineTuneDataset(object):
         self.holdout_validators = HoldOutFuncs.get_holdout_validators(*HoldoutValTypes)
         self.random_state = np.random.RandomState(seed=seed)
         self.shuffle = shuffle
-        splits = self.create_holdout_val_split(holdout_val_type=finetune_resampling_strategy, val_share=finetune_val_share, y_train=Y )
+        splits = self.create_holdout_val_split(holdout_val_type=finetune_split_resampling_strategy, val_share=finetune_split_val_share, y_train=Y)
 
         self.dataset_paths = dict(train=None, hpo=None)
         self._update_dataset_paths(
@@ -140,7 +140,7 @@ class FineTuneDataset(object):
             self.random_state, val_share, self._get_indices(y_train), **kwargs)
         return train, val
 
-    def get_dataset(self, mode: str = 'train') -> None:
+    def get_dataset(self, mode: str = 'train') -> TabularDataset:
         return pickle.load(open(self.dataset_paths[mode], 'rb'))
 
 def get_appended_dataset(

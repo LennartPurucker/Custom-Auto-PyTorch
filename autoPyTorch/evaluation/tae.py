@@ -168,7 +168,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
             if base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation, BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo):
                 eval_function = eval_ensemble_optimise_function
-            elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_autogluon and stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
+            elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_fine_tune and stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
                 eval_function = eval_stacking_finetune_function
             elif (
                 stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer

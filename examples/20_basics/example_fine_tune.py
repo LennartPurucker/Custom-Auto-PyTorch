@@ -58,19 +58,19 @@ feat_types = ["numerical" if not indicator else "categorical" for indicator in c
 api = TabularClassificationTask(
     # To maintain logs of the run, you can uncomment the
     # Following lines
-    temporary_directory='./tmp/stacking_finetune_tmp_02',
-    output_directory='./tmp/stacking_finetune_out_02',
+    temporary_directory='./tmp/stacking_finetune_tmp_04',
+    output_directory='./tmp/stacking_finetune_out_04',
     delete_tmp_folder_after_terminate=False,
     delete_output_folder_after_terminate=False,
-    seed=11,
-    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_autogluon,
+    seed=1,
+    base_ensemble_method=BaseLayerEnsembleSelectionTypes.ensemble_fine_tune,
     stacking_ensemble_method=StackingEnsembleSelectionTypes.stacking_fine_tuning,
     resampling_strategy=RepeatedCrossValTypes.repeated_k_fold_cross_validation,
     resampling_strategy_args={
-        'num_splits': 3,
+        'num_splits': 2,
         'num_repeats': 1
     },
-    ensemble_size=3,
+    ensemble_size=2,
     num_stacking_layers=2,
 )
 
@@ -85,10 +85,12 @@ api.run_fine_tune_stacked_ensemble(
     dataset_name='Australian',
     feat_types=feat_types,
     optimize_metric='balanced_accuracy',
-    total_walltime_limit=2000,
+    total_walltime_limit=1000,
     func_eval_time_limit_secs=300,
     all_supported_metrics=False,
-    max_budget=10
+    min_budget=1,
+    max_budget=5,
+    enable_traditional_pipeline=False
 )
 
 ############################################################################

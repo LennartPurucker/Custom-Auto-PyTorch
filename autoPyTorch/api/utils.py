@@ -286,7 +286,7 @@ def get_run_history_warmstart(
     return runhistory
 
 
-def read_predictions(backend, seed, initial_num_run, precision, run_history_pred_path=None):
+def read_predictions(backend, seed, initial_num_run, precision, data_set='ensemble', run_history_pred_path=None):
     if run_history_pred_path is not None and os.path.exists(run_history_pred_path):
         read_preds = pickle.load(open(run_history_pred_path, 'rb'))
     else:
@@ -295,8 +295,9 @@ def read_predictions(backend, seed, initial_num_run, precision, run_history_pred
     pred_path = os.path.join(
             glob.escape(backend.get_runs_directory()),
             '%d_*_*' % seed,
-            'predictions_ensemble_%s_*_*.npy*' % seed,
+            f'predictions_{data_set}_{seed}_*_*.npy*',
         )
+
     y_ens_files = glob.glob(pred_path)
     y_ens_files = [y_ens_file for y_ens_file in y_ens_files
                     if y_ens_file.endswith('.npy') or y_ens_file.endswith('.npy.gz')]

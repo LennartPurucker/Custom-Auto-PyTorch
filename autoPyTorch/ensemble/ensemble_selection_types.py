@@ -17,9 +17,10 @@ class BaseLayerEnsembleSelectionTypes(IntEnum):
     ensemble_bayesian_optimisation = 2
     ensemble_autogluon = 3
     ensemble_iterative_hpo = 4
+    ensemble_fine_tune = 5
 
     def is_stacking_ensemble(self) -> bool:
-        return getattr(self, self.name) in (self.ensemble_bayesian_optimisation, self.ensemble_iterative_hpo)
+        return getattr(self, self.name) in (self.ensemble_bayesian_optimisation, self.ensemble_iterative_hpo, self.ensemble_fine_tune)
 
 
 class StackingEnsembleSelectionTypes(IntEnum):

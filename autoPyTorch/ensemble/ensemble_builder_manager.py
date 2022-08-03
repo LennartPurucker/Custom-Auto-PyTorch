@@ -186,7 +186,8 @@ class EnsembleBuilderManager(IncorporateRunResultCallback):
             port=self.logger_port,
         )
 
-        logger.debug(f"In EnsembleBuilderManager iteration: {self.iteration}")
+        logger.debug(f"In EnsembleBuilderManager iteration: {self.iteration} for cur_stacking_layer: {self.cur_stacking_layer}")
+        
         # First test for termination conditions
         if self.time_left_for_ensembles < elapsed_time:
             logger.info(

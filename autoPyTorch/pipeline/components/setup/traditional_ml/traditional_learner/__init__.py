@@ -7,7 +7,7 @@ from autoPyTorch.pipeline.components.base_component import (
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.base_traditional_learner import \
     BaseTraditionalLearner
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.lgbm.lgbm import LGBModel
-from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.catboost.catboost import CatboostModel
+# from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.catboost.catboost import CatboostModel
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.random_forest.random_forest import RFModel
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.extratrees.extratrees import ExtraTreesModel
 from autoPyTorch.pipeline.components.setup.traditional_ml.traditional_learner.knn.knn import KNNModel

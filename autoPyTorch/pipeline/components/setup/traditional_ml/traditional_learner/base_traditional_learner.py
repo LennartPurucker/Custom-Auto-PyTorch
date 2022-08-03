@@ -4,8 +4,6 @@ import os as os
 from abc import abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from catboost import CatBoost
-
 import numpy as np
 
 import pandas as pd
@@ -51,7 +49,7 @@ class BaseTraditionalLearner:
                  time_limit: Optional[int] = None,
                  name: Optional[str] = None):
 
-        self.model: Optional[Union[CatBoost, BaseEstimator]] = None
+        self.model: Optional[BaseEstimator] = None
 
         self.name = name if name is not None else self.__class__.__name__
         self.logger_port = logger_port

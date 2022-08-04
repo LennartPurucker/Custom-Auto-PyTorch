@@ -21,13 +21,11 @@ from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.ensemble_selection_per_layer_stacking_ensemble import EnsembleSelectionPerLayerStackingEnsemble
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_loss, calculate_score
-from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER
+from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER, MODEL_FN_RE
 from autoPyTorch.utils.logging_ import get_named_client_logger
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
-
-MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 
 class EnsembleSelectionPerLayerStackingEnsembleBuilder(EnsembleBuilder):

@@ -20,7 +20,7 @@ from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
 from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble_builder import IterativeHPOStackingEnsembleBuilder
 from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
-from autoPyTorch.utils.common import read_np_fn
+from autoPyTorch.utils.common import read_np_fn, MODEL_FN_RE
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
 from autoPyTorch.utils.common import (
@@ -31,8 +31,6 @@ from autoPyTorch.utils.common import (
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
-
-MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 
 class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
@@ -162,10 +160,10 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
         for (_seed, _num_run, _budget) in self._get_num_runs_from_identifiers(self.current_ensemble_identifiers):
             y_ens_fn = self._get_identifiers_from_num_runs([(_seed, _num_run, _budget)])[0]
             if _num_run < self.initial_num_run:
-                ensemble_preds = self._read_np_fn(y_ens_fn)
-                test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_test'))
+                ensemble_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_ensemble'))
+                test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_test'))
                 predictions_train.append(ensemble_preds)
-                self.logger.debug(f"adding num_run: {_num_run} to self.read_preds")
+                self.logger.debug(f"adding num_run: {_num_run} to self.read_preds, shape: {ensemble_preds.shape}")
                 self.read_preds[y_ens_fn] = {Y_ENSEMBLE: None, Y_TEST: None}
                 self.read_preds[y_ens_fn][Y_ENSEMBLE] =  ensemble_preds
                 self.read_preds[y_ens_fn][Y_TEST] =  test_preds
@@ -195,8 +193,8 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
             for y_ens_fn in layer_identifiers:
                 if y_ens_fn is not None:
                     if y_ens_fn not in self.read_preds:
-                        ensemble_preds = self._read_np_fn(y_ens_fn)
-                        test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_test'))
+                        ensemble_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_ensemble'))
+                        test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_test'))
                         self.read_preds[y_ens_fn] = {Y_ENSEMBLE: None, Y_TEST: None}
                         self.read_preds[y_ens_fn][Y_ENSEMBLE] =  ensemble_preds
                         self.read_preds[y_ens_fn][Y_TEST] =  test_preds
@@ -221,7 +219,7 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
         )
         try:
             self.logger.debug(
-                "Fitting the single best ensemble",
+                f"Fitting the single best ensemble with y_true_ensemble: {self.y_true_ensemble.shape}",
             )
             start_time = time.time()
 

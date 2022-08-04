@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, Optional
 
 import torch
@@ -5,6 +6,7 @@ from torch.optim import Optimizer
 
 from autoPyTorch.pipeline.components.setup.base_setup import autoPyTorchSetupComponent
 from autoPyTorch.utils.common import FitRequirement
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 
 class BaseOptimizerComponent(autoPyTorchSetupComponent):
@@ -27,6 +29,13 @@ class BaseOptimizerComponent(autoPyTorchSetupComponent):
         Returns:
             np.ndarray: Transformed features
         """
+        self.logger = get_named_client_logger(
+            name=f"{self.__class__.__name__}_{X['num_run']}",
+            # Log to a user provided port else to the default logging port
+            port=X['logger_port'
+                   ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
+        )
+        self.logger.debug(f"in transform optimizer")
         X.update({'optimizer': self.optimizer})
         return X
 

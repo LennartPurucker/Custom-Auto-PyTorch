@@ -452,6 +452,8 @@ class IterativeHPOStackingEnsembleBuilder(object):
 
         self.current_ensemble_identifiers = self._load_current_ensemble_identifiers(cur_stacking_layer=self.cur_stacking_layer)
         best_model_identifier = self.get_identifiers_from_run_history()[-1]
+        self.logger.debug(f"best_model_identifier: {best_model_identifier}")
+
         selected_key = self.read_model_predictions(best_model_identifier)
 
         # train ensemble
@@ -621,18 +623,22 @@ class IterativeHPOStackingEnsembleBuilder(object):
         success_keys_test = []
 
         for k in selected_keys:
+            seed = self.read_losses[k]["seed"]
+            num_run = self.read_losses[k]["num_run"]
+            budget = self.read_losses[k]["budget"]
+
             test_fn = glob.glob(
                 os.path.join(
                     glob.escape(self.backend.get_runs_directory()),
                     '%d_%d_%s' % (
-                        self.read_losses[k]["seed"],
-                        self.read_losses[k]["num_run"],
-                        self.read_losses[k]["budget"],
+                        seed,
+                        num_run,
+                        budget,
                     ),
                     'predictions_test_%d_%d_%s.npy*' % (
-                        self.read_losses[k]["seed"],
-                        self.read_losses[k]["num_run"],
-                        self.read_losses[k]["budget"]
+                        seed,
+                        num_run,
+                        budget,
                     )
                 )
             )

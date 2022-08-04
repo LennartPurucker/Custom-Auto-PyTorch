@@ -963,7 +963,7 @@ class AbstractEvaluator(object):
 
         return None, {}
 
-    def _predict_proba(self, X: np.ndarray, pipeline: BaseEstimator,
+    def  _predict_proba(self, X: np.ndarray, pipeline: BaseEstimator,
                        Y_train: Optional[np.ndarray] = None) -> np.ndarray:
         """
         A wrapper function to handle the prediction of classification tasks.

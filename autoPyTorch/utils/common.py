@@ -3,7 +3,12 @@ from enum import Enum
 import gzip
 from math import floor
 import shutil
+import tempfile
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Type, Union
+
+import pickle
+
+import re
 
 from ConfigSpace.configuration_space import ConfigurationSpace, Configuration
 from ConfigSpace.hyperparameters import (
@@ -14,6 +19,8 @@ from ConfigSpace.hyperparameters import (
     UniformIntegerHyperparameter,
 )
 
+import glob
+
 import numpy as np
 
 import pandas as pd
@@ -22,6 +29,11 @@ from scipy.sparse import spmatrix
 
 import torch
 from torch.utils.data.dataloader import default_collate
+
+from autoPyTorch.automl_common.common.utils.backend import Backend, BackendContext
+
+
+MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 
 HyperparameterValueType = Union[int, str, float]
@@ -380,3 +392,102 @@ def get_ensemble_cutoff_num_run_filename(backend):
 
 def get_ensemble_unique_identifier_filename(backend):
         return os.path.join(backend.internals_directory, 'ensemble_unique_identifier.txt')
+
+
+def read_predictions(backend, seed, initial_num_run, precision, data_set='ensemble', run_history_pred_path=None):
+    if run_history_pred_path is not None and os.path.exists(run_history_pred_path):
+        read_preds = pickle.load(open(run_history_pred_path, 'rb'))
+    else:
+        read_preds = {}
+
+    pred_path = os.path.join(
+            glob.escape(backend.get_runs_directory()),
+            '%d_*_*' % seed,
+            f'predictions_{data_set}_{seed}_*_*.npy*',
+        )
+
+    y_ens_files = glob.glob(pred_path)
+    y_ens_files = [y_ens_file for y_ens_file in y_ens_files
+                    if y_ens_file.endswith('.npy') or y_ens_file.endswith('.npy.gz')]
+    # no validation predictions so far -- no files
+    if len(y_ens_files) == 0:
+        return False
+    model_fn_re = re.compile(MODEL_FN_RE)
+    # First sort files chronologically
+    to_read = []
+    for y_ens_fn in y_ens_files:
+        match = model_fn_re.search(y_ens_fn)
+        _seed = int(match.group(1))
+        _num_run = int(match.group(2))
+        _budget = float(match.group(3))
+
+        to_read.append([y_ens_fn, match, _seed, _num_run, _budget])
+
+    # Now read file wrt to num_run
+    # Mypy assumes sorted returns an object because of the lambda. Can't get to recognize the list
+    # as a returning list, so as a work-around we skip next line
+    for y_ens_fn, match, _seed, _num_run, _budget in sorted(to_read, key=lambda x: x[3]):  # type: ignore
+        # skip models that were part of previous stacking layer
+        dict_key = (_seed, _num_run, _budget)
+        if _num_run < initial_num_run:
+            continue
+
+
+        if not y_ens_fn.endswith(".npy") and not y_ens_fn.endswith(".npy.gz"):
+            continue
+
+        if dict_key not in read_preds:
+            read_preds[dict_key] = read_np_fn(precision, y_ens_fn)
+
+    if run_history_pred_path is not None:
+        pickle.dump(read_preds, open(run_history_pred_path, 'wb'))
+    return read_preds
+
+
+class autoPyTorchBackend(Backend):
+    def save_targets_ensemble(self, targets: np.ndarray) -> str:
+        self._make_internals_directory()
+        if not isinstance(targets, np.ndarray):
+            raise ValueError("Targets must be of type np.ndarray, but is %s" % type(targets))
+
+        filepath = self._get_targets_ensemble_filename()
+
+        # Try to open the file without locking it, this will reduce the
+        # number of times where we erroneously keep a lock on the ensemble
+        # targets file although the process already was killed
+        try:
+            existing_targets = np.load(filepath, allow_pickle=True)
+            if (
+                existing_targets.shape == targets.shape and np.allclose(existing_targets, targets)
+            ):
+
+                return filepath
+        except Exception:
+            pass
+
+        with tempfile.NamedTemporaryFile("wb", dir=os.path.dirname(filepath), delete=False) as fh_w:
+            np.save(fh_w, targets.astype(np.float32))
+            tempname = fh_w.name
+
+        os.rename(tempname, filepath)
+
+        return filepath
+
+
+def create(
+    temporary_directory: str,
+    output_directory: Optional[str],
+    prefix: str,
+    delete_tmp_folder_after_terminate: bool = True,
+    delete_output_folder_after_terminate: bool = True,
+) -> "Backend":
+    context = BackendContext(
+        temporary_directory,
+        output_directory,
+        delete_tmp_folder_after_terminate,
+        delete_output_folder_after_terminate,
+        prefix=prefix,
+    )
+    backend = autoPyTorchBackend(context, prefix)
+
+    return backend

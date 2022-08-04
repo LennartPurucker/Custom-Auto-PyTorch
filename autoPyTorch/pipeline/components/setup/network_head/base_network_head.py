@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import logging
 from typing import Any, Dict, Iterable, Tuple
 
 import torch.nn as nn
@@ -6,7 +7,7 @@ import torch.nn as nn
 from autoPyTorch.pipeline.components.base_component import BaseEstimator, autoPyTorchComponent
 from autoPyTorch.pipeline.components.setup.network_backbone.utils import get_output_shape
 from autoPyTorch.utils.common import FitRequirement
-
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 class NetworkHeadComponent(autoPyTorchComponent):
     """
@@ -35,6 +36,13 @@ class NetworkHeadComponent(autoPyTorchComponent):
         Returns:
             Self
         """
+        self.logger = get_named_client_logger(
+            name=f"{self.__class__.__name__}_{X['num_run']}",
+            # Log to a user provided port else to the default logging port
+            port=X['logger_port'
+                   ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
+        )
+        self.logger.debug(f"in fit for network.")
         input_shape = X['dataset_properties']['input_shape']
         output_shape = X['dataset_properties']['output_shape']
 
@@ -42,6 +50,7 @@ class NetworkHeadComponent(autoPyTorchComponent):
             input_shape=get_output_shape(X['network_backbone'], input_shape=input_shape),
             output_shape=output_shape,
         )
+        self.logger.debug(f"after fit for head.")
         return self
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
@@ -54,6 +63,7 @@ class NetworkHeadComponent(autoPyTorchComponent):
             (Dict[str, Any]): the updated 'X' dictionary
         """
         X.update({'network_head': self.head})
+        self.logger.debug("after transform netwoek head")
         return X
 
     @abstractmethod

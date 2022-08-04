@@ -22,9 +22,8 @@ from autoPyTorch.datasets.resampling_strategy import CrossValTypes, HoldoutValTy
 from autoPyTorch.optimizer.utils import AdjustRunHistoryCallback
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.automl_common.common.utils.logging_ import get_named_client_logger
+from autoPyTorch.utils.common import MODEL_FN_RE
 
-
-MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 class RunHistoryUpdaterManager(AdjustRunHistoryCallback):
     def __init__(

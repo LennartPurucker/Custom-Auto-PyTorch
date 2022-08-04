@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import logging
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import numpy as np
@@ -16,6 +17,7 @@ from autoPyTorch.pipeline.components.base_component import (
 )
 from autoPyTorch.pipeline.components.setup.network_backbone.utils import get_output_shape
 from autoPyTorch.utils.common import FitRequirement
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 
 class NetworkBackboneComponent(autoPyTorchComponent):
@@ -48,6 +50,13 @@ class NetworkBackboneComponent(autoPyTorchComponent):
         Returns:
             Self
         """
+        self.logger = get_named_client_logger(
+            name=f"{self.__class__.__name__}_{X['num_run']}",
+            # Log to a user provided port else to the default logging port
+            port=X['logger_port'
+                   ] if 'logger_port' in X else logging.handlers.DEFAULT_TCP_LOGGING_PORT,
+        )
+        self.logger.debug(f"in fit for network.")
         self.check_requirements(X, y)
         input_shape = X['shape_after_preprocessing']
 

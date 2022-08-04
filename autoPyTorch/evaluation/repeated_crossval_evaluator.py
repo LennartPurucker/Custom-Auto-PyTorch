@@ -437,6 +437,7 @@ class RepeatedCrossValEvaluator(AbstractEvaluator):
         self.Y_optimization = self.y_train # np.array(Y_targets)
         self.Y_actual_train = self.y_train # np.array(Y_train_targets)
 
+        self.logger.debug(f"here is the y_train: {self.y_train.shape}")
         self.pipeline = self._get_pipeline()
         return Y_train_pred,Y_optimization_pred,Y_valid_pred,Y_test_pred,additional_run_info
 

@@ -286,56 +286,6 @@ def get_run_history_warmstart(
     return runhistory
 
 
-def read_predictions(backend, seed, initial_num_run, precision, data_set='ensemble', run_history_pred_path=None):
-    if run_history_pred_path is not None and os.path.exists(run_history_pred_path):
-        read_preds = pickle.load(open(run_history_pred_path, 'rb'))
-    else:
-        read_preds = {}
-
-    pred_path = os.path.join(
-            glob.escape(backend.get_runs_directory()),
-            '%d_*_*' % seed,
-            f'predictions_{data_set}_{seed}_*_*.npy*',
-        )
-
-    y_ens_files = glob.glob(pred_path)
-    y_ens_files = [y_ens_file for y_ens_file in y_ens_files
-                    if y_ens_file.endswith('.npy') or y_ens_file.endswith('.npy.gz')]
-    # no validation predictions so far -- no files
-    if len(y_ens_files) == 0:
-        return False
-    model_fn_re = re.compile(MODEL_FN_RE)
-    # First sort files chronologically
-    to_read = []
-    for y_ens_fn in y_ens_files:
-        match = model_fn_re.search(y_ens_fn)
-        _seed = int(match.group(1))
-        _num_run = int(match.group(2))
-        _budget = float(match.group(3))
-
-        to_read.append([y_ens_fn, match, _seed, _num_run, _budget])
-
-    # Now read file wrt to num_run
-    # Mypy assumes sorted returns an object because of the lambda. Can't get to recognize the list
-    # as a returning list, so as a work-around we skip next line
-    for y_ens_fn, match, _seed, _num_run, _budget in sorted(to_read, key=lambda x: x[3]):  # type: ignore
-        # skip models that were part of previous stacking layer
-        dict_key = (_seed, _num_run, _budget)
-        if _num_run < initial_num_run:
-            continue
-
-
-        if not y_ens_fn.endswith(".npy") and not y_ens_fn.endswith(".npy.gz"):
-            continue
-
-        if dict_key not in read_preds:
-            read_preds[dict_key] = read_np_fn(precision, y_ens_fn)
-
-    if run_history_pred_path is not None:
-        pickle.dump(read_preds, open(run_history_pred_path, 'wb'))
-
-    return read_preds
-
 def get_incumbent(run_history, ids_config, opt_metric):
     manager = ResultsManager()
     manager.run_history=run_history

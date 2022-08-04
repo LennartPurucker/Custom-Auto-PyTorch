@@ -39,8 +39,8 @@ from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config_space, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_search_space_updates_for_configuraion, get_smac_callback_with_run_history, read_predictions, save_run_history, update_run_history_with_max_config_id
-from autoPyTorch.automl_common.common.utils.backend import Backend, create
+from autoPyTorch.api.utils import get_autogluon_default_nn_config_space, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_search_space_updates_for_configuraion, get_smac_callback_with_run_history, save_run_history, update_run_history_with_max_config_id
+from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import (
     REGRESSION_TASKS,
     STRING_TO_OUTPUT_TYPES,
@@ -74,10 +74,25 @@ from autoPyTorch.evaluation.utils import DisableFileOutputParameters
 from autoPyTorch.optimizer.run_history_callback import RunHistoryUpdaterManager
 from autoPyTorch.optimizer.smbo import AutoMLSMBO
 from autoPyTorch.pipeline.base_pipeline import BasePipeline
-from autoPyTorch.utils.configurations import get_traditional_config_space, get_traditional_learners_configurations, is_configuration_traditional
+from autoPyTorch.utils.configurations import (
+    get_traditional_config_space,
+    get_traditional_learners_configurations,
+    is_configuration_traditional
+)
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score, get_metrics
-from autoPyTorch.utils.common import TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE, TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE, TIME_FOR_BASE_MODELS_SEARCH, FitRequirement, ENSEMBLE_ITERATION_MULTIPLIER, delete_runs_except_ensemble, dict_repr, replace_string_bool_to_bool, validate_config
+from autoPyTorch.utils.common import (
+    TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE,
+    TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE,
+    TIME_FOR_BASE_MODELS_SEARCH,
+    FitRequirement,
+    ENSEMBLE_ITERATION_MULTIPLIER,
+    delete_runs_except_ensemble,
+    dict_repr,
+    replace_string_bool_to_bool,
+    validate_config,
+    read_predictions,
+    create)
 from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
 from autoPyTorch.utils.logging_ import (
@@ -1595,11 +1610,8 @@ class BaseTask(ABC):
         # ==> Run SMAC
         smac_task_name: str = f'runSMAC{iteration}'
         self._stopwatch.start_task(smac_task_name)
-        # TODO: Fix this
-        if (
-            self.base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
-            or self.stacking_ensemble_method != StackingEnsembleSelectionTypes.stacking_fine_tuning
-        ):
+
+        if self.base_ensemble_method not in [BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo, BaseLayerEnsembleSelectionTypes.ensemble_fine_tune]:
             elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
             time_left_for_smac = max(0, total_walltime_limit - elapsed_time)
         else:
@@ -2233,7 +2245,6 @@ class BaseTask(ABC):
                     smac_scenario_args.update({'runcount_limit': runcount_limit_slot_to_pass})
 
                 time_search = 0.85*time_per_slot_search
-
                 smac_initial_num_run, run_history, trajectory = self._run_smbo(
                     min_budget=min_budget,
                     max_budget=max_budget,
@@ -2450,7 +2461,9 @@ class BaseTask(ABC):
             else:
                 updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
             self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}")
-            final_trained_configurations.append(updated_model_configs)
+            lower_layer_model_identifiers = None
+            if stacking_layer > 0:
+                lower_layer_model_identifiers = model_identifiers[stacking_layer-1]
             layer_model_identifiers = self._fit_models_on_dataset(
                 model_configs=updated_model_configs,
                 func_eval_time_limit_secs=func_eval_time_limit_secs,
@@ -2461,9 +2474,20 @@ class BaseTask(ABC):
                 search_space_updates=autogluon_nn_search_space_updates,
                 base_ensemble_method=self.base_ensemble_method,
                 stacking_ensemble_method=self.stacking_ensemble_method,
-                mode="train"
+                mode="train",
+                cur_stacking_layer=stacking_layer,
+                hpo_dataset_path=dataset.dataset_paths['hpo'],
+                lower_layer_model_identifiers=lower_layer_model_identifiers
             )
-            nonnull_identifiers = [identifier for identifier in layer_model_identifiers if identifier is not None]
+            nonnull_model_configs = []
+            nonnull_identifiers = []
+            for i, identifier in enumerate(layer_model_identifiers):
+                if identifier is not None:
+                    nonnull_identifiers.append(identifier)
+                    nonnull_model_configs.append(updated_model_configs[i])
+
+            final_trained_configurations.append(nonnull_model_configs)
+
             if len(nonnull_identifiers) > 0:
                 model_identifiers.append(
                     nonnull_identifiers
@@ -2487,30 +2511,10 @@ class BaseTask(ABC):
             )
             self._reset_datamanager_in_backend(datamanager=current_dataset)
 
-        # ensemble_predictions = read_predictions(self._backend, self.seed, 0, self.precision)
-        # test_predictions = read_predictions(self._backend, self.seed, 0, self.precision, data_set='test')
-        # TODO: Run inference on HPO dataset for the trained ensemble allows us to run ensemble builder.
-
-        cv_models = []
-        for identifiers in model_identifiers:
-            nonnull_identifiers = [i for i in identifiers if i is not None]
-            cv_models.append(self._backend.load_cv_models_by_identifiers(nonnull_identifiers))
+        ensemble_predictions = read_predictions(self._backend, self.seed, 0, self.precision, data_set='hpo_ensemble')
+        test_predictions = read_predictions(self._backend, self.seed, 0, self.precision, data_set='hpo_test')
 
         train_hpo_dataset = dataset.get_dataset("hpo")
-        ensemble_predictions, _ = self._predict_with_stacked_ensemble(
-            X_test=train_hpo_dataset.train_tensors[0],
-            batch_size=100,
-            n_jobs=self.n_jobs,
-            models=cv_models,
-            ensemble_identifiers=model_identifiers
-        )
-        test_predictions, _ = self._predict_with_stacked_ensemble(
-            X_test=train_hpo_dataset.test_tensors[0],
-            batch_size=100,
-            n_jobs=self.n_jobs,
-            models=cv_models,
-            ensemble_identifiers=model_identifiers
-        )
 
         unique_identifiers = []
         predictions_stacking_ensemble = []
@@ -2520,14 +2524,10 @@ class BaseTask(ABC):
             unique_identifiers.append(Counter(layer_identifiers))
             for identifier in layer_identifiers:
                 if identifier is not None:
-                    # num_run_dir = self._backend.get_numrun_directory(*identifier)
                     pred = {'ensemble': ensemble_predictions[identifier], 'test': test_predictions[identifier]}
-                    # for subset in ['ensemble', 'test']:
-                    #     file_path = os.path.join(num_run_dir, self._backend.get_prediction_filename(subset, *identifier))
-                    #     with open(file_path, "wb") as fh:
-                    #         pickle.dump(pred[subset].astype(np.float32), fh, -1)
                     if i == self.num_stacking_layers - 1:
                         predictions_ensemble.append(pred['ensemble'])
+                    self._logger.debug(f"For identifier: {identifier}, shape of ensemble preds: {pred['ensemble'].shape}, shape of labels: {train_hpo_dataset.train_tensors[1].shape}")
                     layer_predictions.append(pred)
             predictions_stacking_ensemble.append(layer_predictions)
 
@@ -2544,7 +2544,7 @@ class BaseTask(ABC):
         )
         ensemble._post_fit(
             predictions_ensemble=predictions_ensemble,
-            labels=train_hpo_dataset.train_tensors[1], #  self._backend.load_targets_ensemble()
+            labels=train_hpo_dataset.train_tensors[1],
             ensemble_identifiers=model_identifiers[-1]
         )
 

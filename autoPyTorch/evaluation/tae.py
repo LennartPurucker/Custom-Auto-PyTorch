@@ -137,8 +137,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         base_ensemble_method: BaseLayerEnsembleSelectionTypes = BaseLayerEnsembleSelectionTypes.ensemble_selection,
         stacking_ensemble_method: Optional[StackingEnsembleSelectionTypes] = None,
         use_ensemble_opt_loss=False,
-        mode=None,
-        previous_model_identifier=None
+        **kwargs
     ):
 
         self.backend = backend
@@ -232,8 +231,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
 
         self.search_space_updates = search_space_updates
         self.use_ensemble_opt_loss = use_ensemble_opt_loss
-        self.mode = mode
-        self.previous_model_identifier = previous_model_identifier
+        self.kwargs = kwargs
 
     def _check_and_get_default_budget(self) -> float:
         budget_type_choices = ('epochs', 'runtime')
@@ -378,7 +376,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
             use_ensemble_opt_loss=self.use_ensemble_opt_loss,
         )
         if self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
-            obj_kwargs = {**obj_kwargs, **{'mode': self.mode, 'previous_model_identifier': self.previous_model_identifier}}
+            obj_kwargs = {**obj_kwargs, **self.kwargs}
         info: Optional[List[RunValue]]
         additional_run_info: Dict[str, Any]
         try:

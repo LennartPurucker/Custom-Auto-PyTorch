@@ -22,15 +22,13 @@ from autoPyTorch.pipeline.components.training.metrics.utils import calculate_los
 from autoPyTorch.utils.logging_ import get_named_client_logger
 from autoPyTorch.utils.common import (
     ENSEMBLE_ITERATION_MULTIPLIER,
-    get_ensemble_cutoff_num_run_filename,
+    MODEL_FN_RE,
     get_ensemble_identifiers_filename,
     get_ensemble_unique_identifier_filename
 )
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
-
-MODEL_FN_RE = r'_([0-9]*)_([0-9]*)_([0-9]+\.*[0-9]*)\.npy'
 
 
 def calculate_nomalised_margin_loss(ensemble_predictions, y_true) -> float:

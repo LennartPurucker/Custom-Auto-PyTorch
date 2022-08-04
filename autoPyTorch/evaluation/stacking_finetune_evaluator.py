@@ -1,10 +1,13 @@
 from math import floor
 from multiprocessing.queues import Queue
 import os
+import pickle
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ConfigSpace.configuration_space import Configuration
+from autoPyTorch.utils.common import read_predictions
+from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
 from autoPyTorch.evaluation.repeated_crossval_evaluator import RepeatedCrossValEvaluator
 
@@ -125,9 +128,16 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
                  all_supported_metrics: bool = True,
                  search_space_updates: Optional[HyperparameterSearchSpaceUpdates] = None,
                  use_ensemble_opt_loss=False,
+                 cur_stacking_layer: int = 0,
                  mode='train',
-                 previous_model_identifier: Optional[Tuple[int, int, float]] = None
+                 previous_model_identifier: Optional[Tuple[int, int, float]] = None,
+                 hpo_dataset_path: Optional[str] = None,
+                 lower_layer_model_identifiers: Optional[List[Tuple[int, int, float]]] = None
     ) -> None:
+
+        self.hpo_dataset_path = hpo_dataset_path
+        self.cur_stacking_layer = cur_stacking_layer
+        self.lower_layer_model_identifiers = lower_layer_model_identifiers
 
         self.mode = mode
         if self.mode == 'hpo':
@@ -273,6 +283,37 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
             Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
             Y_ensemble_preds = [Y_pipeline_optimization_pred]
 
+        hpo_preds = {}
+        if self.mode == 'train':
+            if self.hpo_dataset_path is None:
+                raise ValueError(f"Expected hpo_dataset_path to not be None if mode: {self.mode}")
+            train_hpo_dataset: TabularDataset = pickle.load(open(self.hpo_dataset_path, 'rb'))
+            X_train = train_hpo_dataset.train_tensors[0].copy()
+            X_test = train_hpo_dataset.test_tensors[0].copy()
+            y_train = train_hpo_dataset.train_tensors[0]
+            self.logger.debug(f"Shape before apending: {X_train.shape}")
+            if self.cur_stacking_layer != 0:
+                run_history_pred_path = None # os.path.join(self.backend.internals_directory, 'evaluator_hpo_read_preds.pkl')
+                ensemble_predictions = read_predictions(self.backend, self.seed, 0, 32, run_history_pred_path=run_history_pred_path, data_set='hpo_ensemble')
+                test_predictions = read_predictions(self.backend, self.seed, 0, 32, run_history_pred_path=run_history_pred_path, data_set='hpo_test')
+                hpo_ensemble_predictions = []
+                hpo_test_predictions = []
+                for identifier in self.lower_layer_model_identifiers:
+                    hpo_ensemble_predictions.append(ensemble_predictions[identifier])
+                    hpo_test_predictions.append(test_predictions[identifier])
+                X_train = np.concatenate([X_train , *hpo_ensemble_predictions], axis=1)
+                X_test = np.concatenate([X_test, *hpo_test_predictions], axis=1)
+                self.logger.debug(f"Shape after apending: {X_train.shape}, len hpo_ensemble_predictions : {len(hpo_ensemble_predictions)}")
+
+            if self.task_type in CLASSIFICATION_TASKS:
+                pipelines = VotingClassifier(estimators=None, voting='soft', )
+            pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
+
+            hpo_preds['hpo_ensemble'] = pipelines.predict_proba(X_train)
+            hpo_preds['hpo_ensemble'] = self._ensure_prediction_array_sizes(hpo_preds['hpo_ensemble'], y_train)
+            hpo_preds['hpo_test'] = pipelines.predict_proba(X_test)
+            hpo_preds['hpo_test'] = self._ensure_prediction_array_sizes(hpo_preds['hpo_test'], y_train)
+            
 
         train_loss = None # self._loss(self.Y_actual_train, Y_train_pred)
         opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
@@ -294,6 +335,15 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
             status=status,
             pipeline_opt_pred=Y_pipeline_optimization_pred
         )
+        if hpo_preds.get('hpo_ensemble', None) is not None:
+            identifier = (self.seed, self.num_run, float(self.budget))
+            num_run_dir = self.backend.get_numrun_directory(*identifier)
+            if not os.path.exists(num_run_dir):
+                os.makedirs(num_run_dir)
+            for subset in ['hpo_ensemble', 'hpo_test']:
+                file_path = os.path.join(num_run_dir, self.backend.get_prediction_filename(subset, *identifier))
+                with open(file_path, "wb") as fh:
+                    pickle.dump(hpo_preds[subset].astype(np.float32), fh, -1)
 
     def _fit_predict_one_fold(
         self,
@@ -350,6 +400,9 @@ def eval_stacking_finetune_function(
     use_ensemble_opt_loss=False,
     mode='train',
     previous_model_identifier: Optional[Tuple[int, int, float]] = None,
+    cur_stacking_layer: int = 0,
+    hpo_dataset_path: Optional[str] = None,
+    lower_layer_model_identifiers: Optional[List[Tuple[int, int, float]]] = None,
     instance: str = None,
 ) -> None:
     """
@@ -434,6 +487,9 @@ def eval_stacking_finetune_function(
         search_space_updates=search_space_updates,
         use_ensemble_opt_loss=use_ensemble_opt_loss,
         mode=mode,
-        previous_model_identifier=previous_model_identifier
+        previous_model_identifier=previous_model_identifier,
+        cur_stacking_layer=cur_stacking_layer,
+        hpo_dataset_path=hpo_dataset_path,
+        lower_layer_model_identifiers=lower_layer_model_identifiers,
     )
     evaluator.fit_predict_and_loss()

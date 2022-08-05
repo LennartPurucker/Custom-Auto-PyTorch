@@ -45,6 +45,10 @@ TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE = 0.9
 TIME_FOR_BASE_MODELS_SEARCH = 0.5
 
 
+def get_train_phase_cutoff_numrun_filename(backend: 'autoPyTorchBackend') -> str:
+    return os.path.join(backend.internals_directory, 'train_phase_cutoff_numrun.txt')
+
+
 def ispandas(X: Any) -> bool:
     """ Whether X is pandas.DataFrame or pandas.Series """
     return hasattr(X, "iloc")

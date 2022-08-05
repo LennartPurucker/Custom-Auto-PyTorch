@@ -93,3 +93,10 @@ def save_stacking_ensemble(iteration, ensemble, seed, cur_stacking_layer, backen
         save_ensemble_cutoff_num_run(backend=backend, cutoff_num_run=initial_num_run)
     save_ensemble_unique_identifier(backend=backend, ensemble_unique_identifier=ensemble.unique_identifiers)
     return ensemble_identifiers
+
+def get_appropriate_identifier(y_ens_fn, num_run, train_phase_cutoff_numrun):
+    y_test_fn = y_ens_fn.replace('predictions_ensemble', 'predictions_test')
+    if num_run <= train_phase_cutoff_numrun:
+        y_ens_fn = y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_ensemble')
+        y_test_fn = y_test_fn.replace('predictions_test', 'predictions_hpo_test')
+    return y_ens_fn, y_test_fn

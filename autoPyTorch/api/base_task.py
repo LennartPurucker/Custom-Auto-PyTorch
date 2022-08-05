@@ -89,6 +89,7 @@ from autoPyTorch.utils.common import (
     ENSEMBLE_ITERATION_MULTIPLIER,
     delete_runs_except_ensemble,
     dict_repr,
+    get_train_phase_cutoff_numrun_filename,
     replace_string_bool_to_bool,
     validate_config,
     read_predictions,
@@ -2305,7 +2306,7 @@ class BaseTask(ABC):
             # dont append predictions to the dataset if we are running the last layer so post hoc works properly.
             if cur_stacking_layer != self.num_stacking_layers-1:
                 layer_ensemble = self._backend.load_ensemble(self.seed)
-                delete_runs_except_ensemble(layer_ensemble, self._backend)
+                # delete_runs_except_ensemble(layer_ensemble, self._backend)
                 layer_identifiers = layer_ensemble.get_selected_model_identifiers()[cur_stacking_layer]
                 _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
                     model_identifiers=layer_identifiers,
@@ -2560,6 +2561,8 @@ class BaseTask(ABC):
                     cur_stacking_layer=cur_stacking_layer,
                     backend=self._backend
                 )
+        with open(get_train_phase_cutoff_numrun_filename(self._backend), "w") as file:
+            file.write(str(model_identifiers[-1][-1][1]))
         return model_identifiers, final_trained_configurations, ensemble_predictions, test_predictions
 
     def _fit_iterative_hpo_ensemble(
@@ -3677,7 +3680,7 @@ class BaseTask(ABC):
         """
         if metric is not None:
             required_dataset_properties = {'task_type': self.task_type,
-                                       'output_type': self.dataset.output_type}
+                                           'output_type': self.dataset.output_type}
             metric = get_metrics(
                 dataset_properties=required_dataset_properties,
                 names=[metric]

@@ -5,7 +5,7 @@ import os
 import pickle
 import time
 import traceback
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -17,10 +17,10 @@ from smac.tae import StatusType
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import BINARY
 from autoPyTorch.ensemble.abstract_ensemble import AbstractEnsemble
-from autoPyTorch.ensemble.ensemble_selection import EnsembleSelection
 from autoPyTorch.ensemble.iterative_hpo_stacking_ensemble_builder import IterativeHPOStackingEnsembleBuilder
 from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
-from autoPyTorch.utils.common import read_np_fn, MODEL_FN_RE
+from autoPyTorch.ensemble.utils import get_appropriate_identifier, save_stacking_ensemble
+from autoPyTorch.utils.common import ENSEMBLE_ITERATION_MULTIPLIER, get_train_phase_cutoff_numrun_filename, read_np_fn
 from autoPyTorch.pipeline.components.training.metrics.base import autoPyTorchMetric
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
 from autoPyTorch.utils.common import (
@@ -28,6 +28,7 @@ from autoPyTorch.utils.common import (
     get_ensemble_identifiers_filename,
     get_ensemble_unique_identifier_filename
 )
+from autoPyTorch.utils.logging_ import get_named_client_logger
 
 Y_ENSEMBLE = 0
 Y_TEST = 1
@@ -136,7 +137,146 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
             performance_range_threshold=performance_range_threshold,
         )
 
-    def fit_ensemble(self, selected_keys: List[str]) -> Optional[EnsembleSelection]:
+        if os.path.exists(get_train_phase_cutoff_numrun_filename(self.backend)):
+            with open(get_train_phase_cutoff_numrun_filename(self.backend), "r") as file:
+                train_phase_cutoff_numrun = int(file.read())
+        else:
+            train_phase_cutoff_numrun = None
+        self.train_phase_cutoff_numrun = train_phase_cutoff_numrun
+    def main(
+        self, time_left: float, iteration: int, return_predictions: bool,
+    ) -> Tuple[
+        List[Dict[str, float]],
+        int,
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+    ]:
+        """
+        This is the main function of the ensemble builder process and can be considered
+        a wrapper over the ensemble selection method implemented y EnsembleSelection class.
+
+        This method is going to be called multiple times by the main process, to
+        build and ensemble, in case the SMAC process produced new models and to provide
+        anytime results.
+
+        On this regard, this method mainly:
+            1- select from all the individual models that smac created, the N-best candidates
+               (this in the scenario that N > ensemble_nbest argument to this class). This is
+               done based on a score calculated via the metrics argument.
+            2- This pre-selected candidates are provided to the ensemble selection method
+               and if a ensemble is found under the provided memory/time constraints, a new
+               ensemble is proposed.
+            3- Because this process will be called multiple times, it performs checks to make
+               sure a new ensenmble is only proposed if new predictions are available, as well
+               as making sure we do not run out of resources (like disk space)
+
+        Args:
+            time_left (float):
+                How much time is left for the ensemble builder process
+            iteration (int):
+                Which is the current iteration
+            return_predictions (bool):
+                Whether we want to return the predictions of the current model or not
+
+        Returns:
+            ensemble_history (Dict):
+                A snapshot of both test and optimization performance. For debugging.
+            ensemble_nbest (int):
+                The user provides a direction on how many models to use in ensemble selection.
+                This number can be reduced internally if the memory requirements force it.
+            train_predictions (np.ndarray):
+                The optimization prediction from the current ensemble.
+            test_predictions (np.ndarray):
+                The train prediction from the current ensemble.
+        """
+
+        # Pynisher jobs inside dask 'forget'
+        # the logger configuration. So we have to set it up
+        # accordingly
+        self.logger = get_named_client_logger(
+            name=self.__class__.__name__,
+            port=self.logger_port,
+        )
+
+        self.start_time = time.time()
+        train_pred, test_pred = None, None
+
+        used_time = time.time()  - self.start_time
+        self.logger.debug(
+            'Starting iteration %d, time left: %f',
+            iteration,
+            time_left - used_time,
+        )
+
+        self.metric = [m for m in self.metrics if m.name == self.opt_metric][0]
+        if not self.metric:
+            raise ValueError(f"Cannot optimize for {self.opt_metric} in {self.metrics} "
+                             "as more than one unique optimization metric was found.")
+
+
+        self.current_ensemble_identifiers = self._load_current_ensemble_identifiers(cur_stacking_layer=self.cur_stacking_layer)
+        best_model_identifier = self.get_identifiers_from_run_history()[-1]
+        self.logger.debug(f"best_model_identifier: {best_model_identifier}")
+
+        if self.y_true_ensemble is None:
+            try:
+                self.y_true_ensemble = self.backend.load_targets_ensemble()
+            except FileNotFoundError:
+                self.logger.debug(
+                    "Could not find true targets on ensemble data set: %s",
+                    traceback.format_exc(),
+                )
+                return False
+
+        # train ensemble
+        ensemble = self.fit_ensemble(selected_keys=self._get_identifiers_from_num_runs([best_model_identifier]))
+
+        # Save the ensemble for later use in the main module!
+        if ensemble is not None and self.SAVE2DISC:
+            ensemble_identifiers = save_stacking_ensemble(
+                iteration=int(self.cur_stacking_layer * ENSEMBLE_ITERATION_MULTIPLIER + iteration),
+                ensemble=ensemble,
+                seed=self.seed,
+                cur_stacking_layer=self.cur_stacking_layer,
+                backend=self.backend,
+                initial_num_run=self.initial_num_run)
+            self.logger.debug(f"ensemble_identifiers being saved are {ensemble_identifiers}")
+
+        # Save the read losses status for the next iteration
+        with open(self.ensemble_loss_file, "wb") as memory:
+            pickle.dump(self.read_losses, memory)
+
+        if ensemble is not None:
+            train_pred = self.predict(set_="train",
+                                      ensemble=ensemble,
+                                      selected_keys=ensemble_identifiers,
+                                      n_preds=len(ensemble_identifiers),
+                                      index_run=iteration)
+            # TODO if predictions fails, build the model again during the
+            #  next iteration!
+            test_pred = self.predict(set_="test",
+                                     ensemble=ensemble,
+                                     selected_keys=ensemble_identifiers,
+                                     n_preds=len(ensemble_identifiers),
+                                     index_run=iteration)
+
+            # Add a score to run history to see ensemble progress
+            self._add_ensemble_trajectory(
+                train_pred,
+                test_pred
+            )
+        
+        # The loaded predictions and the hash can only be saved after the ensemble has been
+        # built, because the hash is computed during the construction of the ensemble
+        with open(self.ensemble_memory_file, "wb") as memory:
+            pickle.dump(self.read_preds, memory)
+
+        if return_predictions:
+            return self.ensemble_history, self.ensemble_nbest, train_pred, test_pred
+        else:
+            return self.ensemble_history, self.ensemble_nbest, None, None
+
+    def fit_ensemble(self, selected_keys: List[str]) -> Optional[StackingFineTuneEnsemble]:
         """
             fit ensemble
 
@@ -156,30 +296,22 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
 
         best_model_identifier = selected_keys[0]
 
+        if self.train_phase_cutoff_numrun is None:
+            raise ValueError(f"Expected train_phase_cutoff_numrun to be saved.")
+
         predictions_train = []
-        for (_seed, _num_run, _budget) in self._get_num_runs_from_identifiers(self.current_ensemble_identifiers):
-            y_ens_fn = self._get_identifiers_from_num_runs([(_seed, _num_run, _budget)])[0]
-            if _num_run < self.initial_num_run:
-                ensemble_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_ensemble'))
-                test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_test'))
-                predictions_train.append(ensemble_preds)
-                self.logger.debug(f"adding num_run: {_num_run} to self.read_preds, shape: {ensemble_preds.shape}")
-                self.read_preds[y_ens_fn] = {Y_ENSEMBLE: None, Y_TEST: None}
-                self.read_preds[y_ens_fn][Y_ENSEMBLE] =  ensemble_preds
-                self.read_preds[y_ens_fn][Y_TEST] =  test_preds
-            else:
-                predictions_train.append(self.read_preds[y_ens_fn][Y_ENSEMBLE])
+        ensemble_num_runs = self._get_num_runs_from_identifiers(self.current_ensemble_identifiers)
+
+        for (_seed, _num_run, _budget) in ensemble_num_runs:
+            ensemble_preds = self._add_preds_to_read_preds(_seed, _num_run, _budget)
+            predictions_train.append(ensemble_preds)
+
+        best_model_num_run = self._get_num_runs_from_identifiers([best_model_identifier])[0]
+        _ = self._add_preds_to_read_preds(*best_model_num_run)
 
         best_model_predictions_ensemble = self.read_preds[best_model_identifier][Y_ENSEMBLE]
         best_model_predictions_test = self.read_preds[best_model_identifier][Y_TEST]
 
-        ensemble_num_runs = self._get_num_runs_from_identifiers(self.current_ensemble_identifiers)
-
-        best_model_num_run = (
-                            self.read_losses[best_model_identifier]["seed"],
-                            self.read_losses[best_model_identifier]["num_run"],
-                            self.read_losses[best_model_identifier]["budget"],
-                            )
         stacked_ensemble_identifiers = self._load_stacked_ensemble_identifiers()
         self.logger.debug(f"Stacked ensemble identifiers: {stacked_ensemble_identifiers}, predictions_train shape: {predictions_train[0].shape}")
         stacked_ensemble_num_runs = [
@@ -192,19 +324,14 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
             predictions_layer = []
             for y_ens_fn in layer_identifiers:
                 if y_ens_fn is not None:
+                    seed, num_run, budget = self._get_num_runs_from_identifiers([y_ens_fn])[0]
                     if y_ens_fn not in self.read_preds:
-                        ensemble_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_ensemble'))
-                        test_preds = self._read_np_fn(y_ens_fn.replace('predictions_ensemble', 'predictions_hpo_test'))
-                        self.read_preds[y_ens_fn] = {Y_ENSEMBLE: None, Y_TEST: None}
-                        self.read_preds[y_ens_fn][Y_ENSEMBLE] =  ensemble_preds
-                        self.read_preds[y_ens_fn][Y_TEST] =  test_preds
-
+                        _ = self._add_preds_to_read_preds(seed, num_run, budget)
                     predictions_layer.append({'ensemble': self.read_preds[y_ens_fn][Y_ENSEMBLE], 'test': self.read_preds[y_ens_fn][Y_TEST]})
                 else:
                     predictions_layer.append(None)
             predictions_stacking_ensemble.append(predictions_layer)
 
-        self.logger.debug(f"in fine tune stacked builder, predictions_stacking_ensemble: {predictions_stacking_ensemble}")
         unique_identifiers = self._load_ensemble_unique_identifier()
         ensemble = StackingFineTuneEnsemble(
             ensemble_size=self.ensemble_size,
@@ -254,6 +381,28 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
             del predictions_train
 
         return ensemble
+
+    def _add_preds_to_read_preds(self, seed, num_run, budget):
+        """
+        add the ensemble and test predictions for the model
+        specified by the args.
+
+        Args:
+            seed (_type_): _description_
+            num_run (_type_): _description_
+            budget (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        y_ens_fn = self._get_identifiers_from_num_runs([(seed, num_run, budget)])[0]
+        y_ens_fn_file, y_test_fn = get_appropriate_identifier(y_ens_fn, num_run, self.train_phase_cutoff_numrun)
+        ensemble_preds = self._read_np_fn(y_ens_fn_file)
+        test_preds = self._read_np_fn(y_test_fn)
+        self.logger.debug(f"adding num_run: {num_run} to self.read_preds, shape: {ensemble_preds.shape}")
+        self.read_preds[y_ens_fn] = {Y_ENSEMBLE: ensemble_preds, Y_TEST: test_preds}
+
+        return ensemble_preds
 
     def predict(self, set_: str,
                 ensemble: AbstractEnsemble,

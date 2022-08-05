@@ -75,7 +75,7 @@ class NetworkComponent(autoPyTorchTrainingComponent):
 
         self.is_fitted_ = True
 
-        self.logger.debug(f"finished fit for network.")
+        self.logger.debug(f"finished fit for network. {self.network}")
         return self
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:

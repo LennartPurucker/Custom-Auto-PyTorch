@@ -98,7 +98,12 @@ class FineTuneDataset(object):
             X_train = subsampler(X, split)
             y_train = subsampler(Y, split)
             validator = TabularInputValidator(**validator_args).fit(X_train, y_train=y_train)
+
             dataset = TabularDataset(X=X_train, Y=y_train, validator=validator, **dataset_args)
+            if mode == 'train':
+                self.validator = validator
+                self.output_type = dataset.output_type
+
             dataset_path = os.path.join(finetune_dataset_path, f"{mode}_dataset.pkl")
             pickle.dump(dataset, open(dataset_path, 'wb'))
             self.dataset_paths[mode] = dataset_path

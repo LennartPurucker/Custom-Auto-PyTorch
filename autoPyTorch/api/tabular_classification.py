@@ -635,7 +635,7 @@ class TabularClassificationTask(BaseTask):
             logger_port=self._logger_port,
             feat_types=self.feat_types)
         
-        dataset = FineTuneDataset(
+        self.dataset = FineTuneDataset(
             finetune_dataset_path=self._backend.internals_directory,
             X=X_train,
             Y=y_train,
@@ -648,9 +648,10 @@ class TabularClassificationTask(BaseTask):
             validator_args=validator_args,
             )
 
+        self.input_validator = self.dataset.validator
 
         return self._run_fine_tune_stacked_ensemble(
-            dataset=dataset,
+            dataset=self.dataset,
             optimize_metric=optimize_metric,
             budget_type=budget_type,
             min_budget=min_budget,

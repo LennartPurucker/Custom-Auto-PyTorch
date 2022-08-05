@@ -341,7 +341,15 @@ class TrainerChoice(autoPyTorchChoice):
 
         if mode == 'hpo' and model_weights_path is not None:
             self.logger.debug(f"model_weights loading from disk.")
-            X['network'].load_state_dict(torch.load(model_weights_path))
+            loaded_state_dict = torch.load(model_weights_path)
+            if loaded_state_dict['1.0.weight'].shape != X['network'].state_dict()['1.0.weight'].shape:
+                loaded_state_dict.pop('1.0.weight')
+                loaded_state_dict.pop('1.0.bias')
+                network_state_dict = X['network'].state_dict()
+                loaded_state_dict = {**network_state_dict, **loaded_state_dict}
+                self.logger.warning("For current network, shape of input to the first layer of network backbone is different to the pretrained model. "
+                                    "This can happen due to difference in the split where embedding layer performs differently. Skipping weights for the first layer.")
+            X['network'].load_state_dict(loaded_state_dict)
 
             self.logger.debug(f"model_weights loaded from disk.")
         self.budget_tracker = BudgetTracker(

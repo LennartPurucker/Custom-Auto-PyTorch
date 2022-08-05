@@ -6,6 +6,8 @@ import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ConfigSpace.configuration_space import Configuration
+from autoPyTorch.utils.implementations import predict_with_stacked_ensemble
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 from autoPyTorch.utils.common import read_predictions
 from autoPyTorch.datasets.tabular_dataset import TabularDataset
 from autoPyTorch.ensemble.stacking_finetune_ensemble import StackingFineTuneEnsemble
@@ -275,16 +277,52 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
 
         Y_train_pred, Y_pipeline_optimization_pred, Y_valid_pred, Y_test_pred, additional_run_info = self._run_fit_predict_repeats()
 
+        save_stacking_predictions = False
         if self.old_ensemble is not None:
+            # TODO: if layer less than max layer, then send predictions to next layer and predict with appended dataset.
+            # only during the hpo phase. Y_ensemble_optimization_pred
             Y_ensemble_optimization_pred = self.old_ensemble.predict_with_current_pipeline(Y_pipeline_optimization_pred)
-            Y_ensemble_preds = self.old_ensemble.get_ensemble_predictions_with_current_pipeline(Y_pipeline_optimization_pred)
+            Y_stacked_ensemble_optimization_pred = Y_ensemble_optimization_pred
+
+            if self.mode == 'hpo':
+                stacked_ensemble_identifiers = self.old_ensemble.stacked_ensemble_identifiers.copy()
+                num_stacking_layers = len(stacked_ensemble_identifiers)
+                if self.cur_stacking_layer < num_stacking_layers - 1:
+                    ensemble_identifiers = stacked_ensemble_identifiers[self.cur_stacking_layer:]
+                    cv_models = []
+                    for identifier in ensemble_identifiers:
+                        nonnull_identifiers = [i for i in identifier if i is not None]
+                        cv_models.append(self.backend.load_cv_models_by_identifiers(nonnull_identifiers))
+
+                    stacked_ensemble_identifiers[self.cur_stacking_layer][self.old_ensemble.ensemble_slot_j] = (self.seed, self.num_run, float(self.budget))
+                    if self.task_type in CLASSIFICATION_TASKS:
+                        pipelines = VotingClassifier(estimators=None, voting='soft', )
+                    pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
+                    cv_models[0][self.old_ensemble.ensemble_slot_j] = pipelines
+
+                    _, stacked_ensemble_predictions = predict_with_stacked_ensemble(
+                        self.X_train,
+                        100,
+                        1,
+                        cv_models,
+                        ensemble_identifiers,
+                        self.logger,
+                        self.task_type,
+                        BaseLayerEnsembleSelectionTypes.ensemble_fine_tune,
+                        StackingEnsembleSelectionTypes.stacking_fine_tuning,
+                        self.old_ensemble
+                    )
+                    Y_stacked_ensemble_optimization_pred = self.old_ensemble.predict(stacked_ensemble_predictions)
+                    save_stacking_predictions = True
+
             self.logger.debug(f"old ensemble has {self.old_ensemble.stacked_ensemble_identifiers}")
         else:
             Y_ensemble_optimization_pred = Y_pipeline_optimization_pred.copy()
-            Y_ensemble_preds = [Y_pipeline_optimization_pred]
+            Y_stacked_ensemble_optimization_pred = Y_ensemble_optimization_pred
 
         hpo_preds = {}
         if self.mode == 'train':
+            hpo_preds = {}
             if self.hpo_dataset_path is None:
                 raise ValueError(f"Expected hpo_dataset_path to not be None if mode: {self.mode}")
             train_hpo_dataset: TabularDataset = pickle.load(open(self.hpo_dataset_path, 'rb'))
@@ -309,16 +347,15 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
                 pipelines = VotingClassifier(estimators=None, voting='soft', )
             pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
 
-            hpo_preds['hpo_ensemble'] = pipelines.predict_proba(X_train)
-            hpo_preds['hpo_ensemble'] = self._ensure_prediction_array_sizes(hpo_preds['hpo_ensemble'], y_train)
-            hpo_preds['hpo_test'] = pipelines.predict_proba(X_test)
-            hpo_preds['hpo_test'] = self._ensure_prediction_array_sizes(hpo_preds['hpo_test'], y_train)
+            hpo_ensemble_preds = pipelines.predict_proba(X_train)
+            hpo_preds['hpo_ensemble'] = self._ensure_prediction_array_sizes(hpo_ensemble_preds, y_train)
+            hpo_test_preds = pipelines.predict_proba(X_test)
+            hpo_preds['hpo_test'] = self._ensure_prediction_array_sizes(hpo_test_preds, y_train)
             
 
         train_loss = None # self._loss(self.Y_actual_train, Y_train_pred)
-        opt_loss = self._loss(self.Y_optimization, Y_ensemble_optimization_pred)
+        opt_loss = self._loss(self.Y_optimization, Y_stacked_ensemble_optimization_pred)
 
-        opt_loss ['ensemble_opt_loss'] = calculate_nomalised_margin_loss(Y_ensemble_preds, self.Y_optimization)
         status = StatusType.SUCCESS
         self.logger.debug("In train evaluator fit_predict_and_loss, num_run: {} loss:{}".format(
             self.num_run,
@@ -344,6 +381,16 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
                 file_path = os.path.join(num_run_dir, self.backend.get_prediction_filename(subset, *identifier))
                 with open(file_path, "wb") as fh:
                     pickle.dump(hpo_preds[subset].astype(np.float32), fh, -1)
+
+        if save_stacking_predictions:
+            identifier = (self.seed, self.num_run, float(self.budget))
+            num_run_dir = self.backend.get_numrun_directory(*identifier)
+            if not os.path.exists(num_run_dir):
+                os.makedirs(num_run_dir)
+            for subset in ['stacked_ensemble']:
+                file_path = os.path.join(num_run_dir, self.backend.get_prediction_filename(subset, *identifier))
+                with open(file_path, "wb") as fh:
+                    pickle.dump(Y_stacked_ensemble_optimization_pred.astype(np.float32), fh, -1)
 
     def _fit_predict_one_fold(
         self,

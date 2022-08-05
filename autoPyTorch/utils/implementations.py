@@ -8,6 +8,20 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 import torch
 
+import sys
+import warnings
+
+from typing import Any, Callable, Dict, List, Optional, Union
+import typing
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from autoPyTorch.constants import REGRESSION_TASKS, STRING_TO_TASK_TYPES
+from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
+from autoPyTorch.utils.logging_ import PicklableClientLogger
+
 
 def get_loss_weight_strategy(loss: Type[torch.nn.Module]) -> Callable:
     """
@@ -184,3 +198,91 @@ class MinorityCoalesceTransformer(BaseEstimator, TransformerMixin):
 
     def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
         return self.fit(X, y).transform(X)
+
+
+
+def _pipeline_predict(pipeline,
+                      X: Union[np.ndarray, pd.DataFrame],
+                      batch_size: int,
+                      logger: PicklableClientLogger,
+                      task: int) -> np.ndarray:
+    @typing.no_type_check
+    def send_warnings_to_log(
+            message, category, filename, lineno, file=None, line=None):
+        logger.debug('%s:%s: %s:%s' % (filename, lineno, category.__name__, message))
+        return
+
+    X_ = X.copy()
+    with warnings.catch_warnings():
+        warnings.showwarning = send_warnings_to_log
+        if task in REGRESSION_TASKS:
+            # Voting regressor does not support batch size
+            prediction = pipeline.predict(X_)
+        else:
+            # Voting classifier predict proba does not support batch size
+            prediction = pipeline.predict_proba(X_)
+            # Check that all probability values lie between 0 and 1.
+            if not ((prediction >= 0).all() and (prediction <= 1).all()):
+                np.set_printoptions(threshold=sys.maxsize)
+                raise ValueError("For {}, prediction probability not within [0, 1]: {}/{}!".format(
+                    pipeline,
+                    prediction,
+                    np.sum(prediction, axis=1)
+                ))
+
+    if len(prediction.shape) < 1 or len(X_.shape) < 1 or \
+            X_.shape[0] < 1 or prediction.shape[0] != X_.shape[0]:
+        logger.warning(
+            "Prediction shape for model %s is %s while X_.shape is %s",
+            pipeline, str(prediction.shape), str(X_.shape)
+        )
+    return prediction
+
+
+def predict_with_stacked_ensemble(
+        X_test,
+        batch_size,
+        n_jobs,
+        models,
+        ensemble_identifiers,
+        logger,
+        task_type,
+        base_ensemble_method,
+        stacking_ensemble_method,
+        ensemble
+    ):
+    X_test_copy = X_test.copy()
+
+    stacked_ensemble_predictions = []
+    for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
+        nonnull_identifiers = [identifier for identifier in layer_identifiers if identifier is not None]
+        if len(nonnull_identifiers) == 0:
+            break
+
+        logger.debug(f"layer : {i} of stacking ensemble,\n layer identifiers: {layer_identifiers},\n model: {model}")
+        all_predictions = joblib.Parallel(n_jobs=n_jobs)(
+                joblib.delayed(_pipeline_predict)(
+                    model[identifier], X_test_copy, batch_size, logger, STRING_TO_TASK_TYPES[task_type]
+                )
+                for identifier in nonnull_identifiers
+            )
+        if (
+            base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_autogluon, BaseLayerEnsembleSelectionTypes.ensemble_selection)
+                or stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
+        ):
+            concat_all_predictions = ensemble.get_expanded_layer_stacking_ensemble_predictions(
+                    stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
+        else:
+            concat_all_predictions = all_predictions
+
+        stacked_ensemble_predictions.append(all_predictions)
+
+        X_test_copy = np.concatenate([X_test, *concat_all_predictions], axis=1)
+        logger.debug(f"shape of X_test after predict with layer : {i} = {X_test_copy.shape}")
+
+    identifier_to_predictions = {}
+    for layer_identifiers, layer_predictions in zip(ensemble_identifiers, stacked_ensemble_predictions):
+        for identifier, pred in zip(layer_identifiers, layer_predictions):
+            identifier_to_predictions[identifier] = pred
+
+    return identifier_to_predictions, all_predictions

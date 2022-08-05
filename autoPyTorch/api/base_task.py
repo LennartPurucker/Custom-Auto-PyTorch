@@ -39,10 +39,18 @@ from smac.tae import StatusType
 from smac.utils.io.traj_logging import TrajEntry
 
 from autoPyTorch import metrics
-from autoPyTorch.api.utils import get_autogluon_default_nn_config_space, get_config_from_run_history, get_incumbent, get_run_history_warmstart, get_search_space_updates_for_configuraion, get_smac_callback_with_run_history, save_run_history, update_run_history_with_max_config_id
+from autoPyTorch.api.utils import (
+    get_autogluon_default_nn_config_space,
+    get_config_from_run_history,
+    get_incumbent,
+    get_run_history_warmstart,
+    get_search_space_updates_for_configuraion,
+    get_smac_callback_with_run_history,
+    save_run_history,
+    update_run_history_with_max_config_id,
+)
 from autoPyTorch.automl_common.common.utils.backend import Backend
 from autoPyTorch.constants import (
-    REGRESSION_TASKS,
     STRING_TO_OUTPUT_TYPES,
     STRING_TO_TASK_TYPES,
 )
@@ -96,6 +104,10 @@ from autoPyTorch.utils.common import (
     create)
 from autoPyTorch.utils.parallel_model_runner import run_models_on_dataset
 from autoPyTorch.utils.hyperparameter_search_space_update import HyperparameterSearchSpaceUpdates
+from autoPyTorch.utils.implementations import (
+    _pipeline_predict,
+    predict_with_stacked_ensemble
+)
 from autoPyTorch.utils.logging_ import (
     PicklableClientLogger,
     get_named_client_logger,
@@ -108,44 +120,6 @@ from autoPyTorch.utils.results_manager import MetricResults, ResultsManager, Sea
 from autoPyTorch.utils.results_visualizer import ColorLabelSettings, PlotSettingParams, ResultsVisualizer
 from autoPyTorch.utils.single_thread_client import SingleThreadedClient
 from autoPyTorch.utils.stopwatch import StopWatch
-
-
-def _pipeline_predict(pipeline: BasePipeline,
-                      X: Union[np.ndarray, pd.DataFrame],
-                      batch_size: int,
-                      logger: PicklableClientLogger,
-                      task: int) -> np.ndarray:
-    @typing.no_type_check
-    def send_warnings_to_log(
-            message, category, filename, lineno, file=None, line=None):
-        logger.debug('%s:%s: %s:%s' % (filename, lineno, category.__name__, message))
-        return
-
-    X_ = X.copy()
-    with warnings.catch_warnings():
-        warnings.showwarning = send_warnings_to_log
-        if task in REGRESSION_TASKS:
-            # Voting regressor does not support batch size
-            prediction = pipeline.predict(X_)
-        else:
-            # Voting classifier predict proba does not support batch size
-            prediction = pipeline.predict_proba(X_)
-            # Check that all probability values lie between 0 and 1.
-            if not ((prediction >= 0).all() and (prediction <= 1).all()):
-                np.set_printoptions(threshold=sys.maxsize)
-                raise ValueError("For {}, prediction probability not within [0, 1]: {}/{}!".format(
-                    pipeline,
-                    prediction,
-                    np.sum(prediction, axis=1)
-                ))
-
-    if len(prediction.shape) < 1 or len(X_.shape) < 1 or \
-            X_.shape[0] < 1 or prediction.shape[0] != X_.shape[0]:
-        logger.warning(
-            "Prediction shape for model %s is %s while X_.shape is %s",
-            pipeline, str(prediction.shape), str(X_.shape)
-        )
-    return prediction
 
 
 class BaseTask(ABC):
@@ -3591,7 +3565,18 @@ class BaseTask(ABC):
         if is_stacking(self.base_ensemble_method, self.stacking_ensemble_method):
             ensemble_identifiers = self.ensemble_.get_selected_model_identifiers()
             self._logger.debug(f"ensemble identifiers: {ensemble_identifiers}")
-            _, all_predictions = self._predict_with_stacked_ensemble(X_test, batch_size, n_jobs, models, ensemble_identifiers)
+            _, all_predictions = predict_with_stacked_ensemble(
+                X_test,
+                batch_size,
+                n_jobs,
+                models,
+                ensemble_identifiers,
+                self._logger,
+                self.task_type,
+                self.base_ensemble_method,
+                self.stacking_ensemble_method,
+                self.ensemble_
+            )
         else:
             X_test_copy = X_test.copy()
             all_predictions = joblib.Parallel(n_jobs=n_jobs)(
@@ -3613,51 +3598,6 @@ class BaseTask(ABC):
         self._cleanup()
 
         return predictions
-
-    def _predict_with_stacked_ensemble(
-        self,
-        X_test,
-        batch_size,
-        n_jobs,
-        models,
-        ensemble_identifiers
-    ):
-        X_test_copy = X_test.copy()
-
-        stacked_ensemble_predictions = []
-        for i, (model, layer_identifiers) in enumerate(zip(models, ensemble_identifiers)):
-            nonnull_identifiers = [identifier for identifier in layer_identifiers if identifier is not None]
-            if len(nonnull_identifiers) == 0:
-                break
-
-            self._logger.debug(f"layer : {i} of stacking ensemble,\n layer identifiers: {layer_identifiers},\n model: {model}")
-            all_predictions = joblib.Parallel(n_jobs=n_jobs)(
-                    joblib.delayed(_pipeline_predict)(
-                        model[identifier], X_test_copy, batch_size, self._logger, STRING_TO_TASK_TYPES[self.task_type]
-                    )
-                    for identifier in nonnull_identifiers
-                )
-            if (
-                self.base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_autogluon, BaseLayerEnsembleSelectionTypes.ensemble_selection)
-                    or self.stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_repeat_models
-            ):
-                self._logger.debug(f"Yes, it is updating the predictions with more data")
-                concat_all_predictions = self.ensemble_.get_expanded_layer_stacking_ensemble_predictions(
-                        stacking_layer=i, raw_stacking_layer_ensemble_predictions=all_predictions)
-            else:
-                concat_all_predictions = all_predictions
-
-            stacked_ensemble_predictions.append(all_predictions)
-
-            X_test_copy = np.concatenate([X_test, *concat_all_predictions], axis=1)
-            self._logger.debug(f"shap of X_test after predict with layer : {i} = {X_test_copy.shape}")
-
-        identifier_to_predictions = {}
-        for layer_identifiers, layer_predictions in zip(ensemble_identifiers, stacked_ensemble_predictions):
-            for identifier, pred in zip(layer_identifiers, layer_predictions):
-                identifier_to_predictions[identifier] = pred
-
-        return identifier_to_predictions, all_predictions
 
     def score(
         self,

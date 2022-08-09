@@ -2129,6 +2129,7 @@ class BaseTask(ABC):
     ) -> 'BaseTask':
         experiment_task_name: str = 'runFineTuneStackedEnsemble'
 
+        self._stopwatch.start_task(experiment_task_name)
         elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
         time_left_for_modelfit = int(max(0, total_walltime_limit - elapsed_time))
         if func_eval_time_limit_secs is None or func_eval_time_limit_secs > time_left_for_modelfit:
@@ -2156,7 +2157,7 @@ class BaseTask(ABC):
             dataset,
             budget_type,
             max_budget,
-            total_walltime_limit,
+            total_walltime_limit/2,
             func_eval_time_limit_secs,
             memory_limit,
             all_supported_metrics,
@@ -2179,7 +2180,8 @@ class BaseTask(ABC):
         # total_walltime_limit = total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
         #                         if posthoc_ensemble_fit else total_walltime_limit
 
-        time_per_layer_search = math.floor(total_walltime_limit/self.num_stacking_layers)
+        time_left_for_search = total_walltime_limit - self._stopwatch.wall_elapsed(experiment_task_name)
+        time_per_layer_search = math.floor(time_left_for_search/self.num_stacking_layers)
 
         current_dataset = dataset.get_dataset(mode='hpo')
 
@@ -2353,19 +2355,20 @@ class BaseTask(ABC):
         self,
         optimize_metric,
         dataset: FineTuneDataset,
-        budget_type,
-        max_budget,
-        total_walltime_limit,
-        func_eval_time_limit_secs,
-        memory_limit,
-        all_supported_metrics,
-        precision,
-        disable_file_output,
-        dask_client,
-        experiment_task_name
+        budget_type: str,
+        max_budget: float,
+        total_walltime_limit: float,
+        func_eval_time_limit_secs: float,
+        memory_limit: int,
+        all_supported_metrics: bool,
+        precision: int,
+        disable_file_output: Optional[List[Union[str, DisableFileOutputParameters]]],
+        dask_client: Optional[dask.distributed.Client],
+        experiment_task_name: str
     ) -> Tuple[List[Tuple[int, int, float]], List[List[Configuration]]]:
         """
-        
+        Trains models specified by randomly sampling from the search space.
+        Step 1 of fine tune stacking.
 
         Args:
             optimize_metric (_type_): _description_
@@ -2412,71 +2415,53 @@ class BaseTask(ABC):
                 exclude_components=self.exclude_components,
                 search_space_updates=autogluon_nn_search_space_updates)
         final_trained_configurations = []
-        model_configs = []
-        for _ in range(self.ensemble_size):
-            random_config = autogluon_nn_search_space.sample_configuration()
-            model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
+        
         model_identifiers = []
         stacked_weights = []
-        last_successful_smac_initial_num_run = None
-        for stacking_layer in range(self.num_stacking_layers):
-            previous_numerical_columns = current_dataset.numerical_columns
-            smac_initial_run=self._backend.get_next_num_run()
-            if stacking_layer != 0:
-                _, current_search_space = self._update_configs_for_current_config_space(
-                    model_descriptions=model_configs,
-                    dataset=current_dataset,
-                    search_space_updates=autogluon_nn_search_space_updates,
-                    previous_numerical_columns=previous_numerical_columns
-                )
-                updated_model_configs = []
-                for _ in range(self.ensemble_size):
-                    random_config = current_search_space.sample_configuration()
-                    updated_model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
-            else:
-                updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
-            self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}")
-            lower_layer_model_identifiers = None
-            if stacking_layer > 0:
-                lower_layer_model_identifiers = model_identifiers[stacking_layer-1]
-            layer_model_identifiers = self._fit_models_on_dataset(
-                model_configs=updated_model_configs,
-                func_eval_time_limit_secs=func_eval_time_limit_secs,
-                stacking_layer=stacking_layer,
-                time_left=(0.9*total_walltime_limit)/(self.num_stacking_layers),
-                current_search_space=current_search_space,
-                smac_initial_run=smac_initial_run,
-                search_space_updates=autogluon_nn_search_space_updates,
-                base_ensemble_method=self.base_ensemble_method,
-                stacking_ensemble_method=self.stacking_ensemble_method,
-                mode="train",
-                cur_stacking_layer=stacking_layer,
-                hpo_dataset_path=dataset.dataset_paths['hpo'],
-                lower_layer_model_identifiers=lower_layer_model_identifiers
-            )
-            nonnull_model_configs = []
-            nonnull_identifiers = []
-            for i, identifier in enumerate(layer_model_identifiers):
-                if identifier is not None:
-                    nonnull_identifiers.append(identifier)
-                    nonnull_model_configs.append(updated_model_configs[i])
 
+        for stacking_layer in range(self.num_stacking_layers):
+
+            # Atleast one model should fit in a layer
+            layer_start_time = time.time()
+            while(True):
+                model_configs = []
+                for _ in range(self.ensemble_size):
+                    random_config = autogluon_nn_search_space.sample_configuration()
+                    model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
+
+                nonnull_model_configs, nonnull_identifiers = self._train_random_stacking_layer(
+                    current_dataset=current_dataset,
+                    stacking_layer=stacking_layer,
+                    model_configs=model_configs,
+                    autogluon_nn_search_space=autogluon_nn_search_space,
+                    autogluon_nn_search_space_updates=autogluon_nn_search_space_updates,
+                    total_walltime_limit=(0.9*total_walltime_limit)/(self.num_stacking_layers),
+                    func_eval_time_limit_secs=func_eval_time_limit_secs,
+                    hpo_dataset_path=dataset.dataset_paths['hpo'],
+                    model_identifiers=model_identifiers
+                )
+
+                if len(nonnull_identifiers) > 0:
+                    break
+                else:
+                    self._logger.warning(f"Random configurations failed to train for layer: {stacking_layer}. Trying again with new random configs")
+                if total_walltime_limit - (time.time() - layer_start_time) <=0:
+                    break
             final_trained_configurations.append(nonnull_model_configs)
 
-            if len(nonnull_identifiers) > 0:
-                model_identifiers.append(
-                    nonnull_identifiers
-                )
-                last_successful_smac_initial_num_run = smac_initial_run
-                ensemble_size = len(nonnull_identifiers)
-                weights = [1/ensemble_size] * ensemble_size
-                stacked_weights.append(weights)
+            model_identifiers.append(
+                nonnull_identifiers
+            )
+            self._logger.info(f"stacking_layer: {stacking_layer}, nonnull_identifiers: {nonnull_identifiers}")
+
+            ensemble_size = len(nonnull_identifiers)
+            weights = [1/ensemble_size] * ensemble_size
+            stacked_weights.append(weights)
             _, previous_layer_predictions_train, previous_layer_predictions_test = self._get_previous_predictions(
                 model_identifiers=model_identifiers[-1],
                 weights=weights,
                 ensemble_size=ensemble_size
             )
-            self._logger.info(f"stacking_layer: {stacking_layer}, nonnull_identifiers: {nonnull_identifiers}")
             current_dataset = get_appended_dataset(
                 original_dataset=current_dataset,
                 previous_layer_predictions_train=previous_layer_predictions_train,
@@ -2538,6 +2523,61 @@ class BaseTask(ABC):
         with open(get_train_phase_cutoff_numrun_filename(self._backend), "w") as file:
             file.write(str(model_identifiers[-1][-1][1]))
         return model_identifiers, final_trained_configurations, ensemble_predictions, test_predictions
+
+    def _train_random_stacking_layer(
+        self,
+        current_dataset,
+        stacking_layer,
+        model_configs,
+        autogluon_nn_search_space_updates,
+        autogluon_nn_search_space,
+        model_identifiers,
+        func_eval_time_limit_secs,
+        total_walltime_limit,
+        hpo_dataset_path
+    ):
+        previous_numerical_columns = current_dataset.numerical_columns
+        smac_initial_run=self._backend.get_next_num_run()
+        if stacking_layer != 0:
+            _, current_search_space = self._update_configs_for_current_config_space(
+                model_descriptions=model_configs,
+                dataset=current_dataset,
+                search_space_updates=autogluon_nn_search_space_updates,
+                previous_numerical_columns=previous_numerical_columns
+            )
+            updated_model_configs = []
+            for _ in range(self.ensemble_size):
+                random_config = current_search_space.sample_configuration()
+                updated_model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
+        else:
+            updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
+        self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}")
+        lower_layer_model_identifiers = None
+        if stacking_layer > 0:
+            lower_layer_model_identifiers = model_identifiers[stacking_layer-1]
+        layer_model_identifiers = self._fit_models_on_dataset(
+            model_configs=updated_model_configs,
+            func_eval_time_limit_secs=func_eval_time_limit_secs,
+            stacking_layer=stacking_layer,
+            time_left=total_walltime_limit,
+            current_search_space=current_search_space,
+            smac_initial_run=smac_initial_run,
+            search_space_updates=autogluon_nn_search_space_updates,
+            base_ensemble_method=self.base_ensemble_method,
+            stacking_ensemble_method=self.stacking_ensemble_method,
+            mode="train",
+            cur_stacking_layer=stacking_layer,
+            hpo_dataset_path=hpo_dataset_path, # dataset.dataset_paths['hpo'],
+            lower_layer_model_identifiers=lower_layer_model_identifiers
+        )
+        nonnull_model_configs = []
+        nonnull_identifiers = []
+        for i, identifier in enumerate(layer_model_identifiers):
+            if identifier is not None:
+                nonnull_identifiers.append(identifier)
+                nonnull_model_configs.append(updated_model_configs[i])
+
+        return nonnull_model_configs, nonnull_identifiers
 
     def _fit_iterative_hpo_ensemble(
         self,

@@ -12,7 +12,7 @@ import platform
 import sys
 import tempfile
 import time
-from turtle import pos
+from turtle import pos, update
 import typing
 import unittest.mock
 import warnings
@@ -2444,13 +2444,16 @@ class BaseTask(ABC):
 
             # Atleast one model should fit in a layer
             layer_start_time = time.time()
+            failed_slot_j = []
+            previous_model_configs = None
+            previous_layer_identifiers = None
             while(True):
                 model_configs = []
-                for _ in range(self.ensemble_size):
+                for i in range(self.ensemble_size):
                     random_config = autogluon_nn_search_space.sample_configuration()
                     model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
 
-                nonnull_model_configs, nonnull_identifiers = self._train_random_stacking_layer(
+                updated_model_configs, layer_model_identifiers = self._train_random_stacking_layer(
                     current_dataset=current_dataset,
                     stacking_layer=stacking_layer,
                     model_configs=model_configs,
@@ -2459,13 +2462,42 @@ class BaseTask(ABC):
                     total_walltime_limit=(0.9*total_walltime_limit)/(self.num_stacking_layers),
                     func_eval_time_limit_secs=func_eval_time_limit_secs,
                     hpo_dataset_path=dataset.dataset_paths['hpo'],
-                    model_identifiers=model_identifiers
+                    model_identifiers=model_identifiers,
+                    failed_slot_j=failed_slot_j
                 )
 
-                if len(nonnull_identifiers) > 0:
+                if len(failed_slot_j) > 0:
+                    updated_model_configs_copy = updated_model_configs.copy()
+                    layer_model_identifiers_copy = layer_model_identifiers.copy()
+                    assert previous_model_configs is not None
+                    layer_model_identifiers = []
+                    updated_model_configs = []
+                    for i in range(len(layer_model_identifiers_copy)):
+                        if i in failed_slot_j:
+                            layer_model_identifiers.append(layer_model_identifiers_copy[i])
+                            updated_model_configs.append(updated_model_configs_copy[i])
+                        else:
+                            layer_model_identifiers.append(previous_layer_identifiers[i])
+                            updated_model_configs.append(previous_model_configs[i])
+                else:
+                    previous_model_configs = updated_model_configs
+                    previous_layer_identifiers = layer_model_identifiers
+
+                failed_slot_j = []
+
+                nonnull_model_configs = []
+                nonnull_identifiers = []
+                for i, identifier in enumerate(layer_model_identifiers):
+                    if identifier is not None:
+                        nonnull_identifiers.append(identifier)
+                        nonnull_model_configs.append(updated_model_configs[i])
+                    else:
+                        failed_slot_j.append(i)
+                if len(failed_slot_j) <= 0:
                     break
                 else:
-                    self._logger.warning(f"Random configurations failed to train for layer: {stacking_layer}. Trying again with new random configs")
+                    self._logger.warning(f"Random configurations failed to train for layer: {stacking_layer} "
+                                         f"failed for slots: {failed_slot_j}. Trying again with new random configs")
                 if total_walltime_limit - (time.time() - layer_start_time) <=0:
                     break
             final_trained_configurations.append(nonnull_model_configs)
@@ -2555,7 +2587,8 @@ class BaseTask(ABC):
         model_identifiers,
         func_eval_time_limit_secs,
         total_walltime_limit,
-        hpo_dataset_path
+        hpo_dataset_path,
+        failed_slot_j: Optional[List[int]] = None
     ):
         previous_numerical_columns = current_dataset.numerical_columns
         smac_initial_run=self._backend.get_next_num_run()
@@ -2572,6 +2605,8 @@ class BaseTask(ABC):
                 updated_model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
         else:
             updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
+        
+        updated_model_configs = [updated_model_configs[i] for i in failed_slot_j] if len(failed_slot_j) > 0 else updated_model_configs
         self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}, total_walltime: {total_walltime_limit}")
         lower_layer_model_identifiers = None
         if stacking_layer > 0:
@@ -2591,14 +2626,8 @@ class BaseTask(ABC):
             hpo_dataset_path=hpo_dataset_path, # dataset.dataset_paths['hpo'],
             lower_layer_model_identifiers=lower_layer_model_identifiers
         )
-        nonnull_model_configs = []
-        nonnull_identifiers = []
-        for i, identifier in enumerate(layer_model_identifiers):
-            if identifier is not None:
-                nonnull_identifiers.append(identifier)
-                nonnull_model_configs.append(updated_model_configs[i])
-
-        return nonnull_model_configs, nonnull_identifiers
+        
+        return updated_model_configs, layer_model_identifiers
 
     def _fit_iterative_hpo_ensemble(
         self,

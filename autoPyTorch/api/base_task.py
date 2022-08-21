@@ -863,7 +863,12 @@ class BaseTask(ABC):
                 # Fail if dummy prediction fails.
                 raise ValueError(err_msg)
 
-    def _do_traditional_prediction(self, time_left: int, func_eval_time_limit_secs: int) -> None:
+    def _do_traditional_prediction(
+        self,
+        time_left: int,
+        func_eval_time_limit_secs: int,
+        dataset: Optional[BaseDataset] = None
+    ) -> None:
         """
         Fits traditional machine learning algorithms to the provided dataset, while
         complying with time resource allocation.
@@ -887,12 +892,14 @@ class BaseTask(ABC):
 
         self._logger.info("Starting to create traditional classifier predictions.")
 
+        dataset = dataset if dataset is not None else self.dataset
+
         available_classifiers = get_traditional_learners_configurations(
             random_state=self.seed,
-            dataset_properties=self._get_dataset_properties(self.dataset)
+            dataset_properties=self._get_dataset_properties(dataset)
         )
         model_configs = [(classifier, self.pipeline_options[self.pipeline_options['budget_type']]) for classifier in available_classifiers]
-        
+
         run_history, _ = run_models_on_dataset(
             time_left=time_left,
             func_eval_time_limit_secs=func_eval_time_limit_secs,
@@ -929,7 +936,8 @@ class BaseTask(ABC):
         self,
         current_task_name: str,
         runtime_limit: int,
-        func_eval_time_limit_secs: int
+        func_eval_time_limit_secs: int,
+        dataset: Optional[BaseDataset] = None
     ) -> None:
         """
         This function can be used to run the suite of traditional machine
@@ -951,6 +959,7 @@ class BaseTask(ABC):
         self._do_traditional_prediction(
             func_eval_time_limit_secs=func_eval_time_limit_secs,
             time_left=time_for_traditional,
+            dataset=dataset
         )
         self._stopwatch.stop_task(traditional_task_name)
 
@@ -970,7 +979,7 @@ class BaseTask(ABC):
 
         search_space_updates = search_space_updates if search_space_updates is not None else self.search_space_updates
 
-        self._logger.debug(f"base_ensemble_method: {base_ensemble_method}, model_configs {model_configs} kwargs: {kwargs}")
+        self._logger.debug(f"base_ensemble_method: {base_ensemble_method}, model_configs {model_configs} kwargs: {kwargs}, with total_walltime_limit: {time_left}")
         run_history, model_identifiers = run_models_on_dataset(
             time_left=time_left,
             func_eval_time_limit_secs=func_eval_time_limit_secs,
@@ -1018,13 +1027,15 @@ class BaseTask(ABC):
         enable_traditional_pipeline=False,
         func_eval_time_limit_secs: int = 50,
         base_ensemble_method = BaseLayerEnsembleSelectionTypes.ensemble_selection,
-        stacking_ensemble_method = None
+        stacking_ensemble_method = None,
+        dataset = None
     ):
         self._logger.debug(f"Sending iteration to fit_ensemble - {iteration}")
+        dataset = dataset if dataset is not None else self.dataset
         self.fit_ensemble(
             optimize_metric=optimize_metric,
             precision=self.precision,
-            dataset=self.dataset,
+            dataset=dataset,
             ensemble_size=ensemble_size,
             ensemble_nbest=self.ensemble_nbest,
             initial_num_run=last_successful_smac_initial_num_run,
@@ -2131,6 +2142,15 @@ class BaseTask(ABC):
 
         self._stopwatch.start_task(experiment_task_name)
         elapsed_time = self._stopwatch.wall_elapsed(experiment_task_name)
+
+        if enable_traditional_pipeline:
+            TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_TRUE
+        else:
+            TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT = TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT_FALSE
+        time_for_post_fit_ensemble = int((1-TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT)*total_walltime_limit)
+        total_walltime_limit = total_walltime_limit * TIME_ALLOCATION_FACTOR_POSTHOC_ENSEMBLE_FIT \
+                                if posthoc_ensemble_fit else total_walltime_limit
+
         time_left_for_modelfit = int(max(0, total_walltime_limit - elapsed_time))
         if func_eval_time_limit_secs is None or func_eval_time_limit_secs > time_left_for_modelfit:
             self._logger.warning(
@@ -2322,13 +2342,14 @@ class BaseTask(ABC):
             iteration = (self.num_stacking_layers+1)*ENSEMBLE_ITERATION_MULTIPLIER
             self._logger.debug(f"Starting post hoc ensemble fitting with iteration: {iteration}, ensemble.stacked_ensemble_identifiers: {ensemble.stacked_ensemble_identifiers}")
             final_model_identifiers, final_weights = self._posthoc_fit_ensemble(
-                optimize_metric=self.opt_metric,
-                time_left_for_ensemble=1,
+                optimize_metric=optimize_metric,
+                time_left_for_ensemble=time_for_post_fit_ensemble,
                 last_successful_smac_initial_num_run=initial_num_run,
                 ensemble_size=self.ensemble_size,
                 iteration=iteration,
                 enable_traditional_pipeline=enable_traditional_pipeline,
-                func_eval_time_limit_secs=func_eval_time_limit_secs
+                func_eval_time_limit_secs=func_eval_time_limit_secs,
+                dataset=current_dataset,
             )
             ensemble.identifiers_ = final_model_identifiers
             stacked_ensemble_identifiers = ensemble.stacked_ensemble_identifiers
@@ -2475,7 +2496,7 @@ class BaseTask(ABC):
         test_predictions = read_predictions(self._backend, self.seed, 0, self.precision, data_set='hpo_test')
 
         train_hpo_dataset = dataset.get_dataset("hpo")
-
+        
         unique_identifiers = []
         predictions_stacking_ensemble = []
         predictions_ensemble = []
@@ -2511,7 +2532,7 @@ class BaseTask(ABC):
         self._logger.debug(f"number of layer: {len(ensemble.predictions_stacking_ensemble)}, number of models: {len(ensemble.predictions_stacking_ensemble[0])}")
 
         iteration = 1
-        time_left_for_ensemble = total_walltime_limit-self._stopwatch.wall_elapsed(experiment_task_name)
+
         for cur_stacking_layer in range(self.num_stacking_layers):
             _ = save_stacking_ensemble(
                     iteration=iteration,
@@ -2551,7 +2572,7 @@ class BaseTask(ABC):
                 updated_model_configs.append((random_config, self.pipeline_options[self.pipeline_options['budget_type']]))
         else:
             updated_model_configs, current_search_space = model_configs, autogluon_nn_search_space
-        self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}")
+        self._logger.info(f"stacking_layer: {stacking_layer}, updated_model_configs: {updated_model_configs}, total_walltime: {total_walltime_limit}")
         lower_layer_model_identifiers = None
         if stacking_layer > 0:
             lower_layer_model_identifiers = model_identifiers[stacking_layer-1]
@@ -3371,6 +3392,7 @@ class BaseTask(ABC):
                         func_eval_time_limit_secs
                     )
                 )
+        self._backend.save_datamanager(dataset)
         # ============> Run Dummy predictions
         if (
             base_ensemble_method != BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo
@@ -3385,14 +3407,16 @@ class BaseTask(ABC):
         if enable_traditional_pipeline:
             self.run_traditional_ml(current_task_name=ensemble_fit_task_name,
                                     runtime_limit=time_for_task,
-                                    func_eval_time_limit_secs=func_eval_time_limit_secs)
+                                    func_eval_time_limit_secs=func_eval_time_limit_secs,
+                                    dataset=dataset)
 
         elapsed_time = self._stopwatch.wall_elapsed(ensemble_fit_task_name)
         time_left_for_ensemble = int(time_for_task - elapsed_time)
-        self._logger.debug(f"Starting to initialise ensemble with {time_left_for_ensemble}s, iteration: {iteration}")
+        optimize_metric = self.opt_metric if optimize_metric is None else optimize_metric
+        self._logger.debug(f"Starting to initialise ensemble with {time_left_for_ensemble}s, iteration: {iteration} optimize_metric: {optimize_metric}")
         manager = self._init_ensemble_builder(
             time_left_for_ensembles=time_left_for_ensemble,
-            optimize_metric=self.opt_metric if optimize_metric is None else optimize_metric,
+            optimize_metric=optimize_metric,
             precision=precision,
             ensemble_size=ensemble_size,
             ensemble_nbest=ensemble_nbest,

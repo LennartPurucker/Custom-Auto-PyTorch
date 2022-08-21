@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import json
 import logging
 import logging.handlers
 import os
@@ -11,7 +12,7 @@ import numpy as np
 
 import pandas as pd
 
-from smac.runhistory.runhistory import RunHistory
+from smac.runhistory.runhistory import RunHistory, RunKey, RunValue
 from smac.tae import StatusType
 
 from autoPyTorch.automl_common.common.utils.backend import Backend
@@ -548,6 +549,43 @@ class FineTuneStackingEnsembleBuilder(IterativeHPOStackingEnsembleBuilder):
                     run_key.budget,
                 )]
                 best_model_score = score
+
+        # train_layer_run_history_path = os.path.join(self.backend.internals_directory, f'run_history_{self.cur_stacking_layer}.json')
+        # if os.path.exists(train_layer_run_history_path):
+        #     train_layer_run_history = json.load(open(train_layer_run_history_path, 'r'))
+
+        #     for (run_key, run_value) in train_layer_run_history['data']:
+        #         run_key = RunKey(*run_key)
+        #         run_value = RunValue(*run_value)
+        #         if run_value.status == StatusType.CRASHED:
+        #             continue
+
+        #         score = self.metric._optimum - (self.metric._sign * run_value.cost)
+
+        #         if (score > best_model_score and self.metric._sign > 0) \
+        #                 or (score < best_model_score and self.metric._sign < 0):
+
+        #             # Make sure that the individual best model actually exists
+        #             model_dir = self.backend.get_numrun_directory(
+        #                 self.seed,
+        #                 run_value.additional_info['num_run'],
+        #                 run_key.budget,
+        #             )
+        #             model_file_name = self.backend.get_model_filename(
+        #                 self.seed,
+        #                 run_value.additional_info['num_run'],
+        #                 run_key.budget,
+        #             )
+        #             file_path = os.path.join(model_dir, model_file_name)
+        #             if not os.path.exists(file_path):
+        #                 continue
+
+        #             best_model_identifier = [(
+        #                 self.seed,
+        #                 run_value.additional_info['num_run'],
+        #                 run_key.budget,
+        #             )]
+        #             best_model_score = score
 
         if not best_model_identifier:
             raise ValueError(

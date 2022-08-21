@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ConfigSpace.configuration_space import Configuration
+from ..utils.configurations import is_configuration_traditional
 from autoPyTorch.utils.implementations import predict_with_stacked_ensemble
 from autoPyTorch.ensemble.ensemble_selection_types import BaseLayerEnsembleSelectionTypes, StackingEnsembleSelectionTypes
 from autoPyTorch.utils.common import read_predictions
@@ -323,34 +324,39 @@ class StackingFineTuneEvaluator(RepeatedCrossValEvaluator):
         hpo_preds = {}
         if self.mode == 'train':
             hpo_preds = {}
-            if self.hpo_dataset_path is None:
-                raise ValueError(f"Expected hpo_dataset_path to not be None if mode: {self.mode}")
-            train_hpo_dataset: TabularDataset = pickle.load(open(self.hpo_dataset_path, 'rb'))
-            X_train = train_hpo_dataset.train_tensors[0].copy()
-            X_test = train_hpo_dataset.test_tensors[0].copy()
-            y_train = train_hpo_dataset.train_tensors[0]
-            self.logger.debug(f"Shape before apending: {X_train.shape}")
-            if self.cur_stacking_layer != 0:
-                run_history_pred_path = None # os.path.join(self.backend.internals_directory, 'evaluator_hpo_read_preds.pkl')
-                ensemble_predictions = read_predictions(self.backend, self.seed, 0, 32, run_history_pred_path=run_history_pred_path, data_set='hpo_ensemble')
-                test_predictions = read_predictions(self.backend, self.seed, 0, 32, run_history_pred_path=run_history_pred_path, data_set='hpo_test')
-                hpo_ensemble_predictions = []
-                hpo_test_predictions = []
-                for identifier in self.lower_layer_model_identifiers:
-                    hpo_ensemble_predictions.append(ensemble_predictions[identifier])
-                    hpo_test_predictions.append(test_predictions[identifier])
-                X_train = np.concatenate([X_train , *hpo_ensemble_predictions], axis=1)
-                X_test = np.concatenate([X_test, *hpo_test_predictions], axis=1)
-                self.logger.debug(f"Shape after apending: {X_train.shape}, len hpo_ensemble_predictions : {len(hpo_ensemble_predictions)}")
+            if (
+                    isinstance(self.configuration, Configuration)
+                    and not is_configuration_traditional(self.configuration)
+                ):
+                if self.hpo_dataset_path is None:
+                    raise ValueError(f"Expected hpo_dataset_path to not be None if mode: {self.mode}")
 
-            if self.task_type in CLASSIFICATION_TASKS:
-                pipelines = VotingClassifier(estimators=None, voting='soft', )
-            pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
+                train_hpo_dataset: TabularDataset = pickle.load(open(self.hpo_dataset_path, 'rb'))
+                X_train = train_hpo_dataset.train_tensors[0].copy()
+                X_test = train_hpo_dataset.test_tensors[0].copy()
+                y_train = train_hpo_dataset.train_tensors[0]
+                self.logger.debug(f"Shape before apending: {X_train.shape}")
+                if self.cur_stacking_layer != 0:
+                    run_history_pred_path = None # os.path.join(self.backend.internals_directory, 'evaluator_hpo_read_preds.pkl')
+                    ensemble_predictions = read_predictions(self.backend, self.seed, 0, 32, run_history_pred_path=run_history_pred_path, data_set='hpo_ensemble')
+                    test_predictions = read_predictions(self.backend, self.seed, 0, 32, run_history_pred_path=run_history_pred_path, data_set='hpo_test')
+                    hpo_ensemble_predictions = []
+                    hpo_test_predictions = []
+                    for identifier in self.lower_layer_model_identifiers:
+                        hpo_ensemble_predictions.append(ensemble_predictions[identifier])
+                        hpo_test_predictions.append(test_predictions[identifier])
+                    X_train = np.concatenate([X_train , *hpo_ensemble_predictions], axis=1)
+                    X_test = np.concatenate([X_test, *hpo_test_predictions], axis=1)
+                    self.logger.debug(f"Shape after apending: {X_train.shape}, len hpo_ensemble_predictions : {len(hpo_ensemble_predictions)}")
 
-            hpo_ensemble_preds = pipelines.predict_proba(X_train)
-            hpo_preds['hpo_ensemble'] = self._ensure_prediction_array_sizes(hpo_ensemble_preds, y_train)
-            hpo_test_preds = pipelines.predict_proba(X_test)
-            hpo_preds['hpo_test'] = self._ensure_prediction_array_sizes(hpo_test_preds, y_train)
+                if self.task_type in CLASSIFICATION_TASKS:
+                    pipelines = VotingClassifier(estimators=None, voting='soft', )
+                pipelines.estimators_ = [pipeline for repeat_pipelines in self.pipelines for pipeline in repeat_pipelines if check_pipeline_is_fitted(pipeline, self.configuration)]
+
+                hpo_ensemble_preds = pipelines.predict_proba(X_train)
+                hpo_preds['hpo_ensemble'] = self._ensure_prediction_array_sizes(hpo_ensemble_preds, y_train)
+                hpo_test_preds = pipelines.predict_proba(X_test)
+                hpo_preds['hpo_test'] = self._ensure_prediction_array_sizes(hpo_test_preds, y_train)
             
 
         train_loss = None # self._loss(self.Y_actual_train, Y_train_pred)

@@ -142,6 +142,16 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
 
         self.backend = backend
 
+        self.logger_port = logger_port
+
+        if self.logger_port is None:
+            self.logger: Union[logging.Logger, PicklableClientLogger] = logging.getLogger("TAE")
+        else:
+            self.logger = get_named_client_logger(
+                name="TAE",
+                port=self.logger_port,
+            )
+
         dm = self.backend.load_datamanager()
         if dm.val_tensors is not None:
             self._get_validation_loss = True
@@ -167,7 +177,7 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
         elif isinstance(self.resampling_strategy, RepeatedCrossValTypes):
             if base_ensemble_method in (BaseLayerEnsembleSelectionTypes.ensemble_bayesian_optimisation, BaseLayerEnsembleSelectionTypes.ensemble_iterative_hpo):
                 eval_function = eval_ensemble_optimise_function
-            elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_fine_tune and stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
+            elif base_ensemble_method == BaseLayerEnsembleSelectionTypes.ensemble_fine_tune:  #  and stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_fine_tuning:
                 eval_function = eval_stacking_finetune_function
             elif (
                 stacking_ensemble_method == StackingEnsembleSelectionTypes.stacking_ensemble_selection_per_layer
@@ -215,14 +225,6 @@ class ExecuteTaFuncWithQueue(AbstractTAFunc):
                 os.path.join(os.path.dirname(__file__), '../configs/default_pipeline_options.json'))))
         self.pipeline_config.update(pipeline_config)
 
-        self.logger_port = logger_port
-        if self.logger_port is None:
-            self.logger: Union[logging.Logger, PicklableClientLogger] = logging.getLogger("TAE")
-        else:
-            self.logger = get_named_client_logger(
-                name="TAE",
-                port=self.logger_port,
-            )
         self.all_supported_metrics = all_supported_metrics
 
         if memory_limit is not None:

@@ -153,6 +153,10 @@ DEFAULT_RESAMPLING_PARAMETERS: Dict[
         'num_splits': 2,
         'num_repeats': 2
     },
+    RepeatedCrossValTypes.stratified_repeated_k_fold_cross_validation: {
+        'num_splits': 2,
+        'num_repeats': 2
+    },
 }
 
 

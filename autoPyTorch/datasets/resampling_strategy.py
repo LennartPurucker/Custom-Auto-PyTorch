@@ -115,8 +115,8 @@ class RepeatedCrossValTypes(IntEnum):
     stratified_repeated_k_fold_cross_validation 1
     repeated_k_fold_cross_validation 2
     """
-    stratified_repeated_k_fold_cross_validation = 1
-    repeated_k_fold_cross_validation = 2
+    stratified_repeated_k_fold_cross_validation = 9
+    repeated_k_fold_cross_validation = 10
 
     def is_stratified(self) -> bool:
         stratified = [self.stratified_repeated_k_fold_cross_validation]

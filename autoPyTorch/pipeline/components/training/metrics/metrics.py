@@ -3,7 +3,7 @@ from functools import partial
 
 import sklearn.metrics
 
-from smac.utils.constants import MAXINT
+MAXINT = 2 ** 31 - 1
 
 from autoPyTorch.pipeline.components.training.metrics.base import make_metric
 

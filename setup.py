@@ -4,7 +4,7 @@ with open("README.md", "r") as f:
     long_description = f.read()
 
 requirements = []
-with open("requirements.txt", "r") as f:
+with open("experiments_requirements.txt", "r") as f:
     for line in f:
         requirements.append(line.strip())
 

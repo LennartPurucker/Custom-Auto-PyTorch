@@ -162,18 +162,12 @@ class LearnedEntityEmbedding(NetworkEmbeddingComponent):
     @staticmethod
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, Any]] = None,
-        min_unique_values_for_embedding: HyperparameterSearchSpace = HyperparameterSearchSpace(
-            hyperparameter="min_unique_values_for_embedding",
-            value_range=(3, 7),
-            default_value=5,
-            log=True),
         dimension_reduction: HyperparameterSearchSpace = HyperparameterSearchSpace(
             hyperparameter="dimension_reduction",
             value_range=(0, 1),
             default_value=0.5),
     ) -> ConfigurationSpace:
         cs = ConfigurationSpace()
-        add_hyperparameter(cs, min_unique_values_for_embedding, UniformIntegerHyperparameter)
         if dataset_properties is not None:
             for i in range(len(dataset_properties['categorical_columns'])
                            if isinstance(dataset_properties['categorical_columns'], List) else 0):

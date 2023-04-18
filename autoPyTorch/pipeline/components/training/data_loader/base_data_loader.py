@@ -4,6 +4,7 @@ from ConfigSpace.configuration_space import ConfigurationSpace
 from ConfigSpace.hyperparameters import (
     UniformIntegerHyperparameter,
 )
+from autoPyTorch.datasets.resampling_strategy import NoResamplingStrategyTypes
 
 import numpy as np
 
@@ -152,6 +153,7 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
             shuffle=False,
             train_transforms=self.test_transform,
             val_transforms=self.test_transform,
+            resampling_strategy=NoResamplingStrategyTypes.no_resampling,
         )
         return torch.utils.data.DataLoader(
             dataset,

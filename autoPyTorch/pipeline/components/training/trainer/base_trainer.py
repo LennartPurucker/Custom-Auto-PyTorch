@@ -430,7 +430,7 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         if self.task_type in CLASSIFICATION_TASKS:
             if self.output_type == BINARY:
                 # BCE requires target to be float.
-                outputs = torch.squeeze(outputs)
+                outputs = torch.squeeze(outputs, dim=1)
 
         return outputs
 

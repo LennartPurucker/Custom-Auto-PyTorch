@@ -94,8 +94,8 @@ class TabularDataset(BaseDataset):
         if X_val is not None:
             X_val, Y_val = validator.transform(X_val, Y_val)
 
-            train_indices = range(X.shape[0])
-            val_indices = range(X_val.shape[0])
+            train_indices = list(range(X.shape[0]))
+            val_indices = list(range(max(train_indices) + 1, max(train_indices) + 1 + X_val.shape[0]))
 
             self.splits = [(train_indices, val_indices)]
             if hasattr(X, 'iloc'):

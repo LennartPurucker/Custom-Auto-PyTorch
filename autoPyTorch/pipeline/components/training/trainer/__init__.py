@@ -18,7 +18,7 @@ from torch.optim import Optimizer, swa_utils
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from autoPyTorch.constants import CLASSIFICATION_TASKS, STRING_TO_TASK_TYPES
+from autoPyTorch.constants import CLASSIFICATION_TASKS, STRING_TO_OUTPUT_TYPES, STRING_TO_TASK_TYPES
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.base_choice import autoPyTorchChoice
 from autoPyTorch.pipeline.components.base_component import (
@@ -313,6 +313,7 @@ class TrainerChoice(autoPyTorchChoice):
 
         self.choice.prepare(
             model=X['network'],
+            model_final_activation=X['final_activation'],
             metrics=metrics,
             criterion=get_loss(X['dataset_properties'],
                                name=additional_losses),
@@ -322,6 +323,7 @@ class TrainerChoice(autoPyTorchChoice):
             metrics_during_training=X['metrics_during_training'],
             scheduler=X['lr_scheduler'],
             task_type=STRING_TO_TASK_TYPES[X['dataset_properties']['task_type']],
+            output_type=STRING_TO_OUTPUT_TYPES[X['dataset_properties']['output_type']],
             labels=labels,
             step_interval=X['step_interval'],
             numerical_columns=X['dataset_properties']['numerical_columns'] if 'numerical_columns' in X[
@@ -470,7 +472,7 @@ class TrainerChoice(autoPyTorchChoice):
             if 'val_data_loader' in X and X['val_data_loader']:
                 val_loss, val_metrics = self.choice.evaluate(X['val_data_loader'], epoch, writer)
             if 'test_data_loader' in X and X['test_data_loader']:
-                test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'])
+                test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'], epoch, writer)
             self.run_summary.add_performance(
                 epoch=epoch,
                 start_time=start_time,
@@ -581,7 +583,7 @@ class TrainerChoice(autoPyTorchChoice):
             bool: if True, the model is evaluated in every epoch
 
         """
-        if 'early_stopping' in X and X['early_stopping']:
+        if 'early_stopping' in X and X['early_stopping'] >= 0:
             return True
 
         # We need to know if we should reduce the rate based on val loss

@@ -128,7 +128,7 @@ class QuantileLoss(AbstractForecastingLoss):
 losses = dict(
     classification=dict(
         CrossEntropyLoss=dict(
-            module=CrossEntropyLoss, supported_output_types=[MULTICLASS, BINARY]),
+            module=CrossEntropyLoss, supported_output_types=[MULTICLASS]),
         BCEWithLogitsLoss=dict(
             module=BCEWithLogitsLoss, supported_output_types=[BINARY])),
     regression=dict(
@@ -157,7 +157,7 @@ default_losses: Dict[str, Type[Loss]] = dict(classification=CrossEntropyLoss,
 LOSS_TYPES = ['regression', 'distribution']
 
 
-def get_default(task: int) -> Type[Loss]:
+def get_default(task: int, output_type: int) -> Type[Loss]:
     """
     Utility function to get default loss for the task
     Args:
@@ -167,7 +167,8 @@ def get_default(task: int) -> Type[Loss]:
         Type[torch.nn.modules.loss._Loss]
     """
     if task in CLASSIFICATION_TASKS:
-        return default_losses['classification']
+        # TODO: Fix this
+        return [get_supported_losses(task, output_type).values()][0]
     elif task in REGRESSION_TASKS:
         return default_losses['regression']
     elif task in FORECASTING_TASKS:
@@ -235,6 +236,6 @@ def get_loss(dataset_properties: Dict[str, Any], name: Optional[str] = None) -> 
         else:
             loss = supported_losses[name]
     else:
-        loss = get_default(task)
+        loss = get_default(task, output_type)
 
     return loss

@@ -20,7 +20,7 @@ from torch.optim import Optimizer, swa_utils
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from autoPyTorch.constants import CLASSIFICATION_TASKS, FORECASTING_TASKS, REGRESSION_TASKS, STRING_TO_TASK_TYPES
+from autoPyTorch.constants import BINARY, CLASSIFICATION_TASKS, FORECASTING_TASKS, REGRESSION_TASKS, STRING_TO_TASK_TYPES
 from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.lr_scheduler.constants import StepIntervalUnit
 from autoPyTorch.pipeline.components.training.base_training import autoPyTorchTrainingComponent
@@ -362,6 +362,8 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         scheduler: _LRScheduler,
         task_type: int,
         labels: Union[np.ndarray, torch.Tensor, pd.DataFrame],
+        output_type: int,
+        model_final_activation: Optional[torch.nn.Module] = None,
         step_interval: Union[str, StepIntervalUnit] = StepIntervalUnit.batch,
         numerical_columns: Optional[List[int]] = None,
         **kwargs: Dict
@@ -382,11 +384,11 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         self.criterion = criterion(**kwargs)
         # setup the model
         self.model = model.to(device)
-
+        self.model_final_activation = model_final_activation.to(self.device)
         # in case we are using swa, maintain an averaged model,
         if self.use_stochastic_weight_averaging:
             self.swa_model = swa_utils.AveragedModel(self.model, avg_fn=swa_update)
-
+            self.swa_model.to(self.device)
         # in case we are using se or swa, initialise budget_threshold to know when to start swa or se
         self._budget_threshold = 0
         if self.use_stochastic_weight_averaging or self.use_snapshot_ensemble:
@@ -421,6 +423,7 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
 
         # task type (used for calculating metrics)
         self.task_type = task_type
+        self.output_type = output_type
 
         # for cutout trainer, we need the list of numerical columns
         self.numerical_columns = numerical_columns
@@ -465,7 +468,6 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
             model_copy = deepcopy(self.model)
 
         assert model_copy is not None
-        model_copy.cpu()
         self.model_snapshots.append(model_copy)
         self.model_snapshots = self.model_snapshots[-self.se_lastk:]
 
@@ -552,8 +554,11 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
 
             loss, outputs = self.train_step(data, targets)
 
+            # Store probability data
+            if self.model_final_activation is not None:
+                outputs = self.model_final_activation(outputs)
+
             if self.metrics_during_training:
-                # save for metric evaluation
                 outputs_data.append(outputs.detach().cpu())
                 targets_data.append(targets.detach().cpu())
 
@@ -585,8 +590,22 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
             if targets.ndim == 1:
                 targets = targets.unsqueeze(1)
         else:
-            targets = targets.long().to(self.device)
+            # make sure that targets will have same shape as outputs (really important for mse loss for example)
+            if self.output_type == BINARY:
+                # BCE requires target to be float.
+                targets = targets.float().to(self.device)
+            else:
+                targets = targets.long().to(self.device)
+
         return targets
+
+    def squeeze_outputs_pre_criterion(self, outputs: torch.Tensor) -> torch.Tensor:
+        if self.task_type in CLASSIFICATION_TASKS:
+            if self.output_type == BINARY:
+                # BCE requires target to be float.
+                outputs = torch.squeeze(outputs, dim=1)
+
+        return outputs
 
     def train_step(self, data: torch.Tensor, targets: torch.Tensor) -> Tuple[float, torch.Tensor]:
         """
@@ -614,7 +633,9 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         self.optimizer.zero_grad()
         outputs = self.model(data)
         loss_func = self.criterion_preparation(**criterion_kwargs)
-        loss = loss_func(self.criterion, outputs)
+        loss = loss_func(self.criterion,
+                         self.squeeze_outputs_pre_criterion(outputs),
+        )
         loss.backward()
         self.optimizer.step()
         self._scheduler_step(step_interval=StepIntervalUnit.batch, loss=loss.item())
@@ -657,12 +678,19 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
 
                 outputs = self.model(data)
 
-                loss = self.criterion(outputs, targets)
+                loss = self.criterion(
+                    self.squeeze_outputs_pre_criterion(outputs),
+                    targets)
                 loss_sum += loss.item() * batch_size
                 N += batch_size
 
-                outputs_data.append(outputs.detach().cpu())
-                targets_data.append(targets.detach().cpu())
+                # Store probability data
+                if self.model_final_activation is not None:
+                    outputs = self.model_final_activation(outputs)
+
+                if self.metrics_during_training:
+                    outputs_data.append(outputs.detach().cpu())
+                    targets_data.append(targets.detach().cpu())
 
                 if writer:
                     writer.add_scalar(
@@ -674,7 +702,10 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         self._scheduler_step(step_interval=StepIntervalUnit.valid, loss=loss_sum / N)
 
         self.model.train()
-        return loss_sum / N, self.compute_metrics(outputs_data, targets_data)
+        if self.metrics_during_training:
+            return loss_sum / N, self.compute_metrics(outputs_data, targets_data)
+        else:
+            return loss_sum / N, {}
 
     def compute_metrics(self, outputs_data: List[torch.Tensor], targets_data: List[torch.Tensor]
                         ) -> Dict[str, float]:

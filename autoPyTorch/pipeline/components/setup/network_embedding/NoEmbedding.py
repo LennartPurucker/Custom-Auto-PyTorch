@@ -30,7 +30,7 @@ class NoEmbedding(NetworkEmbeddingComponent):
     def build_embedding(self,
                         num_categories_per_col: np.ndarray,
                         num_features_excl_embed: int) -> Tuple[nn.Module, Optional[List[int]]]:
-        self.num_out_feats = num_features_excl_embed + num_categories_per_col.shape[0]
+        self.num_out_feats = num_categories_per_col.shape[0]
         return _NoEmbedding(), None
 
     @staticmethod

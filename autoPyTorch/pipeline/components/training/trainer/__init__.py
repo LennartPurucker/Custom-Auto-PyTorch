@@ -484,7 +484,6 @@ class TrainerChoice(autoPyTorchChoice):
                 val_metrics=val_metrics,
                 test_metrics=test_metrics,
             )
-            self.save_model_for_ensemble()
 
         # As training have finished, load the best weight
         if self.checkpoint_dir is not None:

@@ -168,7 +168,7 @@ def get_default(task: int, output_type: int) -> Type[Loss]:
     """
     if task in CLASSIFICATION_TASKS:
         # TODO: Fix this
-        return [get_supported_losses(task, output_type).values()][0]
+        return list(get_supported_losses(task, output_type).values())[0]
     elif task in REGRESSION_TASKS:
         return default_losses['regression']
     elif task in FORECASTING_TASKS:

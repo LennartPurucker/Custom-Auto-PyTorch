@@ -91,17 +91,17 @@ class TabularColumnTransformer(autoPyTorchTabularPreprocessingComponent):
 
         # Where to get the data -- Prioritize X_train if any else
         # get from backend
-        if 'X_train' in X:
-            X_train = subsampler(X['X_train'], X['train_indices'])
-        else:
-            X_train = X['backend'].load_datamanager().train_tensors[0]
+        # if 'X_train' in X:
+        #     X_train = subsampler(X['X_train'], X['train_indices'])
+        # else:
+        #     X_train = X['backend'].load_datamanager().train_tensors[0]
 
-        if 'y_train' in X:
-            y_train = subsampler(X['y_train'], X['train_indices'])
-        else:
-            y_train = X['backend'].load_datamanager().train_tensors[1]
+        # if 'y_train' in X:
+        #     y_train = subsampler(X['y_train'], X['train_indices'])
+        # else:
+        #     y_train = X['backend'].load_datamanager().train_tensors[1]
 
-        self.preprocessor.fit(X_train, y=y_train)
+        # self.preprocessor.fit(X_train, y=y_train)
 
         return self
 

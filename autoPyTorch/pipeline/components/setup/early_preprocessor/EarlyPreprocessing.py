@@ -30,20 +30,20 @@ class EarlyPreprocessing(autoPyTorchSetupComponent):
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
 
-        transforms = get_preprocess_transforms(X)
-        if 'X_train' in X:
-            X_train = X['X_train']
-        else:
-            # Incorporate the transform to the dataset
-            X_train = X['backend'].load_datamanager().train_tensors[0]
+        # transforms = get_preprocess_transforms(X)
+        # if 'X_train' in X:
+        #     X_train = X['X_train']
+        # else:
+        #     # Incorporate the transform to the dataset
+        #     X_train = X['backend'].load_datamanager().train_tensors[0]
 
-        X['X_train'] = preprocess(dataset=X_train, transforms=transforms)
+        # X['X_train'] = preprocess(dataset=X_train, transforms=transforms)
 
         preprocessed_dtype = get_preprocessed_dtype(X['X_train'])
 
         # We need to also save the preprocess transforms for inference
         X.update({
-                 'preprocess_transforms': transforms,
+                #  'preprocess_transforms': transforms,
                  'shape_after_preprocessing': X['X_train'].shape[1:],
                  'preprocessed_dtype': preprocessed_dtype
                  })

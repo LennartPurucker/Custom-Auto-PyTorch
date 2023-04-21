@@ -77,6 +77,7 @@ class NetworkComponent(autoPyTorchTrainingComponent):
         The transform function updates the network in the X dictionary.
         """
         X.update({'network': self.network,
+                  'final_activation': self.final_activation,
                   'network_snapshots': self.network_snapshots})
         return X
 

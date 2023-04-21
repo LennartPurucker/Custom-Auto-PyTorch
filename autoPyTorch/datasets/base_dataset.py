@@ -70,7 +70,8 @@ def _get_output_properties(train_tensors: BaseDatasetInputType) -> Tuple[int, st
 
     output_type: str = type_of_target(target_labels)
     if STRING_TO_OUTPUT_TYPES[output_type] in CLASSIFICATION_OUTPUTS:
-        output_dim = len(np.unique(target_labels))
+        n_classes = len(np.unique(target_labels))
+        output_dim = n_classes if n_classes > 2 else 1
     elif target_labels.ndim > 1:
         output_dim = target_labels.shape[-1]
     else:
@@ -170,7 +171,8 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
 
         self.no_resampling_validators = NoResamplingFuncs.get_no_resampling_validators(*NoResamplingStrategyTypes)
 
-        self.splits = self.get_splits_from_resampling_strategy()
+        if not (hasattr(self, 'splits') and self.splits is not None):
+            self.splits = self.get_splits_from_resampling_strategy()
 
         # We also need to be able to transform the data, be it for pre-processing
         # or for augmentation

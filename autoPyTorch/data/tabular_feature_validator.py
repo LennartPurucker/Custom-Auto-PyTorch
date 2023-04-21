@@ -390,9 +390,13 @@ class TabularFeatureValidator(BaseFeatureValidator):
 
             dtypes = [dtype.name for dtype in X.dtypes]
             diff_cols = X.columns[[s_dtype != dtype for s_dtype, dtype in zip(self.dtypes, dtypes)]]
+            diff_dtypes_train = np.array(self.dtypes)[diff_cols]
+            diff_dtypes_test = np.array(dtypes)[diff_cols]
+            diff_dtypes_combined = np.concatenate([diff_dtypes_train, diff_dtypes_test]).tolist()
+            int_float_diffs = ['int' in diff_dtype.lower() or 'float' in diff_dtype.lower() for diff_dtype in set(diff_dtypes_combined)]
             if len(self.dtypes) == 0:
                 self.dtypes = dtypes
-            elif not self._is_datasets_consistent(diff_cols, X):
+            elif not self._is_datasets_consistent(diff_cols, X) and not all(int_float_diffs):
                 raise ValueError("The dtype of the features must not be changed after fit(), but"
                                  " the dtypes of some columns are different between training ({}) and"
                                  " test ({}) datasets.".format(self.dtypes, dtypes))

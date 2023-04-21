@@ -18,6 +18,7 @@ class NetworkEmbeddingComponent(autoPyTorchSetupComponent):
             FitRequirement('shape_after_preprocessing', (Tuple[int],), user_defined=False, dataset_property=False)])
 
         self.embedding: Optional[nn.Module] = None
+        self.num_out_feats: Optional[int] = None
         self.random_state = random_state
         self.feature_shapes: Dict[str, int] = {}
 
@@ -29,6 +30,7 @@ class NetworkEmbeddingComponent(autoPyTorchSetupComponent):
             num_categories_per_col=num_categories_per_col,
             num_features_excl_embed=num_features_excl_embed
         )
+
         if "feature_shapes" in X['dataset_properties']:
             if num_output_features is not None:
                 feature_shapes = X['dataset_properties']['feature_shapes']
@@ -44,6 +46,7 @@ class NetworkEmbeddingComponent(autoPyTorchSetupComponent):
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
         X.update({'network_embedding': self.embedding})
+        X.update({"embedding_out_dim": self.num_out_feats})
         if "feature_shapes" in X['dataset_properties']:
             X['dataset_properties'].update({"feature_shapes": self.feature_shapes})
         return X
@@ -79,7 +82,7 @@ class NetworkEmbeddingComponent(autoPyTorchSetupComponent):
         categories_per_embed_col = X['dataset_properties']['num_categories_per_col']
 
         # only fill num categories for embedding columns
-        for idx, cats in enumerate(categories_per_embed_col, start=num_features_excl_embed):
+        for idx, cats in zip(X['embed_columns'], categories_per_embed_col):
             num_categories_per_col[idx] = cats
 
         return num_features_excl_embed, num_categories_per_col

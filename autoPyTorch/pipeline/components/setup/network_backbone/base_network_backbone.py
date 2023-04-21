@@ -49,13 +49,11 @@ class NetworkBackboneComponent(autoPyTorchComponent):
         """
         self.check_requirements(X, y)
 
-        input_shape = X['shape_after_preprocessing']
-
-        input_shape = get_output_shape(X['network_embedding'], input_shape=input_shape)
-        self.input_shape = input_shape
+        # Get the number of output features from the embedding
+        self.input_shape = (X["embedding_out_dim"],)
 
         self.backbone = self.build_backbone(
-            input_shape=input_shape,
+            input_shape=self.input_shape,
         )
         return self
 

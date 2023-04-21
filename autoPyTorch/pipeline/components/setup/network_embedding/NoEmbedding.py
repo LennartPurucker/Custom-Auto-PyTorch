@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ConfigSpace.configuration_space import ConfigurationSpace
 
@@ -30,8 +30,11 @@ class NoEmbedding(NetworkEmbeddingComponent):
     def build_embedding(self,
                         num_categories_per_col: np.ndarray,
                         num_features_excl_embed: int) -> Tuple[nn.Module, Optional[List[int]]]:
+        self.num_out_feats = num_features_excl_embed + num_categories_per_col.shape[0]
         return _NoEmbedding(), None
 
+    def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
+        return X.update({"embedding_out_dim": self.num_out_feats})
     @staticmethod
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,

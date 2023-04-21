@@ -72,10 +72,10 @@ class FeatureDataLoader(BaseDataLoaderComponent):
         # distinction is performed
         candidate_transformations: List[Callable] = []
 
-        if 'test' in mode:
-            candidate_transformations.append((ExpandTransform()))
-            candidate_transformations.extend(X['preprocess_transforms'])
-            candidate_transformations.append((ContractTransform()))
+        # if 'test' in mode:
+        #     candidate_transformations.append((ExpandTransform()))
+        #     candidate_transformations.extend(X['preprocess_transforms'])
+        #     candidate_transformations.append((ContractTransform()))
 
         # Transform to tensor
         candidate_transformations.append(torch.from_numpy)
@@ -93,5 +93,6 @@ class FeatureDataLoader(BaseDataLoaderComponent):
                 mechanism, in which during a transform, a components adds relevant information
                 so that further stages can be properly fitted
         """
-        if 'preprocess_transforms' not in X:
-            raise ValueError("Cannot find the preprocess_transforms in the fit dictionary")
+        # if 'preprocess_transforms' not in X:
+        #     raise ValueError("Cannot find the preprocess_transforms in the fit dictionary")
+        pass

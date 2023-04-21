@@ -28,13 +28,13 @@ class LearnedEntityEmbeddingReduced(NetworkEmbeddingComponent):
         super().__init__(random_state=random_state)
         self.config = kwargs
 
-       def build_embedding(self, num_categories_per_col: np.ndarray, num_features_excl_embed: int) -> Tuple[_LearnedEntityEmbedding, int]:
+    def build_embedding(self, num_categories_per_col: np.ndarray, num_features_excl_embed: int) -> Tuple[_LearnedEntityEmbedding, int]:
 
         embedding = _LearnedEntityEmbedding(config=self.config,
                                        num_categories_per_col=num_categories_per_col,
                                        num_features_excl_embed=num_features_excl_embed,
                                        reduced=True)
-
+        self.num_out_feats = embedding.num_out_feats
         return embedding, embedding.num_output_dimensions
 
     @staticmethod

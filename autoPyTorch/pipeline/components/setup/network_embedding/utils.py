@@ -64,10 +64,11 @@ def get_num_output_dimensions(config, num_categs_per_feature, num_features_excl_
 
     embed_features = [num_in >= 2 for num_in in
                                num_categs_per_feature]
-    num_output_dimensions = [ceil(config["dimension_reduction_" + str(i)] * num_in) for i, num_in in
-                                        enumerate(num_embed_features)]                 
+    
+    num_output_dimensions = [0] * num_features_excl_embed
 
-    num_output_dimensions.extend([0] * num_features_excl_embed)
+    num_output_dimensions.extend([ceil(config["dimension_reduction_" + str(i)] * num_in) for i, num_in in
+                                        enumerate(num_embed_features)]) 
 
     num_output_dimensions = [num_out if embed else 1 for num_out, embed in
                                     zip(num_output_dimensions, embed_features)]
@@ -103,7 +104,7 @@ class _LearnedEntityEmbedding(nn.Module):
                 self.num_embed_features
             )
 
-        self.num_out_feats = num_features_excl_embed + sum(self.num_output_dimensions)
+        self.num_out_feats = sum(self.num_output_dimensions)
 
         self.ee_layers = self._create_ee_layers()
 

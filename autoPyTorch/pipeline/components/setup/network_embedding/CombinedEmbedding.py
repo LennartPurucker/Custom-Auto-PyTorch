@@ -17,7 +17,7 @@ from autoPyTorch.datasets.base_dataset import BaseDatasetPropertiesType
 from autoPyTorch.pipeline.components.setup.network_embedding.base_network_embedding import NetworkEmbeddingComponent
 from autoPyTorch.utils.common import HyperparameterSearchSpace, add_hyperparameter
 
-def get_num_output_dimensions(config):
+def get_num_output_dimensions(config, num_embed_features):
     """
         Returns list of embedding sizes for each categorical variable.
         Selects this adaptively based on training_datset.
@@ -34,7 +34,7 @@ def get_num_output_dimensions(config):
             1 if the column is not an embed column
     """
 
-    return [config["embedding_dim"]]
+    return [config["embedding_dim"] * num_embed_features.shape[0]]
 
 class _CombinedEmbedding(nn.Module):
     """ Learned entity embedding module for categorical features"""
@@ -56,24 +56,24 @@ class _CombinedEmbedding(nn.Module):
 
         self.num_embed_features = self.num_categories_per_col[self.embed_features]
 
-        category_offsets = torch.tensor([0] + self.num_embed_features[:-1]).cumsum(0)
+        category_offsets = torch.tensor([0] + self.num_embed_features[:-1].tolist()).cumsum(0)
         self.register_buffer("category_offsets", category_offsets)
         self.category_embeddings = nn.Embedding(int(sum(self.num_embed_features)), config["embedding_dim"])
         nn.init.kaiming_uniform_(self.category_embeddings.weight, a=math.sqrt(5))
         
         self.num_output_dimensions = get_num_output_dimensions(
             config,
+            self.num_embed_features
         )
 
         self.num_out_feats = num_features_excl_embed + sum(self.num_output_dimensions)
 
-        self.ee_layers = self._create_ee_layers()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # pass the columns of each categorical feature through entity embedding layer
         # before passing it through the model
         x_num = x[:, ~self.embed_features]
-        x_cat = x[:, self.embed_features]
+        x_cat = x[:, self.embed_features].long()
         x_cat = self.category_embeddings(x_cat + self.category_offsets[None]).view(x_cat.size(0), -1)
         return torch.cat([x_num, x_cat], dim=1)
 
@@ -92,7 +92,7 @@ class CombinedEmbedding(NetworkEmbeddingComponent):
         embedding = _CombinedEmbedding(config=self.config,
                                        num_categories_per_col=num_categories_per_col,
                                        num_features_excl_embed=num_features_excl_embed)
-
+        self.num_out_feats = embedding.num_out_feats
         return embedding, embedding.num_output_dimensions
 
     @staticmethod

@@ -28,7 +28,7 @@ class LearnedEntityEmbedding(NetworkEmbeddingComponent):
                                        num_categories_per_col=num_categories_per_col,
                                        num_features_excl_embed=num_features_excl_embed,
                                        reduced=False)
-
+        self.num_out_feats = embedding.num_out_feats
         return embedding, embedding.num_output_dimensions
 
     @staticmethod

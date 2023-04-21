@@ -19,7 +19,7 @@ def head(request):
     return request.param
 
 
-@pytest.fixture(params=['NoEmbedding', 'LearnedEntityEmbedding'])
+@pytest.fixture(params=['NoEmbedding', 'LearnedEntityEmbedding', 'LearnedEntityEmbeddingReduced', 'CombinedEmbedding'])
 def embedding(request):
     return request.param
 
@@ -39,10 +39,11 @@ class TestNetworks:
         include = {'network_backbone': [backbone], 'network_head': [head], 'network_embedding': [embedding]}
 
         if len(fit_dictionary_tabular['dataset_properties']
-               ['categorical_columns']) == 0 and embedding == 'LearnedEntityEmbedding':
+               ['categorical_columns']) == 0 and embedding != 'NoEmbedding':
             pytest.skip("Learned Entity Embedding is not used with numerical only data")
         pipeline = TabularClassificationPipeline(
             dataset_properties=fit_dictionary_tabular['dataset_properties'],
+            exclude={'encoder': ["OneHotEncoder"]},
             include=include)
 
         cs = pipeline.get_hyperparameter_search_space()

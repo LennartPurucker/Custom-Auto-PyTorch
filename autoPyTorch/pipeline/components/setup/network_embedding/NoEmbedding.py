@@ -34,7 +34,8 @@ class NoEmbedding(NetworkEmbeddingComponent):
         return _NoEmbedding(), None
 
     def transform(self, X: Dict[str, Any]) -> Dict[str, Any]:
-        return X.update({"embedding_out_dim": self.num_out_feats})
+        X.update({"embedding_out_dim": self.num_out_feats})
+        return X
     @staticmethod
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,

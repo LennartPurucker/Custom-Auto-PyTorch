@@ -147,6 +147,8 @@ class NetworkEmbeddingChoice(autoPyTorchChoice):
             defaults = [
                 'NoEmbedding',
                 'LearnedEntityEmbedding',
+                'LearnedEntityEmbeddingReduced',
+                'Combinedembedding'
             ]
             for default_ in defaults:
                 if default_ in available_embedding:

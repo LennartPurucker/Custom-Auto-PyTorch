@@ -67,7 +67,7 @@ class SimpleImputer(BaseImputer):
         dataset_properties: Optional[Dict[str, BaseDatasetPropertiesType]] = None,
         numerical_strategy: HyperparameterSearchSpace = HyperparameterSearchSpace(
             hyperparameter='numerical_strategy',
-            value_range=("mean", "median", "most_frequent", "constant_zero"),
+            value_range=("mean",), # "median", "most_frequent", "constant_zero"),
             default_value="mean",
         ),
     ) -> ConfigurationSpace:

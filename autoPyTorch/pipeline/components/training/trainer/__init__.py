@@ -459,13 +459,13 @@ class TrainerChoice(autoPyTorchChoice):
 
             # update batch norm statistics
             swa_model = self.choice.swa_model.double() if use_double else self.choice.swa_model
-            swa_utils.update_bn(loader=X['train_data_loader'], model=swa_model)
+            swa_utils.update_bn(loader=X['train_data_loader'], model=swa_model.cpu())
             # change model
             update_model_state_dict_from_swa(X['network'], self.choice.swa_model.state_dict())
             if self.choice.use_snapshot_ensemble:
                 # we update only the last network which pertains to the stochastic weight averaging model
                 snapshot_model = self.choice.model_snapshots[-1].double() if use_double else self.choice.model_snapshots[-1]
-                swa_utils.update_bn(X['train_data_loader'], snapshot_model)
+                swa_utils.update_bn(X['train_data_loader'], snapshot_model.cpu())
 
         # wrap up -- add score if not evaluating every epoch
         if not self.eval_valid_each_epoch(X):

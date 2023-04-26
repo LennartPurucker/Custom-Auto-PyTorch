@@ -35,7 +35,7 @@ class NetworkComponent(autoPyTorchTrainingComponent):
             FitRequirement("network_backbone", (torch.nn.Module,), user_defined=False, dataset_property=False),
             FitRequirement("network_embedding", (torch.nn.Module,), user_defined=False, dataset_property=False),
         ])
-        self.final_activation = None
+        self.final_activation: Optional[torch.nn.Module] = None
 
     def fit(self, X: Dict[str, Any], y: Any = None) -> autoPyTorchTrainingComponent:
         """
@@ -61,7 +61,10 @@ class NetworkComponent(autoPyTorchTrainingComponent):
         self.to(self.device)
 
         if STRING_TO_TASK_TYPES[X['dataset_properties']['task_type']] in CLASSIFICATION_TASKS:
-            self.final_activation = nn.Softmax(dim=1)
+            if X['dataset_properties']['output_shape'] > 1:
+                self.final_activation = nn.Softmax(dim=1)
+            else:
+                self.final_activation = nn.Sigmoid()
 
         self.is_fitted_ = True
 
@@ -72,7 +75,8 @@ class NetworkComponent(autoPyTorchTrainingComponent):
         The transform function updates the network in the X dictionary.
         """
         X.update({'network': self.network,
-                  'network_snapshots': self.network_snapshots})
+                  'network_snapshots': self.network_snapshots,
+                  'final_activation': self.final_activation})
         return X
 
     def get_network(self) -> nn.Module:

@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 
-from autoPyTorch.constants import CLASSIFICATION_TASKS, REGRESSION_TASKS, STRING_TO_TASK_TYPES
+from autoPyTorch.constants import CLASSIFICATION_TASKS, REGRESSION_TASKS, STRING_TO_TASK_TYPES, BINARY
 from autoPyTorch.pipeline.components.training.base_training import autoPyTorchTrainingComponent
 from autoPyTorch.pipeline.components.training.metrics.utils import calculate_score
 from autoPyTorch.pipeline.components.training.trainer.utils import Lookahead, swa_update
@@ -233,8 +233,10 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         metrics_during_training: bool,
         scheduler: _LRScheduler,
         task_type: int,
+        output_type: int,
         labels: Union[np.ndarray, torch.Tensor, pd.DataFrame],
-        numerical_columns: Optional[List[int]] = None
+        numerical_columns: Optional[List[int]] = None,
+        model_final_activation: Optional[torch.nn.Module] = None,
     ) -> None:
 
         # Save the device to be used
@@ -252,11 +254,11 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         self.criterion = criterion(**kwargs)
         # setup the model
         self.model = model.to(device)
-
+        self.model_final_activation = model_final_activation.to(device)
         # in case we are using swa, maintain an averaged model,
         if self.use_stochastic_weight_averaging:
             self.swa_model = swa_utils.AveragedModel(self.model, avg_fn=swa_update)
-
+            self.swa_model.to(device)
         # in case we are using se or swa, initialise budget_threshold to know when to start swa or se
         self._budget_threshold = 0
         if self.use_stochastic_weight_averaging or self.use_snapshot_ensemble:
@@ -290,7 +292,7 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
 
         # task type (used for calculating metrics)
         self.task_type = task_type
-
+        self.output_type = output_type
         # for cutout trainer, we need the list of numerical columns
         self.numerical_columns = numerical_columns
 
@@ -375,8 +377,13 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
             loss, outputs = self.train_step(data, targets)
 
             # save for metric evaluation
-            outputs_data.append(outputs.detach().cpu())
-            targets_data.append(targets.detach().cpu())
+            # Store probability data
+            if self.model_final_activation is not None:
+                outputs = self.model_final_activation(outputs)
+
+            if self.metrics_during_training:
+                outputs_data.append(outputs.detach().cpu())
+                targets_data.append(targets.detach().cpu())
 
             batch_size = data.size(0)
             loss_sum += loss * batch_size
@@ -407,8 +414,21 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
             if targets.ndim == 1:
                 targets = targets.unsqueeze(1)
         else:
-            targets = targets.long().to(self.device)
+            # make sure that targets will have same shape as outputs (really important for mse loss for example)
+            if self.output_type == BINARY:
+                # BCE requires target to be float.
+                targets = targets.float().to(self.device)
+            else:
+                targets = targets.long().to(self.device)
         return targets
+
+    def squeeze_outputs_pre_criterion(self, outputs: torch.Tensor) -> torch.Tensor:
+        if self.task_type in CLASSIFICATION_TASKS:
+            if self.output_type == BINARY:
+                # BCE requires target to be float.
+                outputs = torch.squeeze(outputs, dim=1)
+
+        return outputs
 
     def train_step(self, data: np.ndarray, targets: np.ndarray) -> Tuple[float, torch.Tensor]:
         """
@@ -468,12 +488,19 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
 
                 outputs = self.model(data)
 
-                loss = self.criterion(outputs, targets)
+                loss = self.criterion(
+                    self.squeeze_outputs_pre_criterion(outputs),
+                    targets)
                 loss_sum += loss.item() * batch_size
                 N += batch_size
 
-                outputs_data.append(outputs.detach().cpu())
-                targets_data.append(targets.detach().cpu())
+                # Store probability data
+                if self.model_final_activation is not None:
+                    outputs = self.model_final_activation(outputs)
+
+                if self.metrics_during_training:
+                    outputs_data.append(outputs.detach().cpu())
+                    targets_data.append(targets.detach().cpu())
 
                 if writer:
                     writer.add_scalar(
@@ -483,7 +510,10 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
                     )
 
         self.model.train()
-        return loss_sum / N, self.compute_metrics(outputs_data, targets_data)
+        if self.metrics_during_training:
+            return loss_sum / N, self.compute_metrics(outputs_data, targets_data)
+        else:
+            return loss_sum / N, {}
 
     def compute_metrics(self, outputs_data: np.ndarray, targets_data: np.ndarray
                         ) -> Dict[str, float]:

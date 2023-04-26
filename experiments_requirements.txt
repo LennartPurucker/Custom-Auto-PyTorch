@@ -1,0 +1,12 @@
+catboost
+ConfigSpace==0.6.1
+emcee==3.1.4
+numpy==1.24.2
+opencv-python==4.7.0.72
+pyrfr==0.9.0
+smac==2.0.0
+tabulate==0.9.0
+tensorboard==2.12.1
+torch==2.0.0
+torchvision
+imgaug==0.4

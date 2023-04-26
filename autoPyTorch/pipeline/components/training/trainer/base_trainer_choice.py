@@ -17,7 +17,7 @@ from torch.optim import Optimizer, swa_utils
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from autoPyTorch.constants import STRING_TO_TASK_TYPES
+from autoPyTorch.constants import STRING_TO_TASK_TYPES, STRING_TO_OUTPUT_TYPES
 from autoPyTorch.pipeline.components.base_choice import autoPyTorchChoice
 from autoPyTorch.pipeline.components.base_component import (
     ThirdPartyComponents,
@@ -325,6 +325,7 @@ class TrainerChoice(autoPyTorchChoice):
         additional_losses = X['additional_losses'] if 'additional_losses' in X else None
         self.choice.prepare(
             model=X['network'],
+            model_final_activation=X['final_activation'],
             metrics=get_metrics(dataset_properties=X['dataset_properties'],
                                 names=additional_metrics),
             criterion=get_loss(X['dataset_properties'],
@@ -335,6 +336,7 @@ class TrainerChoice(autoPyTorchChoice):
             metrics_during_training=X['metrics_during_training'],
             scheduler=X['lr_scheduler'],
             task_type=STRING_TO_TASK_TYPES[X['dataset_properties']['task_type']],
+            output_type=STRING_TO_OUTPUT_TYPES[X['dataset_properties']['output_type']],
             labels=X['y_train'][X['backend'].load_datamanager().splits[X['split_id']][0]],
             numerical_columns=X['dataset_properties']['numerical_columns'] if 'numerical_columns' in X[
                 'dataset_properties'] else None
@@ -416,7 +418,7 @@ class TrainerChoice(autoPyTorchChoice):
             if 'val_data_loader' in X and X['val_data_loader']:
                 val_loss, val_metrics = self.choice.evaluate(X['val_data_loader'], epoch, writer)
             if 'test_data_loader' in X and X['test_data_loader']:
-                test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'])
+                test_loss, test_metrics = self.choice.evaluate(X['test_data_loader'], epoch, writer)
             self.run_summary.add_performance(
                 epoch=epoch,
                 start_time=start_time,
@@ -428,7 +430,6 @@ class TrainerChoice(autoPyTorchChoice):
                 val_metrics=val_metrics,
                 test_metrics=test_metrics,
             )
-            self.save_model_for_ensemble()
 
         self.logger.info(f"Finished training with {self.run_summary.repr_last_epoch()}")
 
@@ -469,8 +470,8 @@ class TrainerChoice(autoPyTorchChoice):
         if epochs_since_best == 0:
             torch.save(X['network'].state_dict(), best_path)
 
-        if epochs_since_best > X['early_stopping']:
-            self.logger.debug(f" Early stopped model {X['num_run']} on epoch {self.run_summary.get_best_epoch()}")
+        if X['early_stopping'] > 0 and epochs_since_best > X['early_stopping']:
+            self.logger.debug(f" Early stopped model {X['num_run']} on epoch {self.run_summary.get_best_epoch(target_metrics)}")
             # We will stop the training. Load the last best performing weights
             X['network'].load_state_dict(torch.load(best_path))
 
@@ -494,7 +495,7 @@ class TrainerChoice(autoPyTorchChoice):
             bool: if True, the model is evaluated in every epoch
 
         """
-        if 'early_stopping' in X and X['early_stopping']:
+        if 'early_stopping' in X and X['early_stopping'] >= 0:
             return True
 
         # We need to know if we should reduce the rate based on val loss

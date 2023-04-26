@@ -106,7 +106,12 @@ class AdversarialTrainer(BaseTrainerComponent):
         adversarial_outputs = self.model(adversarial_data)
 
         loss_func = self.criterion_preparation(**criterion_kwargs)
-        loss = loss_func(self.criterion, original_outputs, adversarial_outputs)
+        loss = loss_func(
+            self.criterion,
+            self.squeeze_outputs_pre_criterion(original_outputs),
+            self.squeeze_outputs_pre_criterion(adversarial_outputs)
+        )
+
         loss.backward()
         self.optimizer.step()
         if self.scheduler:
@@ -135,13 +140,13 @@ class AdversarialTrainer(BaseTrainerComponent):
         """
         data_copy = deepcopy(data)
         data_copy = data_copy.float().to(self.device)
-        targets = targets.long().to(self.device)
+        targets = self.cast_targets(targets)
         data_copy = torch.autograd.Variable(data_copy)
         data_copy.requires_grad = True
 
         outputs = self.model(data_copy)
-        cost = self.criterion(outputs, targets)
-
+        cost = self.criterion(
+            self.squeeze_outputs_pre_criterion(outputs), targets)
         grad = torch.autograd.grad(cost, data_copy, retain_graph=False, create_graph=False)[0]
 
         adv_data = data_copy + self.epsilon * grad.sign()

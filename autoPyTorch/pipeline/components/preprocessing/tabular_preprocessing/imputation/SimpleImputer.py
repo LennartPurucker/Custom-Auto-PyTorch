@@ -69,15 +69,12 @@ class SimpleImputer(BaseImputer):
     def get_hyperparameter_search_space(
         dataset_properties: Optional[Dict[str, Any]] = None,
         numerical_strategy: HyperparameterSearchSpace = HyperparameterSearchSpace(hyperparameter='numerical_strategy',
-                                                                                  value_range=("mean", "median",
-                                                                                               "most_frequent",
-                                                                                               "constant_zero"),
+                                                                                  value_range=("mean",),
                                                                                   default_value="mean",
                                                                                   ),
         categorical_strategy: HyperparameterSearchSpace = HyperparameterSearchSpace(
             hyperparameter='categorical_strategy',
-            value_range=("most_frequent",
-                         "constant_!missing!"),
+            value_range=("most_frequent",),
             default_value="most_frequent")
     ) -> ConfigurationSpace:
         cs = ConfigurationSpace()

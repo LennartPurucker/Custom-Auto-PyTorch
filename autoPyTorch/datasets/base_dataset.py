@@ -137,7 +137,8 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
             self.output_type: str = type_of_target(self.train_tensors[1])
 
             if STRING_TO_OUTPUT_TYPES[self.output_type] in CLASSIFICATION_OUTPUTS:
-                self.output_shape = len(np.unique(self.train_tensors[1]))
+                n_classes = len(np.unique(self.train_tensors[1]))
+                self.output_shape = n_classes if n_classes > 2 else 1
             else:
                 self.output_shape = self.train_tensors[1].shape[-1] if self.train_tensors[1].ndim > 1 else 1
 
@@ -150,8 +151,8 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         self.holdout_validators = HoldOutFuncs.get_holdout_validators(*HoldoutValTypes)
         self.no_resampling_validators = NoResamplingFuncs.get_no_resampling_validators(*NoResamplingStrategyTypes)
 
-        self.splits = self.get_splits_from_resampling_strategy()
-
+        if not (hasattr(self, 'splits') and self.splits is not None):
+            self.splits = self.get_splits_from_resampling_strategy()
         # We also need to be able to transform the data, be it for pre-processing
         # or for augmentation
         self.train_transform = train_transforms

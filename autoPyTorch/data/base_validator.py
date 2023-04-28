@@ -88,7 +88,8 @@ class BaseInputValidator(BaseEstimator):
                                  np.shape(y_test)[0],
                              ))
 
-        self.feature_validator.fit(X_train, X_test)
+        if self.validate_feature_columns:
+            self.feature_validator.fit(X_train, X_test)
         self.target_validator.fit(y_train, y_test)
         self._is_fitted = True
 
@@ -116,7 +117,10 @@ class BaseInputValidator(BaseEstimator):
         """
         if not self._is_fitted:
             raise NotFittedError("Cannot call transform on a validator that is not fitted")
-        X_transformed = self.feature_validator.transform(X)
+        if self.validate_feature_columns:
+            X_transformed = self.feature_validator.transform(X)
+        else:
+            X_transformed = X
         if y is not None:
             return X_transformed, self.target_validator.transform(y)
         else:

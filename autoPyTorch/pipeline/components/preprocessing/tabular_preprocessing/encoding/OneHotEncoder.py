@@ -19,10 +19,10 @@ class OneHotEncoder(BaseEncoder):
 
         self.check_requirements(X, y)
 
+        categories = X['dataset_properties'].get('categories', [])
         self.preprocessor['categorical'] = OHE(
             # It is safer to have the OHE produce a 0 array than to crash a good configuration
-            categories=X['dataset_properties']['categories']
-            if len(X['dataset_properties']['categories']) > 0 else 'auto',
+            categories=categories if len(categories) > 0 else 'auto',
             sparse=False,
             handle_unknown='ignore')
         return self

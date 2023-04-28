@@ -80,6 +80,7 @@ class TabularDataset(BaseDataset):
                  val_transforms: Optional[torchvision.transforms.Compose] = None,
                  dataset_name: Optional[str] = None,
                  validator: Optional[BaseInputValidator] = None,
+                 **dataset_info: Dict[str, Any]
                  ):
 
         # Take information from the validator, which guarantees clean data for the
@@ -108,10 +109,18 @@ class TabularDataset(BaseDataset):
 
         if X_test is not None:
             X_test, Y_test = validator.transform(X_test, Y_test)
-        self.categorical_columns = validator.feature_validator.categorical_columns
-        self.numerical_columns = validator.feature_validator.numerical_columns
-        self.num_features = validator.feature_validator.num_features
-        self.categories = validator.feature_validator.categories
+        if dataset_info is not None:
+            for key in ["categorical_columns", "numerical_columns", "num_features"]:
+                if key in dataset_info:
+                    setattr(self, key, dataset_info[key])
+                else:
+                    raise ValueError("Missing key {} in dataset_info".format(key))
+        else:
+            assert hasattr(validator, "feature_validator")
+            self.categorical_columns = validator.feature_validator.categorical_columns
+            self.numerical_columns = validator.feature_validator.numerical_columns
+            self.num_features = validator.feature_validator.num_features
+            self.categories = validator.feature_validator.categories
 
         super().__init__(train_tensors=(X, Y), test_tensors=(X_test, Y_test), shuffle=shuffle,
                          resampling_strategy=resampling_strategy,

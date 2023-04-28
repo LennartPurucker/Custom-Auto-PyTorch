@@ -189,7 +189,7 @@ def get_device_from_fit_dictionary(X: Dict[str, Any]) -> torch.device:
     Returns:
         torch.device: Device to be used for training/inference
     """
-    if not torch.cuda.is_available():
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         return torch.device("cpu")
 
     return torch.device(X.get("device", "cpu"))

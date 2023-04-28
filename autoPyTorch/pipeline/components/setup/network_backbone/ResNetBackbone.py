@@ -343,7 +343,7 @@ class ResBlock(nn.Module):
             x2 = self.shake_shake_layers(x)
             alpha, beta = shake_get_alpha_beta(
                 is_training=self.training,
-                is_cuda=x.is_cuda,
+                device=x.device,
                 method=self.config['shake_shake_update_func'],
             )
             x = shake_shake(x1, x2, alpha, beta)
@@ -351,7 +351,7 @@ class ResBlock(nn.Module):
             x = self.layers(x)
             alpha, beta = shake_get_alpha_beta(
                 is_training=self.training,
-                is_cuda=x.is_cuda,
+                device=x.device,
                 method=self.config['shake_shake_update_func'],
             )
             bl = shake_drop_get_bl(
@@ -359,7 +359,7 @@ class ResBlock(nn.Module):
                 1 - self.config["max_shake_drop_probability"],
                 self.num_blocks,
                 self.training,
-                x.is_cuda,
+                device=x.device,
             )
             x = shake_drop(x, alpha, beta, bl)
         else:

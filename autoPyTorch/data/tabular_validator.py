@@ -32,6 +32,7 @@ class TabularInputValidator(BaseInputValidator):
         self,
         is_classification: bool = False,
         logger_port: typing.Optional[int] = None,
+        validate_feature_columns: bool = True,
     ) -> None:
         self.is_classification = is_classification
         self.logger_port = logger_port
@@ -42,8 +43,9 @@ class TabularInputValidator(BaseInputValidator):
             )
         else:
             self.logger = logging.getLogger('Validation')
-
-        self.feature_validator = TabularFeatureValidator(logger=self.logger)
+        self.validate_feature_columns = validate_feature_columns
+        if self.validate_feature_columns:
+            self.feature_validator = TabularFeatureValidator(logger=self.logger)
         self.target_validator = TabularTargetValidator(
             is_classification=self.is_classification,
             logger=self.logger

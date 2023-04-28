@@ -129,8 +129,8 @@ class NetworkComponent(autoPyTorchTrainingComponent):
             return Y_snapshot_preds_tensor.mean(dim=0).numpy()
 
     def _predict(self, network: torch.nn.Module, loader: torch.utils.data.DataLoader) -> torch.Tensor:
-        network.to(self.device)
         network.float()
+        network.to(self.device)
         network.eval()
         # Batch prediction
         Y_batch_preds = list()

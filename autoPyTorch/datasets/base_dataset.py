@@ -88,6 +88,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         seed: Optional[int] = 42,
         train_transforms: Optional[torchvision.transforms.Compose] = None,
         val_transforms: Optional[torchvision.transforms.Compose] = None,
+        create_splits: bool = True
     ):
         """
         Base class for datasets used in AutoPyTorch
@@ -151,7 +152,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         self.holdout_validators = HoldOutFuncs.get_holdout_validators(*HoldoutValTypes)
         self.no_resampling_validators = NoResamplingFuncs.get_no_resampling_validators(*NoResamplingStrategyTypes)
 
-        if not (hasattr(self, 'splits') and self.splits is not None):
+        if not (hasattr(self, 'splits') and self.splits is not None) and create_splits:
             self.splits = self.get_splits_from_resampling_strategy()
         # We also need to be able to transform the data, be it for pre-processing
         # or for augmentation

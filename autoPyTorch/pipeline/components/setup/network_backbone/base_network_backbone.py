@@ -51,7 +51,6 @@ class NetworkBackboneComponent(autoPyTorchComponent):
 
         # Get the number of output features from the embedding
         self.input_shape = (X["embedding_out_dim"],)
-
         self.backbone = self.build_backbone(
             input_shape=self.input_shape,
         )

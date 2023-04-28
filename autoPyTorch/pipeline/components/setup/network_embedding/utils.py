@@ -45,7 +45,7 @@ def get_num_output_dimensions_reduced(config: Dict[str, Any], num_categs_per_fea
                              if num_categories > 0 else 1 for num_categories in num_categs_per_feature]
     return num_output_dimensions
 
-def get_num_output_dimensions(config, num_categs_per_feature, num_features_excl_embed, num_embed_features):
+def get_num_output_dimensions(config, embed_features, num_features_excl_embed, num_embed_features):
     """
         Returns list of embedding sizes for each categorical variable.
         Selects this adaptively based on training_datset.
@@ -62,13 +62,11 @@ def get_num_output_dimensions(config, num_categs_per_feature, num_features_excl_
             1 if the column is not an embed column
     """
 
-    embed_features = [num_in >= 2 for num_in in
-                               num_categs_per_feature]
+    num_output_dimensions = [ceil(config["dimension_reduction_" + str(i)] * num_in) for i, num_in in
+                                        enumerate(num_embed_features)]
     
-    num_output_dimensions = [0] * num_features_excl_embed
 
-    num_output_dimensions.extend([ceil(config["dimension_reduction_" + str(i)] * num_in) for i, num_in in
-                                        enumerate(num_embed_features)]) 
+    num_output_dimensions.extend([0] * num_features_excl_embed) 
 
     num_output_dimensions = [num_out if embed else 1 for num_out, embed in
                                     zip(num_output_dimensions, embed_features)]
@@ -89,17 +87,16 @@ class _LearnedEntityEmbedding(nn.Module):
         # list of number of categories of categorical data
         # or 0 for numerical data
         self.num_categories_per_col = num_categories_per_col
-        self.embed_features = self.num_categories_per_col > 0
+        self.embed_features = self.num_categories_per_col >= 2
         self.num_features_excl_embed = num_features_excl_embed
 
         self.num_embed_features = self.num_categories_per_col[self.embed_features]
-
         if reduced:
             self.num_output_dimensions = get_num_output_dimensions_reduced(config, self.num_categories_per_col)
         else:
             self.num_output_dimensions = get_num_output_dimensions(
                 config,
-                self.num_categories_per_col,
+                self.embed_features,
                 self.num_features_excl_embed,
                 self.num_embed_features
             )

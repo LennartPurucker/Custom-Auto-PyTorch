@@ -175,7 +175,6 @@ class TabularFeatureValidator(BaseFeatureValidator):
             self.all_nan_columns = set(all_nan_columns)
 
             self.encode_columns, self.feat_types = self.get_columns_to_encode(X)
-
             assert self.feat_types is not None
 
             if len(self.encode_columns) > 0:
@@ -201,7 +200,6 @@ class TabularFeatureValidator(BaseFeatureValidator):
                 encoded_categories = self.column_transformer.\
                     named_transformers_['categorical_pipeline'].\
                     named_steps['ordinalencoder'].categories_
-
                 self.num_categories_per_col = [len(cat) for cat in encoded_categories]
 
             # differently to categorical_columns and numerical_columns,

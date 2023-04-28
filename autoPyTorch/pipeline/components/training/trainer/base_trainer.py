@@ -452,7 +452,7 @@ class BaseTrainerComponent(autoPyTorchTrainingComponent):
         self.optimizer.zero_grad()
         outputs = self.model(data)
         loss_func = self.criterion_preparation(**criterion_kwargs)
-        loss = loss_func(self.criterion, outputs)
+        loss = loss_func(self.criterion, self.squeeze_outputs_pre_criterion(outputs))
         loss.backward()
         self.optimizer.step()
 

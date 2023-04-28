@@ -115,7 +115,8 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
             shuffle=True,
             num_workers=X.get('num_workers', 0),
             pin_memory=X.get('pin_memory', True),
-            drop_last=X.get('drop_last', False),
+            # Needed as batch norm does not work with batch size 1
+            drop_last=X.get('drop_last', True),
             collate_fn=custom_collate_fn,
         )
 
@@ -152,6 +153,7 @@ class BaseDataLoaderComponent(autoPyTorchTrainingComponent):
             shuffle=False,
             train_transforms=self.test_transform,
             val_transforms=self.test_transform,
+            create_splits=False,
         )
         return torch.utils.data.DataLoader(
             dataset,

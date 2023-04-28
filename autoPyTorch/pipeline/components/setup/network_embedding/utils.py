@@ -147,6 +147,14 @@ class _LearnedEntityEmbedding(nn.Module):
                 concat_seq.append(current_feature_slice.view(-1, 1))
                 continue
             current_feature_slice = current_feature_slice.to(torch.int)
+            unique_cats = torch.unique(current_feature_slice)
+            max_unique_cat = max(unique_cats)
+            min_unique_cat = min(unique_cats)
+            if min_unique_cat < 0:
+                raise ValueError(
+                    f"Negative category  {min_unique_cat} encountered in categorical feature: {x_pointer}")
+            if max_unique_cat >= self.num_categories_per_col[x_pointer]:
+                raise ValueError(f"Category {max_unique_cat} encountered that is not in training data")
             concat_seq.append(self.ee_layers[layer_pointer](current_feature_slice))
             layer_pointer += 1
 

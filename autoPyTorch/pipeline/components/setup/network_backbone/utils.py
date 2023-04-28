@@ -118,7 +118,7 @@ shake_drop = ShakeDropFunction.apply
 
 def shake_get_alpha_beta(
     is_training: bool,
-    is_cuda: bool,
+    device: torch.device,
     method: str
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
@@ -145,8 +145,8 @@ def shake_get_alpha_beta(
     Currently, this function supports `even-even`, `shake-even`, `shake-shake` and `M3`.
     """
     if not is_training:
-        result = (torch.FloatTensor([0.5]), torch.FloatTensor([0.5]))
-        return result if not is_cuda else (result[0].cuda(), result[1].cuda())
+        result = (torch.FloatTensor([0.5]).to(device), torch.FloatTensor([0.5]).to(device))
+        return result
 
     # TODO implement other update methods
     # alpha is the weight ratio for the forward pass and beta is that for the backward pass
@@ -164,9 +164,8 @@ def shake_get_alpha_beta(
     else:
         raise ValueError(f"Unknown method `{method}` for ShakeShakeRegularisation in NetworkBackbone")
 
-    if is_cuda:
-        alpha = alpha.cuda()
-        beta = beta.cuda()
+    alpha = alpha.to(device)
+    beta = beta.to(device)
 
     return alpha, beta
 
@@ -176,7 +175,7 @@ def shake_drop_get_bl(
     min_prob_no_shake: float,
     num_blocks: int,
     is_training: bool,
-    is_cuda: bool
+    device: torch.device
 ) -> torch.Tensor:
     """
     The sampling of Bernoulli random variable
@@ -204,8 +203,7 @@ def shake_drop_get_bl(
     else:
         bl = torch.as_tensor(pl)
 
-    if is_cuda:
-        bl = bl.cuda()
+    bl = bl.to(device)
 
     return bl
 

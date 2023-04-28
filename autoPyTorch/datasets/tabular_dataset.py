@@ -89,10 +89,10 @@ class TabularDataset(BaseDataset):
 
             self.splits = [(train_indices, val_indices)]
             if hasattr(X, 'iloc'):
-                X = pd.concat([X, X_val])
+                X = pd.concat([X, X_val], axis=0)
                 Y = pd.concat([Y, Y_val])
             else:
-                X = np.concatenate([X, X_val])
+                X = np.concatenate([X, X_val], axis=0)
                 Y = np.concatenate([Y, Y_val])
             shuffle = False
         

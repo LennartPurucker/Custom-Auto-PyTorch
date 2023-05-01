@@ -1,5 +1,6 @@
 import math
 from typing import Any, Dict, List, Optional, Tuple, Union
+import warnings
 
 from ConfigSpace.configuration_space import ConfigurationSpace
 from ConfigSpace.hyperparameters import (
@@ -58,7 +59,8 @@ class _CombinedEmbedding(nn.Module):
 
         category_offsets = torch.tensor([0] + self.num_embed_features[:-1].tolist()).cumsum(0)
         self.register_buffer("category_offsets", category_offsets)
-        self.category_embeddings = nn.Embedding(int(sum(self.num_embed_features)), config["embedding_dim"])
+        self.max_category = int(sum(self.num_embed_features))
+        self.category_embeddings = nn.Embedding(self.max_category + 1, config["embedding_dim"])
         nn.init.kaiming_uniform_(self.category_embeddings.weight, a=math.sqrt(5))
         
         self.num_output_dimensions = get_num_output_dimensions(
@@ -74,7 +76,14 @@ class _CombinedEmbedding(nn.Module):
         # before passing it through the model
         x_num = x[:, ~self.embed_features]
         x_cat = x[:, self.embed_features].long()
-        x_cat = self.category_embeddings(x_cat + self.category_offsets[None]).view(x_cat.size(0), -1)
+        neg_indices = x_cat < 0
+        x_cat = x_cat + self.category_offsets
+        if neg_indices.any():
+            warnings.warn(
+                f"Negative indices in input to embedding: {neg_indices}. Setting value to max category: {self.max_category}."
+            )
+            x_cat[neg_indices] = self.max_category
+        x_cat = self.category_embeddings(x_cat).view(x_cat.size(0), -1)
         return torch.cat([x_num, x_cat], dim=1)
 
 

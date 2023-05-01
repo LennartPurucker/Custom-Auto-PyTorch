@@ -1,5 +1,6 @@
 from math import ceil
 from typing import Any, Dict, List, Optional, Tuple, Union
+import warnings
 
 from ConfigSpace.configuration_space import ConfigurationSpace
 from ConfigSpace.hyperparameters import (
@@ -146,6 +147,10 @@ class _LearnedEntityEmbedding(nn.Module):
             if not embed:
                 concat_seq.append(current_feature_slice.view(-1, 1))
                 continue
+            neg_indices = current_feature_slice < 0
+            if neg_indices.any():
+                warnings.warn(f"Negative category encountered in categorical feature: {x_pointer}, setting to {self.max_category_per_col[x_pointer]}")
+            current_feature_slice[neg_indices] = self.max_category_per_col[x_pointer]
             current_feature_slice = current_feature_slice.to(torch.int)
             unique_cats = torch.unique(current_feature_slice)
             max_unique_cat = max(unique_cats)
@@ -153,7 +158,7 @@ class _LearnedEntityEmbedding(nn.Module):
             if min_unique_cat < 0:
                 raise ValueError(
                     f"Negative category  {min_unique_cat} encountered in categorical feature: {x_pointer}")
-            if max_unique_cat >= self.num_categories_per_col[x_pointer]:
+            if max_unique_cat > self.num_categories_per_col[x_pointer]:
                 raise ValueError(f"Category {max_unique_cat} encountered that is not in training data")
             concat_seq.append(self.ee_layers[layer_pointer](current_feature_slice))
             layer_pointer += 1
@@ -163,12 +168,14 @@ class _LearnedEntityEmbedding(nn.Module):
     def _create_ee_layers(self) -> nn.ModuleList:
         # entity embeding layers are Linear Layers
         layers = nn.ModuleList()
+        self.max_category_per_col = []
         for num_cat, embed, num_out in zip(self.num_categories_per_col,
                                            self.embed_features,
                                            self.num_output_dimensions):
             if not embed:
                 continue
-            layers.append(nn.Embedding(num_cat, num_out))
+            self.max_category_per_col.append(num_cat)
+            layers.append(nn.Embedding(num_cat + 1, num_out))
         return layers
 
 

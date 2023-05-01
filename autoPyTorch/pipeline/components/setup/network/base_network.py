@@ -56,6 +56,8 @@ class NetworkComponent(autoPyTorchTrainingComponent):
 
         self.network = torch.nn.Sequential(X['network_embedding'], X['network_backbone'], X['network_head'])
 
+        # Compile the network
+        # self.network = torch.compile(self.network, backend="aot_eager")
         if STRING_TO_TASK_TYPES[X['dataset_properties']['task_type']] in CLASSIFICATION_TASKS:
             if X['dataset_properties']['output_shape'] > 1:
                 self.final_activation = nn.Softmax(dim=1)

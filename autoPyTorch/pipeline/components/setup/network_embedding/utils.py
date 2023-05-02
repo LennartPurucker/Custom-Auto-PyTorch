@@ -46,7 +46,7 @@ def get_num_output_dimensions_reduced(config: Dict[str, Any], num_categs_per_fea
                              if num_categories > 0 else 1 for num_categories in num_categs_per_feature]
     return num_output_dimensions
 
-def get_num_output_dimensions(config, embed_features, num_features_excl_embed, num_embed_features):
+def get_num_output_dimensions(config, embed_features, num_categories_per_col):
     """
         Returns list of embedding sizes for each categorical variable.
         Selects this adaptively based on training_datset.
@@ -63,14 +63,15 @@ def get_num_output_dimensions(config, embed_features, num_features_excl_embed, n
             1 if the column is not an embed column
     """
 
-    num_output_dimensions = [ceil(config["dimension_reduction_" + str(i)] * num_in) for i, num_in in
-                                        enumerate(num_embed_features)]
-    
+    num_output_dimensions = []
 
-    num_output_dimensions.extend([0] * num_features_excl_embed) 
-
-    num_output_dimensions = [num_out if embed else 1 for num_out, embed in
-                                    zip(num_output_dimensions, embed_features)]
+    embed_counter = 0
+    for embed, num_category_per_col in zip(embed_features, num_categories_per_col):
+        if embed:
+            num_output_dimensions.append(ceil(config[f"dimension_reduction_{embed_counter}"] * num_category_per_col))
+        else:
+            num_output_dimensions.append(1)
+        embed_counter += 1
     return num_output_dimensions
 
 class _LearnedEntityEmbedding(nn.Module):
@@ -91,15 +92,13 @@ class _LearnedEntityEmbedding(nn.Module):
         self.embed_features = self.num_categories_per_col >= 2
         self.num_features_excl_embed = num_features_excl_embed
 
-        self.num_embed_features = self.num_categories_per_col[self.embed_features]
         if reduced:
             self.num_output_dimensions = get_num_output_dimensions_reduced(config, self.num_categories_per_col)
         else:
             self.num_output_dimensions = get_num_output_dimensions(
                 config,
                 self.embed_features,
-                self.num_features_excl_embed,
-                self.num_embed_features
+                self.num_categories_per_col
             )
 
         self.num_out_feats = sum(self.num_output_dimensions)
@@ -149,8 +148,8 @@ class _LearnedEntityEmbedding(nn.Module):
                 continue
             neg_indices = current_feature_slice < 0
             if neg_indices.any():
-                warnings.warn(f"Negative category encountered in categorical feature: {x_pointer}, setting to {self.max_category_per_col[x_pointer]}")
-            current_feature_slice[neg_indices] = self.max_category_per_col[x_pointer]
+                warnings.warn(f"Negative category encountered in categorical feature: {layer_pointer}, setting to {self.max_category_per_col[x_pointer]}")
+            current_feature_slice[neg_indices] = self.max_category_per_col[layer_pointer]
             current_feature_slice = current_feature_slice.to(torch.int)
             unique_cats = torch.unique(current_feature_slice)
             max_unique_cat = max(unique_cats)

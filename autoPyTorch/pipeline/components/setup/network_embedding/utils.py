@@ -149,7 +149,8 @@ class _LearnedEntityEmbedding(nn.Module):
             neg_indices = current_feature_slice < 0
             if neg_indices.any():
                 warnings.warn(f"Negative category encountered in categorical feature: {layer_pointer}, setting to {self.max_category_per_col[x_pointer]}")
-            current_feature_slice[neg_indices] = self.max_category_per_col[layer_pointer]
+                # Set all neg_indices to max category
+                current_feature_slice = torch.where(neg_indices, torch.tensor(self.max_category_per_col[x_pointer], device=x.device), current_feature_slice)
             current_feature_slice = current_feature_slice.to(torch.int)
             unique_cats = torch.unique(current_feature_slice)
             max_unique_cat = max(unique_cats)

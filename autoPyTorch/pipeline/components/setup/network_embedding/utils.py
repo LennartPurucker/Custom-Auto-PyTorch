@@ -43,7 +43,7 @@ def get_num_output_dimensions_reduced(config: Dict[str, Any], num_categs_per_fea
                                                  2,
                                                  min(max_embedding_dim,
                                                      1.6 * num_categories**embed_exponent)))
-                             if num_categories > 0 else 1 for num_categories in num_categs_per_feature]
+                             if num_categories > 2 else 1 for num_categories in num_categs_per_feature]
     return num_output_dimensions
 
 def get_num_output_dimensions(config, embed_features, num_categories_per_col):

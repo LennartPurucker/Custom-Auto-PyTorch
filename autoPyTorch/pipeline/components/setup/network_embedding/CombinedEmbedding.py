@@ -52,7 +52,7 @@ class _CombinedEmbedding(nn.Module):
         # list of number of categories of categorical data
         # or 0 for numerical data
         self.num_categories_per_col = num_categories_per_col
-        self.embed_features = np.array(self.num_categories_per_col > 0)
+        self.embed_features = np.array(self.num_categories_per_col > 2)
         self.num_features_excl_embed = num_features_excl_embed
 
         self.num_embed_features = self.num_categories_per_col[self.embed_features]

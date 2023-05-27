@@ -53,7 +53,7 @@ class _CombinedEmbedding(nn.Module):
         # or 0 for numerical data
         self.num_categories_per_col = num_categories_per_col
         self.embed_features = np.array(self.num_categories_per_col > 2)
-        self.num_features_excl_embed = num_features_excl_embed
+        self.num_features_excl_embed = sum(~self.embed_features)
 
         self.num_embed_features = self.num_categories_per_col[self.embed_features]
 
@@ -68,7 +68,7 @@ class _CombinedEmbedding(nn.Module):
             self.num_embed_features
         )
 
-        self.num_out_feats = num_features_excl_embed + sum(self.num_output_dimensions)
+        self.num_out_feats = self.num_features_excl_embed + sum(self.num_output_dimensions)
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -80,7 +80,7 @@ class _CombinedEmbedding(nn.Module):
         x_cat = x_cat + self.category_offsets
         if neg_indices.any():
             warnings.warn(
-                f"Negative indices in input to embedding: {neg_indices}. Setting value to max category: {self.max_category}."
+                f"Negative indices in input to embedding. Setting value to max category: {self.max_category}."
             )
             x_cat[neg_indices] = self.max_category
         x_cat = self.category_embeddings(x_cat).view(x_cat.size(0), -1)

@@ -374,7 +374,7 @@ def _fit(data_loader, y, network, final_activation, trainer, optimizer, lr_sched
 
 
 def predict_with_network(X, config, network, network_snapshots, final_activation, device="cpu"):
-    loader = build_data_loader(X, None, config)
+    loader, _ = build_data_loader(X, None, config)
     if len(network_snapshots) == 0:
         assert network is not None
         return _predict(network, loader, device, final_activation).numpy()
@@ -408,7 +408,7 @@ def _predict(network, loader, device, final_activation) -> torch.Tensor:
     return torch.cat(Y_batch_preds, 0)
 
 
-from sklearn.datasets import load_breast_cancer
+from sklearn.datasets import load_breast_cancer, load_wine
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
@@ -418,7 +418,7 @@ def run_magic():
     # TODO: what happens in case of no init and how can I seed what happens?? where bias init?
 
 
-    X, y = load_breast_cancer(return_X_y=True)
+    X, y = load_wine(return_X_y=True) # load_breast_cancer
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=4202021)
     seed = 42
 
@@ -426,7 +426,12 @@ def run_magic():
     default_config = {k: v[0] for k,v in config_space.items()}
 
     network, network_snapshots, final_activation = _build_and_train_network(X_train, y_train, default_config, seed)
-    y_pred = predict_with_network(X_test, default_config, network, network_snapshots, final_activation)
+    y_pred_proba = predict_with_network(X_test, default_config, network, network_snapshots, final_activation)
+
+    # binary:
+    # TODO: move this into predict function and rename into predict proba and check what happens for multiclass
+    # y_pred_proba = np.concatenate((np.array([1 - y_pred_proba[:, 0]]).T, y_pred_proba), axis=1)
+    y_pred = np.argmax(y_pred_proba, axis=1)
 
     print(accuracy_score(y_test, y_pred))
 
